@@ -2,7 +2,7 @@
 
 This program is made for automatic verification of mathematical proofs. It's
 currently in pre-alpha. It's related to
-[this](https://github.com/TopologicallySpeaking/ckproof) repository.
+[this](https://github.com/TopologicallySpeaking/ckproof-treatise) repository.
 
 ## Licensing
 
