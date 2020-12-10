@@ -1,0 +1,316 @@
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public
+// License along with this program.  If not, see
+// <https://www.gnu.org/licenses/>.
+
+ident = @{ (LETTER | "_")+ }
+var = ${ "'" ~ ident }
+tag = ${ "#" ~ tag_contents }
+tag_contents = @{ (LETTER | NUMBER | "_")+ }
+
+integer = { ASCII_DIGIT+ }
+
+string = ${ "\"" ~ string_contents ~ "\"" }
+string_contents = @{ (!"\"" ~ ANY)* }
+
+amp = { "&" }
+apos = { "'" }
+ldquo = { "``" }
+rdquo = { "\"" }
+lsquo = { "`" }
+rsquo = { "`'" }
+ellipsis = { "..." }
+
+word = @{ (!word_forbidden ~ ANY)+ }
+word_forbidden = {
+  WHITE_SPACE
+  | "[" | "]" | "{" | "}" | "<" | ">"
+  | "\\" | "#" | "|"
+  | "`" | "'" | "&" | "\"" | "..."
+}
+
+inline_math = _{ "\\(" ~ math_row ~ "\\)" }
+display_math = { "\\[" ~ math_row ~ display_math_end }
+display_math_end = ${ "\\]" ~ math_punct }
+math_row = !{ math_item* }
+math_item = _{ math_fenced | display_operator | var | ident }
+math_fenced = _{ "(" ~ math_row ~ ")" }
+math_punct = @{ PUNCTUATION* }
+
+formula = {
+  prefix_list? ~ primary ~ (read_operator ~ prefix_list? ~ primary)*
+}
+prefix_list = { read_operator* }
+
+primary = _{ ident | var | primary_paren }
+primary_paren = { "(" ~ formula ~ ")" }
+
+read_operator = _{ operator_negation | operator_implies }
+operator_negation = { "!" }
+operator_implies = { "=>" }
+
+display_operator = { read_operator | operator_bang }
+display_operator_silent = _{ read_operator | operator_bang }
+operator_bang = { "\\bang" }
+
+paragraph = ${
+  text_element ~ (text_whitespace? ~ text_element)* ~ text_linebreak?
+}
+text_element = _{
+  text_reference | inline_math
+  | unicorn_vomit_begin | unicorn_vomit_end
+  | em_begin | em_end
+  | unformatted_element
+}
+
+text_reference = !{ "<" ~ "ref" ~ (tag | fqid | ident) ~ "/" ~ ">" }
+fqid = { ident ~ "." ~ ident }
+
+unicorn_vomit_begin = { "<" ~ "unicorn" ~ ">" }
+unicorn_vomit_end = { "<" ~ "/" ~ "unicorn" ~ ">" }
+em_begin = { "<" ~ "em" ~ ">" }
+em_end = { "<" ~ "/" ~ "em" ~ ">" }
+
+// Any sequence of whitespace which contains at most one newline.
+text_whitespace = { (
+  !("\n" ~ (!"\n" ~ WHITE_SPACE)* ~ "\n")
+  ~ WHITE_SPACE
+)+ }
+
+// Any sequence of whitespace which contains more than one newline. Is used to
+// mark the end of a paragraph.
+text_linebreak = _{
+  text_whitespace? ~ "\n" ~ (!"\n" ~ WHITE_SPACE)* ~ "\n" ~ WHITE_SPACE*
+}
+
+// One single paragraph, even if the whitespace would otherwise be considered
+// line breaks.
+oneline = ${ text_element ~ (oneline_whitespace? ~ text_element)* }
+oneline_whitespace = { WHITE_SPACE+ }
+
+unformatted_element = _{
+  amp | apos | ldquo | rdquo | lsquo | rsquo | ellipsis | word
+}
+unformatted = ${
+  unformatted_element ~ (oneline_whitespace? ~ unformatted_element)*
+}
+
+subheading = ${
+  heading_level ~ heading_whitespace_silent?
+  ~ unformatted_element ~ (heading_whitespace? ~ unformatted_element)*
+}
+heading_level = _{ heading_l3 | heading_l2 | heading_l1 }
+heading_l1 = { "#" }
+heading_l2 = { "##" }
+heading_l3 = { "###" }
+heading_whitespace = { (!"\n" ~ WHITE_SPACE)* }
+heading_whitespace_silent = _{ !"\n" ~ WHITE_SPACE }
+
+type_signature = { type_signature_inputs? ~ ident }
+type_signature_inputs = {
+  ("(" ~ input_signature ~ ("," ~ input_signature)* ~ ")" ~ "->")
+}
+
+input_signature = _{ variable_input_signature | type_signature }
+variable_input_signature = { "'" ~ type_signature }
+
+read = { read_style ~ read_operator }
+display = { display_style ~ display_operator_silent }
+read_style = _{ style_prefix | style_infix }
+display_style = _{ style_prefix | style_infix | style_suffix | style_standard }
+
+style_prefix = { "Prefix" }
+style_infix = { "Infix" }
+style_suffix = { "Suffix" }
+style_standard = { "Standard" }
+
+block_name = { "name" ~ "=" ~ string }
+block_tagline = { "tagline" ~ "=" ~ "{" ~ oneline ~ "}" }
+block_description = {
+  "description" ~ "=" ~ "{"
+    ~ text_block*
+  ~ "}"
+}
+block_type_signature = { "type" ~ "=" ~ type_signature }
+block_read = { "read" ~ "=" ~ read }
+block_display = { "display" ~ "=" ~ display }
+
+var_declaration = { "var" ~ ident ~ ":" ~ type_signature }
+premise = { "premise" ~ "=" ~ "[" ~ (formula ~ ";")* ~ "]" }
+assertion = { "assertion" ~ "=" ~ formula ~ ";" }
+
+system_block = {
+  "\\System" ~ ident ~ "{"
+    ~ system_entry*
+  ~ "}"
+}
+system_entry = _{ block_name | block_tagline | block_description }
+
+type_block = {
+  "\\Type" ~ ident ~ ":" ~ ident ~ "{"
+    ~ type_entry*
+  ~ "}"
+}
+type_entry = _{ block_name | block_tagline | block_description }
+
+symbol_block = {
+  "\\Symbol" ~ ident ~ ":" ~ ident ~ "{"
+    ~ symbol_entry*
+  ~ "}"
+}
+symbol_entry = _{
+  block_name | block_tagline | block_description
+  | block_type_signature | block_read | block_display
+}
+
+axiom_block = {
+  "\\Axiom" ~ ident ~ ":" ~ ident ~ "{"
+    ~ axiom_entry*
+  ~ "}"
+}
+axiom_entry = _{
+  block_name | block_tagline | block_description
+  | var_declaration | premise | assertion
+}
+
+theorem_block = {
+  "\\Theorem" ~ ident ~ ":" ~ ident ~ "{"
+    ~ theorem_entry*
+  ~ "}"
+}
+theorem_entry = _{
+  block_name | block_tagline | block_description
+  | var_declaration | premise | assertion
+}
+
+proof_block = {
+  "\\Proof" ~ ident ~ ":" ~ ident ~ "{"
+    ~ proof_element*
+  ~ "}"
+}
+proof_element = _{
+  proof_step | text_block
+}
+proof_step = {
+  "|" ~ proof_meta ~ "|" ~ formula ~ proof_step_end
+}
+proof_meta = { proof_meta_item ~ ("," ~ proof_meta_item)* ~ ","? }
+proof_meta_item = _{ proof_justification | tag }
+proof_justification = { ident }
+proof_step_end = ${ ";" ~ math_punct }
+
+table_head = { "<" ~ "head" ~ ">" ~ table_row* ~ "<" ~ "/" ~ "head" ~ ">" }
+table_body = { "<" ~ "body" ~ ">" ~ table_row* ~ "<" ~ "/" ~ "body" ~ ">" }
+table_foot = { "<" ~ "foot" ~ ">" ~ table_row* ~ "<" ~ "/" ~ "foot" ~ ">" }
+
+table_row = { "<" ~ "row" ~ ">" ~ table_cell* ~ "<" ~ "/" ~ "row" ~ ">" }
+table_cell = _{ "<" ~ "cell" ~ ">" ~ oneline ~ "<" ~ "/" ~ "cell" ~ ">" }
+
+table_caption = {
+  "<" ~ "caption" ~ ">" ~ oneline ~ "<" ~ "/" ~ "caption" ~ ">"
+}
+
+table_block = {
+  "<" ~ "table" ~ ">"
+    ~ table_head?
+    ~ table_body?
+    ~ table_foot?
+    ~ table_caption?
+  ~ "<" ~ "/" ~ "table" ~ ">"
+}
+
+todo_block = {
+  "<" ~ "todo" ~ ">"
+    ~ text_block*
+  ~ "<" ~ "/" ~ "todo" ~ ">"
+}
+
+mla = {
+  "<" ~ "mla" ~ ">"
+    ~ mla_entry*
+  ~ "<" ~ "/" ~ "mla" ~ ">"
+}
+mla_entry = _{
+  mla_authors | mla_title | mla_container
+}
+mla_authors = {
+  "authors" ~ "=" ~ "{" ~ unformatted ~ "}"
+}
+mla_title = {
+  "title" ~ "=" ~ "{" ~ unformatted ~ "}"
+}
+mla_container = {
+  "container" ~ "{"
+    ~ mla_container_entry*
+  ~ "}"
+}
+mla_container_entry = _{
+  mla_container_title | mla_other_contributors | mla_version | mla_number
+  | mla_publisher | mla_publication_date | mla_location
+}
+mla_container_title = {
+  "container_title" ~ "=" ~ "{" ~ unformatted ~ "}"
+}
+mla_other_contributors = {
+  "other_contributors" ~ "=" ~ "{" ~ unformatted ~ "}"
+}
+mla_version= {
+  "version" ~ "=" ~ "{" ~ unformatted ~ "}"
+}
+mla_number = {
+  "number" ~ "=" ~ "{" ~ unformatted ~ "}"
+}
+mla_publisher = {
+  "publisher" ~ "=" ~ "{" ~ unformatted ~ "}"
+}
+mla_publication_date = {
+  "publication_date" ~ "=" ~ "{" ~ unformatted ~ "}"
+}
+mla_location = {
+  "location" ~ "=" ~ "{" ~ unformatted ~ "}"
+}
+
+sublist_item = {
+  var ~ ">>>" ~ math_row ~ ";"
+}
+
+sublist = {
+  "<" ~ "sublist" ~ ">"
+    ~ sublist_item*
+  ~ "<" ~ "/" ~ "sublist" ~ ">"
+}
+
+heading_block = { subheading+ }
+text_block = { mla | sublist | display_math | paragraph }
+
+document = { SOI ~ document_block* ~ EOI }
+document_block = _{
+  system_block | type_block | symbol_block | axiom_block | theorem_block
+  | proof_block | table_block | heading_block | todo_block | text_block
+}
+
+manifest = { SOI ~ manifest_book* ~ EOI }
+manifest_book = {
+  ident ~ ":" ~ string ~ "{"
+    ~ oneline
+    ~ "[" ~ manifest_chapter* ~ "]"
+  ~ "}"
+}
+manifest_chapter = {
+  ident ~ ":" ~ string ~ "{"
+    ~ oneline
+    ~ "[" ~ manifest_page* ~ "]"
+  ~ "}"
+}
+manifest_page = { ident ~ ":" ~ string ~ "," }
+
+WHITESPACE = _{ WHITE_SPACE }
