@@ -1,8 +1,11 @@
 # Ckproof
 
-This program is made for automatic verification of mathematical proofs. It's
-currently in pre-alpha. It's related to
-[this](https://github.com/TopologicallySpeaking/ckproof-treatise) repository.
+Ckproof is an automated proof checker used to verify the treatise at
+[ckproof.io](http://ckproof.io). It's currently in pre-alpha, so there's not
+really much to see yet. Instructions for building what little has been
+implemented can be found at the
+[ckproof-server](https://github.com/TopologicallySpeaking/ckproof-server)
+repository.
 
 ## Licensing
 
