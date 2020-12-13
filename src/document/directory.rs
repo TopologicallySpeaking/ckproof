@@ -98,6 +98,10 @@ impl TheoremBlockRef {
     pub fn new(i: usize) -> TheoremBlockRef {
         TheoremBlockRef(i)
     }
+
+    pub fn get(&self) -> usize {
+        self.0
+    }
 }
 
 #[derive(Clone, Copy, Debug)]

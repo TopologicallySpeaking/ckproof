@@ -378,7 +378,7 @@ impl ProofBlock {
             .flat_map(|step| step.checkable(checkable_directory, &local_directory))
             .collect();
 
-        Proof::new(steps)
+        Proof::new(self.theorem_ref.into(), steps)
     }
 
     pub fn render(&self, directory: &BlockDirectory) -> ProofRendered {

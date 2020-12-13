@@ -20,7 +20,7 @@ use std::collections::HashMap;
 use std::iter::FromIterator;
 
 use crate::document::directory::{
-    AxiomBlockRef, SymbolBlockRef, SystemBlockRef, TypeBlockRef, VariableBlockRef,
+    AxiomBlockRef, SymbolBlockRef, SystemBlockRef, TheoremBlockRef, TypeBlockRef, VariableBlockRef,
 };
 
 pub mod directory;
@@ -76,6 +76,12 @@ impl From<AxiomBlockRef> for AxiomRef {
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct TheoremRef(usize);
+
+impl From<TheoremBlockRef> for TheoremRef {
+    fn from(theorem_ref: TheoremBlockRef) -> TheoremRef {
+        TheoremRef(theorem_ref.get())
+    }
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct ProofRef(usize);
@@ -476,12 +482,13 @@ impl ProofStep {
 }
 
 pub struct Proof {
+    theorem_ref: TheoremRef,
     steps: Vec<ProofStep>,
 }
 
 impl Proof {
-    pub fn new(steps: Vec<ProofStep>) -> Proof {
-        Proof { steps }
+    pub fn new(theorem_ref: TheoremRef, steps: Vec<ProofStep>) -> Proof {
+        Proof { theorem_ref, steps }
     }
 
     pub fn check(&self, directory: &CheckableDirectory) -> Option<CheckerError> {
@@ -492,6 +499,15 @@ impl Proof {
                 self.steps[i].check(directory, prev_steps)
             })
             .next()
+            .or_else(|| {
+                let goal = &directory[&self.theorem_ref].assertion;
+
+                if &self.steps.last().unwrap().formula == goal {
+                    None
+                } else {
+                    todo!()
+                }
+            })
     }
 }
 
