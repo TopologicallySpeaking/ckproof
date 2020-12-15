@@ -670,6 +670,10 @@ impl SystemChildJustificationBuilder {
             .set(directory.search_system_child(parent_system, &self.id));
 
         match self.child.get() {
+            None => errors.err(ParsingError::ProofStepSystemChildJustificationNotFound(
+                step_ref,
+            )),
+
             Some(SystemBuilderChild::Axiom(_)) | Some(SystemBuilderChild::Theorem(_)) => {}
 
             _ => errors.err(ParsingError::ProofStepSystemChildJustificationWrongKind(

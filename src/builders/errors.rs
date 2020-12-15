@@ -101,6 +101,7 @@ pub enum ParsingError {
     ProofStepDuplicateJustification(ProofBuilderStepRef),
     ProofStepDuplicateTags(ProofBuilderStepRef),
 
+    ProofStepSystemChildJustificationNotFound(ProofBuilderStepRef),
     ProofStepSystemChildJustificationWrongKind(ProofBuilderStepRef),
 }
 
