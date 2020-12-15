@@ -202,15 +202,9 @@ impl TheoremRendered {
 }
 
 #[derive(Deserialize, Serialize, Debug)]
-pub struct ProofRenderedJustification {
-    name: String,
-    href: String,
-}
-
-impl ProofRenderedJustification {
-    pub fn new(name: String, href: String) -> ProofRenderedJustification {
-        ProofRenderedJustification { name, href }
-    }
+pub enum ProofRenderedJustification {
+    SystemChild(String, String),
+    Hypothesis(usize),
 }
 
 #[derive(Deserialize, Serialize, Debug)]

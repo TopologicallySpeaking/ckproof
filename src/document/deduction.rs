@@ -226,6 +226,7 @@ impl TheoremBlock {
 pub enum ProofBlockJustification {
     Axiom(AxiomBlockRef),
     Theorem(TheoremBlockRef),
+    Hypothesis(usize),
 }
 
 impl ProofBlockJustification {
@@ -244,7 +245,21 @@ impl ProofBlockJustification {
                 vec![step]
             }
 
-            Self::Theorem(_) => todo!(),
+            Self::Theorem(theorem_ref) => {
+                let justification = ProofJustification::Theorem((*theorem_ref).into());
+                let formula = formula.checkable(directory, local_directory);
+                let step = ProofStep::new(justification, formula);
+
+                vec![step]
+            }
+
+            Self::Hypothesis(id) => {
+                let justification = ProofJustification::Hypothesis(*id);
+                let formula = formula.checkable(directory, local_directory);
+                let step = ProofStep::new(justification, formula);
+
+                vec![step]
+            }
         }
     }
 
@@ -255,10 +270,18 @@ impl ProofBlockJustification {
                 let name = axiom.name.clone();
                 let href = axiom.href.clone();
 
-                ProofRenderedJustification::new(name, href)
+                ProofRenderedJustification::SystemChild(name, href)
             }
 
-            Self::Theorem(_) => todo!(),
+            Self::Theorem(theorem_ref) => {
+                let theorem = &directory[*theorem_ref];
+                let name = theorem.name.clone();
+                let href = theorem.href.clone();
+
+                ProofRenderedJustification::SystemChild(name, href)
+            }
+
+            Self::Hypothesis(id) => ProofRenderedJustification::Hypothesis(*id),
         }
     }
 }

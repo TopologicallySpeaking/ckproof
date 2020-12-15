@@ -208,7 +208,7 @@ proof_step = {
   "|" ~ proof_meta ~ "|" ~ formula ~ proof_step_end
 }
 proof_meta = { proof_meta_item ~ ("," ~ proof_meta_item)* ~ ","? }
-proof_meta_item = _{ proof_justification | tag }
+proof_meta_item = _{ proof_justification | integer | tag }
 proof_justification = { ident }
 proof_step_end = ${ ";" ~ math_punct }
 

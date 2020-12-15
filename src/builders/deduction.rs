@@ -634,6 +634,10 @@ impl TheoremBuilder {
     pub fn system_id(&self) -> &str {
         &self.system_id
     }
+
+    pub fn premise(&self) -> &[FormulaBuilder] {
+        self.entries.premise()
+    }
 }
 
 struct SystemChildJustificationBuilder {
@@ -690,6 +694,7 @@ impl SystemChildJustificationBuilder {
 
 enum ProofJustificationBuilder {
     SystemChild(SystemChildJustificationBuilder),
+    Hypothesis(usize),
 }
 
 impl ProofJustificationBuilder {
@@ -704,10 +709,17 @@ impl ProofJustificationBuilder {
         }
     }
 
+    fn hypothesis_from_pest(pair: Pair<Rule>) -> ProofJustificationBuilder {
+        assert_eq!(pair.as_rule(), Rule::integer);
+
+        ProofJustificationBuilder::Hypothesis(pair.as_str().parse().unwrap_or_else(|_| todo!()))
+    }
+
     fn verify_structure(
         &self,
         parent_system: &str,
         step_ref: ProofBuilderStepRef,
+        theorem_ref: TheoremBuilderRef,
         directory: &BuilderDirectory,
         errors: &mut ParsingErrorContext,
     ) {
@@ -715,12 +727,26 @@ impl ProofJustificationBuilder {
             Self::SystemChild(builder) => {
                 builder.verify_structure(parent_system, step_ref, directory, errors)
             }
+
+            Self::Hypothesis(id) => {
+                let premise_len = directory[theorem_ref].premise().len();
+
+                if *id == 0 {
+                    todo!()
+                }
+
+                if *id > premise_len {
+                    todo!()
+                }
+            }
         }
     }
 
     fn finish(&self) -> ProofBlockJustification {
         match self {
             Self::SystemChild(builder) => builder.finish(),
+
+            Self::Hypothesis(id) => ProofBlockJustification::Hypothesis(*id),
         }
     }
 }
@@ -745,6 +771,9 @@ impl ProofBuilderMeta {
                 Rule::proof_justification => {
                     justifications.push(ProofJustificationBuilder::from_pest(pair))
                 }
+                Rule::integer => {
+                    justifications.push(ProofJustificationBuilder::hypothesis_from_pest(pair))
+                }
                 Rule::tag => tags.push(pair.into_inner().next().unwrap().as_str().to_owned()),
 
                 _ => unreachable!(),
@@ -764,6 +793,7 @@ impl ProofBuilderMeta {
         &self,
         parent_system: &str,
         self_ref: ProofBuilderStepRef,
+        theorem_ref: TheoremBuilderRef,
         directory: &BuilderDirectory,
         tags: &mut TagIndex,
         errors: &mut ParsingErrorContext,
@@ -777,9 +807,13 @@ impl ProofBuilderMeta {
                 errors.err(ParsingError::ProofStepMissingJustification(self_ref));
             }
 
-            1 => {
-                self.justifications[0].verify_structure(parent_system, self_ref, directory, errors)
-            }
+            1 => self.justifications[0].verify_structure(
+                parent_system,
+                self_ref,
+                theorem_ref,
+                directory,
+                errors,
+            ),
 
             _ => {
                 found_error = true;
@@ -840,12 +874,19 @@ impl ProofBuilderStep {
         &self,
         parent_system: &str,
         self_ref: ProofBuilderStepRef,
+        theorem_ref: TheoremBuilderRef,
         directory: &BuilderDirectory,
         tags: &mut TagIndex,
         errors: &mut ParsingErrorContext,
     ) {
-        self.meta
-            .verify_structure(parent_system, self_ref, directory, tags, errors);
+        self.meta.verify_structure(
+            parent_system,
+            self_ref,
+            theorem_ref,
+            directory,
+            tags,
+            errors,
+        );
     }
 
     fn build_formulas(
@@ -991,6 +1032,7 @@ impl ProofBuilder {
             step.verify_structure(
                 &self.system_id,
                 self_ref.step(i),
+                self.theorem_ref.get().unwrap(),
                 directory,
                 &mut tags,
                 errors,

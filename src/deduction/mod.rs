@@ -433,12 +433,14 @@ impl Theorem {
 pub enum ProofJustification {
     Axiom(AxiomRef),
     Theorem(TheoremRef),
+    Hypothesis(usize),
 }
 
 impl ProofJustification {
     fn check(
         &self,
         formula: &Formula,
+        premise: &[Formula],
         directory: &CheckableDirectory,
         prev_steps: &[ProofStep],
     ) -> Option<CheckerError> {
@@ -453,6 +455,16 @@ impl ProofJustification {
                 let theorem = &directory[theorem_ref];
 
                 theorem.check(formula, prev_steps)
+            }
+
+            Self::Hypothesis(id) => {
+                let hypothesis = &premise[*id - 1];
+
+                if formula == hypothesis {
+                    None
+                } else {
+                    todo!()
+                }
             }
         }
     }
@@ -473,11 +485,12 @@ impl ProofStep {
 
     fn check(
         &self,
+        premise: &[Formula],
         directory: &CheckableDirectory,
         prev_steps: &[ProofStep],
     ) -> Option<CheckerError> {
         self.justification
-            .check(&self.formula, directory, prev_steps)
+            .check(&self.formula, premise, directory, prev_steps)
     }
 }
 
@@ -492,11 +505,13 @@ impl Proof {
     }
 
     pub fn check(&self, directory: &CheckableDirectory) -> Option<CheckerError> {
+        let premise = &directory[&self.theorem_ref].premise;
+
         (0..self.steps.len())
             .filter_map(|i| {
                 let prev_steps = &self.steps[0..i];
 
-                self.steps[i].check(directory, prev_steps)
+                self.steps[i].check(premise, directory, prev_steps)
             })
             .next()
             .or_else(|| {
