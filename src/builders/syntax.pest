@@ -20,6 +20,11 @@ ident = @{ (LETTER | "_")+ }
 var = ${ "'" ~ ident }
 tag = ${ "#" ~ tag_contents }
 tag_contents = @{ (LETTER | NUMBER | "_")+ }
+url = @{ url_valid_char+ }
+url_valid_char = {
+  ASCII_ALPHANUMERIC | "-" | "." | "_" | "~" | ":" | "/" | "?" | "#" | "[" | "]"
+  | "@" | "!" | "$" | "&" | "'" | "(" | ")" | "*" | "+" | "," | ";" | "="
+}
 
 integer = { ASCII_DIGIT+ }
 
@@ -101,8 +106,21 @@ text_linebreak = _{
 oneline = ${ text_element ~ (oneline_whitespace? ~ text_element)* }
 oneline_whitespace = { WHITE_SPACE+ }
 
-unformatted_element = _{
+bare_element = _{
   amp | apos | ldquo | rdquo | lsquo | rsquo | ellipsis | word
+}
+bare_text = ${
+  bare_element ~ (bare_whitespace? ~ bare_element)*
+}
+bare_whitespace = { WHITE_SPACE+ }
+
+unformatted_element = _{
+  amp | apos | ldquo | rdquo | lsquo | rsquo | ellipsis | hyperlink | word
+}
+hyperlink = ${
+  "<" ~ WHITESPACE* ~ "a" ~ WHITESPACE+ ~ url ~ WHITESPACE* ~ ">"
+    ~ WHITESPACE* ~ bare_text
+  ~ WHITESPACE* ~ "<" ~ WHITESPACE* ~ "/" ~ WHITESPACE* ~ "a" ~ WHITESPACE* ~ ">"
 }
 unformatted = ${
   unformatted_element ~ (oneline_whitespace? ~ unformatted_element)*

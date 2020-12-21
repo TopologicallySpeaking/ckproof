@@ -16,17 +16,19 @@
 // License along with ckproof.  If not, see
 // <https://www.gnu.org/licenses/>.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 
 use pest::iterators::{Pair, Pairs};
+use url::Url;
 
 use crate::map_ident;
 
 use crate::document::directory::Block;
 use crate::document::text::{
-    DisplayMathBlock, HeadingBlock, HeadingLevel, MathBlock, MathElement, Mla, MlaContainer,
-    Paragraph, ParagraphElement, SubHeadingBlock, Sublist, SublistItem, TableBlock, TableBlockRow,
-    Text, TextBlock, TodoBlock, Unformatted, UnformattedElement,
+    BareElement, BareText, DisplayMathBlock, HeadingBlock, HeadingLevel, Hyperlink, MathBlock,
+    MathElement, Mla, MlaContainer, Paragraph, ParagraphElement, SubHeadingBlock, Sublist,
+    SublistItem, TableBlock, TableBlockRow, Text, TextBlock, TodoBlock, Unformatted,
+    UnformattedElement,
 };
 
 use super::directory::{
@@ -46,10 +48,10 @@ fn map_operator(operator: Rule) -> String {
     }
 }
 
-impl UnformattedElement {
-    fn from_pest(pair: Pair<Rule>, whitespace_rule: Rule) -> UnformattedElement {
+impl BareElement {
+    fn from_pest(pair: Pair<Rule>) -> BareElement {
         match pair.as_rule() {
-            rule if rule == whitespace_rule => Self::Whitespace,
+            Rule::bare_whitespace => Self::Whitespace,
 
             Rule::amp => Self::Ampersand,
             Rule::apos => Self::Apostrophe,
@@ -60,18 +62,142 @@ impl UnformattedElement {
             Rule::ellipsis => Self::Ellipsis,
             Rule::word => Self::Word(pair.as_str().to_owned()),
 
-            _ => unreachable!("{:#?}", pair.as_span().start_pos().line_col()),
+            _ => unreachable!(),
         }
     }
 }
 
-impl Unformatted {
-    fn from_pest(pair: Pair<Rule>) -> Unformatted {
+impl BareText {
+    fn from_pest(pair: Pair<Rule>) -> BareText {
+        assert_eq!(pair.as_rule(), Rule::bare_text);
+
+        let elements = pair.into_inner().map(BareElement::from_pest).collect();
+
+        BareText::new(elements)
+    }
+}
+
+struct HyperlinkBuilder {
+    url: String,
+    contents: BareText,
+
+    url_parsed: RefCell<Option<Url>>,
+}
+
+impl HyperlinkBuilder {
+    fn from_pest(pair: Pair<Rule>) -> HyperlinkBuilder {
+        assert_eq!(pair.as_rule(), Rule::hyperlink);
+
+        let mut inner = pair.into_inner();
+        let url = inner.next().unwrap().as_str().to_owned();
+        let contents = BareText::from_pest(inner.next().unwrap());
+
+        HyperlinkBuilder {
+            url,
+            contents,
+
+            url_parsed: RefCell::new(None),
+        }
+    }
+
+    fn verify_structure(&self, errors: &mut ParsingErrorContext) {
+        match Url::parse(&self.url) {
+            Ok(url_parsed) => {
+                let mut cell = self.url_parsed.borrow_mut();
+                *cell = Some(url_parsed);
+            }
+
+            Err(e) => errors.err(e),
+        }
+    }
+
+    fn finish(&self) -> Hyperlink {
+        let url = self.url_parsed.borrow().clone().unwrap();
+        let contents = self.contents.clone();
+
+        Hyperlink::new(url, contents)
+    }
+}
+
+enum UnformattedBuilderElement {
+    Whitespace,
+    Ampersand,
+    Apostrophe,
+    LeftDoubleQuote,
+    RightDoubleQuote,
+    LeftSingleQuote,
+    RightSingleQuote,
+    Ellipsis,
+
+    Hyperlink(HyperlinkBuilder),
+    Word(String),
+}
+
+impl UnformattedBuilderElement {
+    fn from_pest(pair: Pair<Rule>, whitespace_rule: Rule) -> UnformattedBuilderElement {
+        match pair.as_rule() {
+            rule if rule == whitespace_rule => Self::Whitespace,
+
+            Rule::amp => Self::Ampersand,
+            Rule::apos => Self::Apostrophe,
+            Rule::ldquo => Self::LeftDoubleQuote,
+            Rule::rdquo => Self::RightDoubleQuote,
+            Rule::lsquo => Self::LeftSingleQuote,
+            Rule::rsquo => Self::RightSingleQuote,
+            Rule::ellipsis => Self::Ellipsis,
+
+            Rule::hyperlink => Self::Hyperlink(HyperlinkBuilder::from_pest(pair)),
+            Rule::word => Self::Word(pair.as_str().to_owned()),
+
+            _ => unreachable!("{:#?}", pair.as_span().start_pos().line_col()),
+        }
+    }
+
+    fn verify_structure(&self, errors: &mut ParsingErrorContext) {
+        match self {
+            Self::Hyperlink(hyperlink) => hyperlink.verify_structure(errors),
+            _ => {}
+        }
+    }
+
+    fn finish(&self) -> UnformattedElement {
+        match self {
+            Self::Whitespace => UnformattedElement::Whitespace,
+            Self::Ampersand => UnformattedElement::Ampersand,
+            Self::Apostrophe => UnformattedElement::Apostrophe,
+            Self::LeftDoubleQuote => UnformattedElement::LeftDoubleQuote,
+            Self::RightDoubleQuote => UnformattedElement::RightDoubleQuote,
+            Self::LeftSingleQuote => UnformattedElement::LeftSingleQuote,
+            Self::RightSingleQuote => UnformattedElement::RightSingleQuote,
+            Self::Ellipsis => UnformattedElement::Ellipsis,
+
+            Self::Hyperlink(hyperlink) => UnformattedElement::Hyperlink(hyperlink.finish()),
+            Self::Word(w) => UnformattedElement::Word(w.clone()),
+        }
+    }
+}
+
+struct UnformattedBuilder {
+    elements: Vec<UnformattedBuilderElement>,
+}
+
+impl UnformattedBuilder {
+    fn from_pest(pair: Pair<Rule>) -> UnformattedBuilder {
         assert_eq!(pair.as_rule(), Rule::unformatted);
 
         let elements = pair
             .into_inner()
-            .map(|pair| UnformattedElement::from_pest(pair, Rule::oneline_whitespace))
+            .map(|pair| UnformattedBuilderElement::from_pest(pair, Rule::oneline_whitespace))
+            .collect();
+
+        UnformattedBuilder { elements }
+    }
+
+    fn finish(&self) -> Unformatted {
+        let elements = self
+            .elements
+            .iter()
+            .map(UnformattedBuilderElement::finish)
             .collect();
 
         Unformatted::new(elements)
@@ -79,13 +205,13 @@ impl Unformatted {
 }
 
 pub struct MlaContainerBuilder {
-    container_titles: Vec<Unformatted>,
-    other_contributors: Vec<Unformatted>,
-    versions: Vec<Unformatted>,
-    numbers: Vec<Unformatted>,
-    publishers: Vec<Unformatted>,
-    publication_dates: Vec<Unformatted>,
-    locations: Vec<Unformatted>,
+    container_titles: Vec<UnformattedBuilder>,
+    other_contributors: Vec<UnformattedBuilder>,
+    versions: Vec<UnformattedBuilder>,
+    numbers: Vec<UnformattedBuilder>,
+    publishers: Vec<UnformattedBuilder>,
+    publication_dates: Vec<UnformattedBuilder>,
+    locations: Vec<UnformattedBuilder>,
 
     verified: Cell<bool>,
 }
@@ -103,45 +229,47 @@ impl MlaContainerBuilder {
         for pair in pairs {
             match pair.as_rule() {
                 Rule::mla_container_title => {
-                    let container_title = Unformatted::from_pest(pair.into_inner().next().unwrap());
+                    let container_title =
+                        UnformattedBuilder::from_pest(pair.into_inner().next().unwrap());
 
                     container_titles.push(container_title);
                 }
 
                 Rule::mla_other_contributors => {
                     let other_contributor =
-                        Unformatted::from_pest(pair.into_inner().next().unwrap());
+                        UnformattedBuilder::from_pest(pair.into_inner().next().unwrap());
 
                     other_contributors.push(other_contributor);
                 }
 
                 Rule::mla_version => {
-                    let version = Unformatted::from_pest(pair.into_inner().next().unwrap());
+                    let version = UnformattedBuilder::from_pest(pair.into_inner().next().unwrap());
 
                     versions.push(version);
                 }
 
                 Rule::mla_number => {
-                    let number = Unformatted::from_pest(pair.into_inner().next().unwrap());
+                    let number = UnformattedBuilder::from_pest(pair.into_inner().next().unwrap());
 
                     numbers.push(number);
                 }
 
                 Rule::mla_publisher => {
-                    let publisher = Unformatted::from_pest(pair.into_inner().next().unwrap());
+                    let publisher =
+                        UnformattedBuilder::from_pest(pair.into_inner().next().unwrap());
 
                     publishers.push(publisher);
                 }
 
                 Rule::mla_publication_date => {
                     let publication_date =
-                        Unformatted::from_pest(pair.into_inner().next().unwrap());
+                        UnformattedBuilder::from_pest(pair.into_inner().next().unwrap());
 
                     publication_dates.push(publication_date);
                 }
 
                 Rule::mla_location => {
-                    let location = Unformatted::from_pest(pair.into_inner().next().unwrap());
+                    let location = UnformattedBuilder::from_pest(pair.into_inner().next().unwrap());
 
                     locations.push(location);
                 }
@@ -201,13 +329,19 @@ impl MlaContainerBuilder {
     fn finish(&self) -> MlaContainer {
         assert!(self.verified.get());
 
-        let container_title = self.container_titles.get(0).cloned();
-        let other_contributors = self.other_contributors.get(0).cloned();
-        let version = self.versions.get(0).cloned();
-        let number = self.numbers.get(0).cloned();
-        let publisher = self.publishers.get(0).cloned();
-        let publication_date = self.publication_dates.get(0).cloned();
-        let location = self.locations.get(0).cloned();
+        let container_title = self.container_titles.get(0).map(UnformattedBuilder::finish);
+        let other_contributors = self
+            .other_contributors
+            .get(0)
+            .map(UnformattedBuilder::finish);
+        let version = self.versions.get(0).map(UnformattedBuilder::finish);
+        let number = self.numbers.get(0).map(UnformattedBuilder::finish);
+        let publisher = self.publishers.get(0).map(UnformattedBuilder::finish);
+        let publication_date = self
+            .publication_dates
+            .get(0)
+            .map(UnformattedBuilder::finish);
+        let location = self.locations.get(0).map(UnformattedBuilder::finish);
 
         MlaContainer::new(
             container_title,
@@ -222,8 +356,8 @@ impl MlaContainerBuilder {
 }
 
 struct MlaBuilderEntries {
-    authors: Vec<Unformatted>,
-    titles: Vec<Unformatted>,
+    authors: Vec<UnformattedBuilder>,
+    titles: Vec<UnformattedBuilder>,
     containers: Vec<MlaContainerBuilder>,
 
     verified: Cell<bool>,
@@ -237,12 +371,12 @@ impl MlaBuilderEntries {
 
         for pair in pairs {
             match pair.as_rule() {
-                Rule::mla_authors => {
-                    authors.push(Unformatted::from_pest(pair.into_inner().next().unwrap()))
-                }
-                Rule::mla_title => {
-                    titles.push(Unformatted::from_pest(pair.into_inner().next().unwrap()))
-                }
+                Rule::mla_authors => authors.push(UnformattedBuilder::from_pest(
+                    pair.into_inner().next().unwrap(),
+                )),
+                Rule::mla_title => titles.push(UnformattedBuilder::from_pest(
+                    pair.into_inner().next().unwrap(),
+                )),
                 Rule::mla_container => {
                     containers.push(MlaContainerBuilder::from_pest(pair.into_inner()))
                 }
@@ -281,12 +415,12 @@ impl MlaBuilderEntries {
         self.verified.set(!found_error);
     }
 
-    fn author(&self) -> Option<&Unformatted> {
+    fn author(&self) -> Option<&UnformattedBuilder> {
         assert!(self.verified.get());
         self.authors.get(0)
     }
 
-    fn title(&self) -> &Unformatted {
+    fn title(&self) -> &UnformattedBuilder {
         assert!(self.verified.get());
         &self.titles[0]
     }
@@ -308,8 +442,8 @@ impl MlaBuilder {
     }
 
     fn finish(&self) -> Mla {
-        let author = self.entries.author().cloned();
-        let title = self.entries.title().clone();
+        let author = self.entries.author().map(UnformattedBuilder::finish);
+        let title = self.entries.title().finish();
         let containers = self
             .entries
             .containers
@@ -681,7 +815,7 @@ enum ParagraphBuilderElement {
     EmBegin,
     EmEnd,
 
-    Unformatted(UnformattedElement),
+    Unformatted(UnformattedBuilderElement),
 }
 
 impl ParagraphBuilderElement {
@@ -695,7 +829,7 @@ impl ParagraphBuilderElement {
             Rule::em_begin => Self::EmBegin,
             Rule::em_end => Self::EmEnd,
 
-            _ => Self::Unformatted(UnformattedElement::from_pest(pair, whitespace_rule)),
+            _ => Self::Unformatted(UnformattedBuilderElement::from_pest(pair, whitespace_rule)),
         }
     }
 
@@ -707,13 +841,14 @@ impl ParagraphBuilderElement {
     ) {
         match self {
             Self::Reference(r) => r.verify_structure(directory, errors),
+            Self::InlineMath(_) => {}
 
             Self::UnicornVomitBegin => state.unicorn_begin(errors),
             Self::UnicornVomitEnd => state.unicorn_end(errors),
             Self::EmBegin => state.em_begin(errors),
             Self::EmEnd => state.em_end(errors),
 
-            _ => {}
+            Self::Unformatted(builder) => builder.verify_structure(errors),
         }
     }
 
@@ -726,13 +861,14 @@ impl ParagraphBuilderElement {
     ) {
         match self {
             Self::Reference(r) => r.verify_structure_with_tags(directory, tags, errors),
+            Self::InlineMath(_) => {}
 
             Self::UnicornVomitBegin => state.unicorn_begin(errors),
             Self::UnicornVomitEnd => state.unicorn_end(errors),
             Self::EmBegin => state.em_begin(errors),
             Self::EmEnd => state.em_end(errors),
 
-            _ => {}
+            Self::Unformatted(builder) => builder.verify_structure(errors),
         }
     }
 
@@ -746,7 +882,7 @@ impl ParagraphBuilderElement {
             Self::EmBegin => ParagraphElement::EmBegin,
             Self::EmEnd => ParagraphElement::EmEnd,
 
-            Self::Unformatted(unformatted) => ParagraphElement::Unformatted(unformatted.clone()),
+            Self::Unformatted(unformatted) => ParagraphElement::Unformatted(unformatted.finish()),
         }
     }
 }
@@ -997,14 +1133,30 @@ impl HeadingLevel {
     }
 }
 
-impl SubHeadingBlock {
-    fn from_pest(pair: Pair<Rule>) -> SubHeadingBlock {
+struct SubHeadingBuilder {
+    level: HeadingLevel,
+    contents: Vec<UnformattedBuilderElement>,
+}
+
+impl SubHeadingBuilder {
+    fn from_pest(pair: Pair<Rule>) -> SubHeadingBuilder {
         assert_eq!(pair.as_rule(), Rule::subheading);
 
         let mut inner = pair.into_inner();
         let level = HeadingLevel::from_pest(inner.next().unwrap());
         let contents = inner
-            .map(|pair| UnformattedElement::from_pest(pair, Rule::heading_whitespace))
+            .map(|pair| UnformattedBuilderElement::from_pest(pair, Rule::heading_whitespace))
+            .collect();
+
+        SubHeadingBuilder { level, contents }
+    }
+
+    fn finish(&self) -> SubHeadingBlock {
+        let level = self.level;
+        let contents = self
+            .contents
+            .iter()
+            .map(UnformattedBuilderElement::finish)
             .collect();
 
         SubHeadingBlock::new(level, contents)
@@ -1012,20 +1164,27 @@ impl SubHeadingBlock {
 }
 
 pub struct HeadingBuilder {
-    subheadings: Vec<SubHeadingBlock>,
+    subheadings: Vec<SubHeadingBuilder>,
 }
 
 impl HeadingBuilder {
     pub fn from_pest(pair: Pair<Rule>) -> HeadingBuilder {
         assert_eq!(pair.as_rule(), Rule::heading_block);
 
-        let subheadings = pair.into_inner().map(SubHeadingBlock::from_pest).collect();
+        let subheadings = pair
+            .into_inner()
+            .map(SubHeadingBuilder::from_pest)
+            .collect();
 
         HeadingBuilder { subheadings }
     }
 
     pub fn finish(&self) -> HeadingBlock {
-        let subheadings = self.subheadings.clone();
+        let subheadings = self
+            .subheadings
+            .iter()
+            .map(SubHeadingBuilder::finish)
+            .collect();
 
         HeadingBlock::new(subheadings)
     }

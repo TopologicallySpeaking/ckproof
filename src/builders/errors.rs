@@ -18,6 +18,7 @@
 
 use pest::error::Error as PestError;
 use std::io::Error as IoError;
+use url::ParseError as UrlError;
 
 use super::directory::{
     AxiomBuilderRef, ProofBuilderRef, ProofBuilderStepRef, Readable, SymbolBuilderRef,
@@ -47,6 +48,7 @@ impl From<PestError<Rule>> for BuilderCreationError {
 pub enum ParsingError {
     IoError(IoError),
     PestError(PestError<Rule>),
+    UrlError(UrlError),
 
     SystemIdAlreadyTaken(SystemBuilderRef, SystemBuilderRef),
     SystemChildIdAlreadyTaken(SystemBuilderChild, SystemBuilderChild),
@@ -114,6 +116,12 @@ impl From<IoError> for ParsingError {
 impl From<PestError<Rule>> for ParsingError {
     fn from(e: PestError<Rule>) -> ParsingError {
         ParsingError::PestError(e)
+    }
+}
+
+impl From<UrlError> for ParsingError {
+    fn from(e: UrlError) -> ParsingError {
+        ParsingError::UrlError(e)
     }
 }
 

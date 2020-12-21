@@ -16,6 +16,8 @@
 // License along with ckproof.  If not, see
 // <https://www.gnu.org/licenses/>.
 
+use url::Url;
+
 use crate::rendered::{
     DisplayMathRendered, HeadingRendered, MlaContainerRendered, MlaRendered, SublistItemRendered,
     TableRendered, TableRenderedRow, TextRendered, TodoRendered,
@@ -24,7 +26,7 @@ use crate::rendered::{
 use super::directory::{Block, BlockDirectory};
 
 #[derive(Clone)]
-pub enum UnformattedElement {
+pub enum BareElement {
     Whitespace,
     Ampersand,
     Apostrophe,
@@ -36,7 +38,7 @@ pub enum UnformattedElement {
     Word(String),
 }
 
-impl UnformattedElement {
+impl BareElement {
     fn render(&self) -> &str {
         match self {
             Self::Whitespace => " ",
@@ -53,6 +55,73 @@ impl UnformattedElement {
 }
 
 #[derive(Clone)]
+pub struct BareText {
+    elements: Vec<BareElement>,
+}
+
+impl BareText {
+    pub fn new(elements: Vec<BareElement>) -> BareText {
+        BareText { elements }
+    }
+
+    fn render(&self) -> String {
+        self.elements.iter().map(BareElement::render).collect()
+    }
+}
+
+pub struct Hyperlink {
+    url: Url,
+    contents: BareText,
+}
+
+impl Hyperlink {
+    pub fn new(url: Url, contents: BareText) -> Hyperlink {
+        Hyperlink { url, contents }
+    }
+
+    fn render(&self) -> String {
+        let contents = self.contents.render();
+
+        format!(
+            "<a href=\"{}\" target=\"_blank\" rel=\"noopener noreferrer\">{}</a>",
+            self.url.as_str(),
+            contents
+        )
+    }
+}
+
+pub enum UnformattedElement {
+    Whitespace,
+    Ampersand,
+    Apostrophe,
+    LeftDoubleQuote,
+    RightDoubleQuote,
+    LeftSingleQuote,
+    RightSingleQuote,
+    Ellipsis,
+
+    Hyperlink(Hyperlink),
+    Word(String),
+}
+
+impl UnformattedElement {
+    fn render(&self) -> String {
+        match self {
+            Self::Whitespace => " ".to_owned(),
+            Self::Ampersand => "&amp;".to_owned(),
+            Self::Apostrophe => "&apos;".to_owned(),
+            Self::LeftDoubleQuote => "\u{201C}".to_owned(),
+            Self::RightDoubleQuote => "\u{201D}".to_owned(),
+            Self::LeftSingleQuote => "\u{2018}".to_owned(),
+            Self::RightSingleQuote => "\u{2019}".to_owned(),
+            Self::Ellipsis => "\u{2026}".to_owned(),
+
+            Self::Hyperlink(hyperlink) => hyperlink.render(),
+            Self::Word(w) => w.clone(),
+        }
+    }
+}
+
 pub struct Unformatted {
     elements: Vec<UnformattedElement>,
 }
@@ -376,7 +445,7 @@ impl TableBlock {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub enum HeadingLevel {
     L1,
     L2,
@@ -393,7 +462,6 @@ impl HeadingLevel {
     }
 }
 
-#[derive(Clone)]
 pub struct SubHeadingBlock {
     level: HeadingLevel,
     contents: Vec<UnformattedElement>,
