@@ -250,6 +250,25 @@ table_block = {
   ~ "<" ~ "/" ~ "table" ~ ">"
 }
 
+quote_original = {
+  "<" ~ "original" ~ ">"
+    ~ unformatted
+  ~ "<" ~ "/" ~ "original" ~ ">"
+}
+
+quote_value = {
+  "<" ~ "value" ~ ">"
+    ~ unformatted
+  ~ "<" ~ "/" ~ "value" ~ ">"
+}
+
+quote_block = {
+  "<" ~ "quote" ~ ">"
+    ~ quote_original?
+    ~ quote_value
+  ~ "<" ~ "/" ~ "quote" ~ ">"
+}
+
 todo_block = {
   "<" ~ "todo" ~ ">"
     ~ text_block*
@@ -317,7 +336,7 @@ text_block = { mla | sublist | display_math | paragraph }
 document = { SOI ~ document_block* ~ EOI }
 document_block = _{
   system_block | type_block | symbol_block | axiom_block | theorem_block
-  | proof_block | table_block | heading_block | todo_block | text_block
+  | proof_block | table_block | quote_block | heading_block | todo_block | text_block
 }
 
 manifest = { SOI ~ manifest_book* ~ EOI }

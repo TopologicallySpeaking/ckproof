@@ -293,6 +293,18 @@ impl TableRendered {
 }
 
 #[derive(Deserialize, Serialize, Debug)]
+pub struct QuoteRendered {
+    original: Option<String>,
+    value: String,
+}
+
+impl QuoteRendered {
+    pub fn new(original: Option<String>, value: String) -> QuoteRendered {
+        QuoteRendered { original, value }
+    }
+}
+
+#[derive(Deserialize, Serialize, Debug)]
 pub struct HeadingRendered {
     level: usize,
     content: String,
@@ -413,6 +425,7 @@ pub enum BlockRendered {
     Theorem(TheoremRendered),
     Proof(ProofRendered),
     Table(TableRendered),
+    Quote(QuoteRendered),
     Heading(Vec<HeadingRendered>),
     Todo(TodoRendered),
     Text(TextRendered),

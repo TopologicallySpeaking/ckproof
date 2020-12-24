@@ -19,8 +19,8 @@
 use url::Url;
 
 use crate::rendered::{
-    DisplayMathRendered, HeadingRendered, MlaContainerRendered, MlaRendered, SublistItemRendered,
-    TableRendered, TableRenderedRow, TextRendered, TodoRendered,
+    DisplayMathRendered, HeadingRendered, MlaContainerRendered, MlaRendered, QuoteRendered,
+    SublistItemRendered, TableRendered, TableRenderedRow, TextRendered, TodoRendered,
 };
 
 use super::directory::{Block, BlockDirectory};
@@ -442,6 +442,24 @@ impl TableBlock {
             .map(|paragraph| paragraph.render(directory));
 
         TableRendered::new(head, body, foot, caption)
+    }
+}
+
+pub struct QuoteBlock {
+    original: Option<Unformatted>,
+    value: Unformatted,
+}
+
+impl QuoteBlock {
+    pub fn new(original: Option<Unformatted>, value: Unformatted) -> QuoteBlock {
+        QuoteBlock { original, value }
+    }
+
+    pub fn render(&self) -> QuoteRendered {
+        let original = self.original.as_ref().map(Unformatted::render);
+        let value = self.value.render();
+
+        QuoteRendered::new(original, value)
     }
 }
 

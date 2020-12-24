@@ -26,8 +26,8 @@ use crate::map_ident;
 use crate::document::directory::Block;
 use crate::document::text::{
     BareElement, BareText, DisplayMathBlock, HeadingBlock, HeadingLevel, Hyperlink, MathBlock,
-    MathElement, Mla, MlaContainer, Paragraph, ParagraphElement, SubHeadingBlock, Sublist,
-    SublistItem, TableBlock, TableBlockRow, Text, TextBlock, TodoBlock, Unformatted,
+    MathElement, Mla, MlaContainer, Paragraph, ParagraphElement, QuoteBlock, SubHeadingBlock,
+    Sublist, SublistItem, TableBlock, TableBlockRow, Text, TextBlock, TodoBlock, Unformatted,
     UnformattedElement,
 };
 
@@ -1118,6 +1118,40 @@ impl TableBuilder {
         let caption = self.caption.as_ref().map(ParagraphBuilder::finish);
 
         TableBlock::new(head, body, foot, caption)
+    }
+}
+
+pub struct QuoteBuilder {
+    original: Option<UnformattedBuilder>,
+    value: UnformattedBuilder,
+}
+
+impl QuoteBuilder {
+    pub fn from_pest(pair: Pair<Rule>) -> QuoteBuilder {
+        assert_eq!(pair.as_rule(), Rule::quote_block);
+
+        let mut inner = pair.into_inner();
+        let mut curr = inner.next().unwrap();
+
+        let original = if curr.as_rule() == Rule::quote_original {
+            let original = curr.into_inner().next().unwrap();
+            curr = inner.next().unwrap();
+
+            Some(UnformattedBuilder::from_pest(original))
+        } else {
+            None
+        };
+
+        let value = UnformattedBuilder::from_pest(curr.into_inner().next().unwrap());
+
+        QuoteBuilder { original, value }
+    }
+
+    pub fn finish(&self) -> QuoteBlock {
+        let original = self.original.as_ref().map(UnformattedBuilder::finish);
+        let value = self.value.finish();
+
+        QuoteBlock::new(original, value)
     }
 }
 

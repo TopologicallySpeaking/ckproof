@@ -24,7 +24,7 @@ use crate::rendered::BlockRendered;
 
 use super::deduction::{AxiomBlock, ProofBlock, ProofBlockStep, TheoremBlock};
 use super::language::{SymbolBlock, SystemBlock, TypeBlock};
-use super::text::{HeadingBlock, TableBlock, TextBlock, TodoBlock};
+use super::text::{HeadingBlock, QuoteBlock, TableBlock, TextBlock, TodoBlock};
 
 #[derive(Clone, Copy, Debug)]
 pub struct SystemBlockRef(usize);
@@ -132,6 +132,15 @@ impl TableBlockRef {
 }
 
 #[derive(Clone, Copy, Debug)]
+pub struct QuoteBlockRef(usize);
+
+impl QuoteBlockRef {
+    pub fn new(i: usize) -> QuoteBlockRef {
+        QuoteBlockRef(i)
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
 pub struct HeadingBlockRef(usize);
 
 impl HeadingBlockRef {
@@ -169,6 +178,7 @@ pub enum Block {
     ProofStep(ProofBlockStepRef),
 
     Table(TableBlockRef),
+    Quote(QuoteBlockRef),
     Heading(HeadingBlockRef),
     Todo(TodoBlockRef),
     Text(TextBlockRef),
@@ -212,6 +222,11 @@ impl Block {
             Self::Table(table_ref) => {
                 let table = directory[*table_ref].render(directory);
                 BlockRendered::Table(table)
+            }
+
+            Self::Quote(quote_ref) => {
+                let quote = directory[*quote_ref].render();
+                BlockRendered::Quote(quote)
             }
 
             Self::Heading(heading_ref) => {
@@ -296,6 +311,7 @@ impl Block {
             }
 
             Self::Table(_) => todo!(),
+            Self::Quote(_) => todo!(),
             Self::Heading(_) => todo!(),
             Self::Todo(_) => todo!(),
             Self::Text(_) => todo!(),
@@ -351,6 +367,12 @@ impl From<TableBlockRef> for Block {
     }
 }
 
+impl From<QuoteBlockRef> for Block {
+    fn from(quote_ref: QuoteBlockRef) -> Block {
+        Block::Quote(quote_ref)
+    }
+}
+
 impl From<HeadingBlockRef> for Block {
     fn from(heading_ref: HeadingBlockRef) -> Block {
         Block::Heading(heading_ref)
@@ -378,6 +400,7 @@ pub struct BlockDirectory {
     proofs: Vec<ProofBlock>,
 
     tables: Vec<TableBlock>,
+    quotes: Vec<QuoteBlock>,
     headings: Vec<HeadingBlock>,
     todos: Vec<TodoBlock>,
     texts: Vec<TextBlock>,
@@ -392,6 +415,7 @@ impl BlockDirectory {
         theorems: Vec<TheoremBlock>,
         proofs: Vec<ProofBlock>,
         tables: Vec<TableBlock>,
+        quotes: Vec<QuoteBlock>,
         headings: Vec<HeadingBlock>,
         todos: Vec<TodoBlock>,
         texts: Vec<TextBlock>,
@@ -405,6 +429,7 @@ impl BlockDirectory {
             proofs,
 
             tables,
+            quotes,
             headings,
             todos,
             texts,
@@ -508,6 +533,14 @@ impl Index<TableBlockRef> for BlockDirectory {
 
     fn index(&self, table_ref: TableBlockRef) -> &Self::Output {
         &self.tables[table_ref.0]
+    }
+}
+
+impl Index<QuoteBlockRef> for BlockDirectory {
+    type Output = QuoteBlock;
+
+    fn index(&self, quote_ref: QuoteBlockRef) -> &Self::Output {
+        &self.quotes[quote_ref.0]
     }
 }
 

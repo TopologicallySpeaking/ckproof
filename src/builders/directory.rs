@@ -23,8 +23,8 @@ use pest::iterators::Pair;
 
 use crate::document::directory::{
     AxiomBlockRef, Block, BlockDirectory, HeadingBlockRef, ProofBlockRef, ProofBlockStepRef,
-    SymbolBlockRef, SystemBlockRef, TableBlockRef, TextBlockRef, TheoremBlockRef, TodoBlockRef,
-    TypeBlockRef, VariableBlockRef,
+    QuoteBlockRef, SymbolBlockRef, SystemBlockRef, TableBlockRef, TextBlockRef, TheoremBlockRef,
+    TodoBlockRef, TypeBlockRef, VariableBlockRef,
 };
 
 use super::deduction::{AxiomBuilder, ProofBuilder, TheoremBuilder};
@@ -32,7 +32,7 @@ use super::errors::{ParsingError, ParsingErrorContext};
 use super::language::{
     ReadBuilder, SymbolBuilder, SystemBuilder, TypeBuilder, TypeSignatureBuilder, VariableBuilder,
 };
-use super::text::{HeadingBuilder, TableBuilder, TextBlockBuilder, TodoBuilder};
+use super::text::{HeadingBuilder, QuoteBuilder, TableBuilder, TextBlockBuilder, TodoBuilder};
 use super::{BlockLocation, Rule};
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -150,6 +150,15 @@ pub struct TableBuilderRef(usize);
 impl TableBuilderRef {
     pub fn finish(&self) -> TableBlockRef {
         TableBlockRef::new(self.0)
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct QuoteBuilderRef(usize);
+
+impl QuoteBuilderRef {
+    pub fn finish(&self) -> QuoteBlockRef {
+        QuoteBlockRef::new(self.0)
     }
 }
 
@@ -272,6 +281,7 @@ pub enum BlockBuilder {
     Proof(ProofBuilderRef),
 
     Table(TableBuilderRef),
+    Quote(QuoteBuilderRef),
     Heading(HeadingBuilderRef),
     Todo(TodoBuilderRef),
     Text(TextBlockBuilderRef),
@@ -305,6 +315,7 @@ impl BlockBuilder {
             }
 
             Rule::table_block => Self::Table(directory.add_table(TableBuilder::from_pest(pair))),
+            Rule::quote_block => Self::Quote(directory.add_quote(QuoteBuilder::from_pest(pair))),
             Rule::todo_block => Self::Todo(directory.add_todo(TodoBuilder::from_pest(pair))),
             Rule::heading_block => {
                 Self::Heading(directory.add_heading(HeadingBuilder::from_pest(pair)))
@@ -325,6 +336,7 @@ impl BlockBuilder {
             Self::Proof(proof_ref) => proof_ref.finish().into(),
 
             Self::Table(table_ref) => table_ref.finish().into(),
+            Self::Quote(quote_ref) => quote_ref.finish().into(),
             Self::Heading(heading_ref) => heading_ref.finish().into(),
             Self::Todo(todo_ref) => todo_ref.finish().into(),
             Self::Text(text_ref) => text_ref.finish().into(),
@@ -533,6 +545,7 @@ pub struct BuilderDirectory {
     proofs: Vec<ProofBuilder>,
 
     tables: Vec<TableBuilder>,
+    quotes: Vec<QuoteBuilder>,
     headings: Vec<HeadingBuilder>,
     todos: Vec<TodoBuilder>,
     texts: Vec<TextBlockBuilder>,
@@ -551,6 +564,7 @@ impl BuilderDirectory {
             proofs: Vec::new(),
 
             tables: Vec::new(),
+            quotes: Vec::new(),
             headings: Vec::new(),
             todos: Vec::new(),
             texts: Vec::new(),
@@ -623,6 +637,12 @@ impl BuilderDirectory {
         assert!(self.index.is_none());
         self.tables.push(table);
         TableBuilderRef(self.tables.len() - 1)
+    }
+
+    pub fn add_quote(&mut self, quote: QuoteBuilder) -> QuoteBuilderRef {
+        assert!(self.index.is_none());
+        self.quotes.push(quote);
+        QuoteBuilderRef(self.quotes.len() - 1)
     }
 
     pub fn add_heading(&mut self, heading: HeadingBuilder) -> HeadingBuilderRef {
@@ -792,12 +812,14 @@ impl BuilderDirectory {
         let proofs = self.proofs.iter().map(ProofBuilder::finish).collect();
 
         let tables = self.tables.iter().map(TableBuilder::finish).collect();
+        let quotes = self.quotes.iter().map(QuoteBuilder::finish).collect();
         let headings = self.headings.iter().map(HeadingBuilder::finish).collect();
         let todos = self.todos.iter().map(TodoBuilder::finish).collect();
         let texts = self.texts.iter().map(TextBlockBuilder::finish).collect();
 
         BlockDirectory::new(
-            systems, types, symbols, axioms, theorems, proofs, tables, headings, todos, texts,
+            systems, types, symbols, axioms, theorems, proofs, tables, quotes, headings, todos,
+            texts,
         )
     }
 
