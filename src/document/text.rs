@@ -91,6 +91,9 @@ impl Hyperlink {
 }
 
 pub enum UnformattedElement {
+    OpenBracket,
+    CloseBracket,
+
     Whitespace,
     Ampersand,
     Apostrophe,
@@ -107,6 +110,9 @@ pub enum UnformattedElement {
 impl UnformattedElement {
     fn render(&self) -> String {
         match self {
+            Self::OpenBracket => "[".to_owned(),
+            Self::CloseBracket => "]".to_owned(),
+
             Self::Whitespace => " ".to_owned(),
             Self::Ampersand => "&amp;".to_owned(),
             Self::Apostrophe => "&apos;".to_owned(),

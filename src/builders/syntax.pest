@@ -31,6 +31,9 @@ integer = { ASCII_DIGIT+ }
 string = ${ "\"" ~ string_contents ~ "\"" }
 string_contents = @{ (!"\"" ~ ANY)* }
 
+open_bracket = { "\\text[" }
+close_bracket = { "\\text]" }
+
 amp = { "&" }
 apos = { "'" }
 ldquo = { "``" }
@@ -107,15 +110,18 @@ oneline = ${ text_element ~ (oneline_whitespace? ~ text_element)* }
 oneline_whitespace = { WHITE_SPACE+ }
 
 bare_element = _{
-  amp | apos | ldquo | rdquo | lsquo | rsquo | ellipsis | word
+  open_bracket | close_bracket
+  | amp | apos | ldquo | rdquo | lsquo | rsquo | ellipsis | word
 }
 bare_text = ${
   bare_element ~ (bare_whitespace? ~ bare_element)*
 }
 bare_whitespace = { WHITE_SPACE+ }
 
+// TODO: Make this use bare_element if possible.
 unformatted_element = _{
-  amp | apos | ldquo | rdquo | lsquo | rsquo | ellipsis | hyperlink | word
+  open_bracket | close_bracket
+  | amp | apos | ldquo | rdquo | lsquo | rsquo | ellipsis | hyperlink | word
 }
 hyperlink = ${
   "<" ~ WHITESPACE* ~ "a" ~ WHITESPACE+ ~ url ~ WHITESPACE* ~ ">"

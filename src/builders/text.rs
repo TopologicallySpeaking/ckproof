@@ -53,6 +53,9 @@ impl BareElement {
         match pair.as_rule() {
             Rule::bare_whitespace => Self::Whitespace,
 
+            Rule::open_bracket => todo!(),
+            Rule::close_bracket => todo!(),
+
             Rule::amp => Self::Ampersand,
             Rule::apos => Self::Apostrophe,
             Rule::ldquo => Self::LeftDoubleQuote,
@@ -120,6 +123,9 @@ impl HyperlinkBuilder {
 }
 
 enum UnformattedBuilderElement {
+    OpenBracket,
+    CloseBracket,
+
     Whitespace,
     Ampersand,
     Apostrophe,
@@ -137,6 +143,9 @@ impl UnformattedBuilderElement {
     fn from_pest(pair: Pair<Rule>, whitespace_rule: Rule) -> UnformattedBuilderElement {
         match pair.as_rule() {
             rule if rule == whitespace_rule => Self::Whitespace,
+
+            Rule::open_bracket => Self::OpenBracket,
+            Rule::close_bracket => Self::CloseBracket,
 
             Rule::amp => Self::Ampersand,
             Rule::apos => Self::Apostrophe,
@@ -162,6 +171,9 @@ impl UnformattedBuilderElement {
 
     fn finish(&self) -> UnformattedElement {
         match self {
+            Self::OpenBracket => UnformattedElement::OpenBracket,
+            Self::CloseBracket => UnformattedElement::CloseBracket,
+
             Self::Whitespace => UnformattedElement::Whitespace,
             Self::Ampersand => UnformattedElement::Ampersand,
             Self::Apostrophe => UnformattedElement::Apostrophe,
