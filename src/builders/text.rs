@@ -193,6 +193,12 @@ impl UnformattedBuilder {
         UnformattedBuilder { elements }
     }
 
+    fn verify_structure(&self, errors: &mut ParsingErrorContext) {
+        for element in &self.elements {
+            element.verify_structure(errors);
+        }
+    }
+
     fn finish(&self) -> Unformatted {
         let elements = self
             .elements
@@ -295,32 +301,46 @@ impl MlaContainerBuilder {
         assert!(!self.verified.get());
         let mut found_error = false;
 
-        if self.container_titles.len() > 1 {
-            todo!()
+        match self.container_titles.len() {
+            0 => {}
+            1 => self.container_titles[0].verify_structure(errors),
+            _ => todo!(),
         }
 
-        if self.other_contributors.len() > 1 {
-            todo!()
+        match self.other_contributors.len() {
+            0 => {}
+            1 => self.other_contributors[0].verify_structure(errors),
+            _ => todo!(),
         }
 
-        if self.versions.len() > 1 {
-            todo!()
+        match self.versions.len() {
+            0 => {}
+            1 => self.versions[0].verify_structure(errors),
+            _ => todo!(),
         }
 
-        if self.numbers.len() > 1 {
-            todo!()
+        match self.numbers.len() {
+            0 => {}
+            1 => self.numbers[0].verify_structure(errors),
+            _ => todo!(),
         }
 
-        if self.publishers.len() > 1 {
-            todo!()
+        match self.publishers.len() {
+            0 => {}
+            1 => self.publishers[0].verify_structure(errors),
+            _ => todo!(),
         }
 
-        if self.publication_dates.len() > 1 {
-            todo!()
+        match self.publication_dates.len() {
+            0 => {}
+            1 => self.publication_dates[0].verify_structure(errors),
+            _ => todo!(),
         }
 
-        if self.locations.len() > 1 {
-            todo!()
+        match self.locations.len() {
+            0 => {}
+            1 => self.locations[0].verify_structure(errors),
+            _ => todo!(),
         }
 
         self.verified.set(!found_error);
@@ -398,13 +418,15 @@ impl MlaBuilderEntries {
         assert!(!self.verified.get());
         let found_error = false;
 
-        if self.authors.len() > 1 {
-            todo!()
+        match self.authors.len() {
+            0 => {}
+            1 => self.authors[0].verify_structure(errors),
+            _ => todo!(),
         }
 
         match self.titles.len() {
             0 => todo!(),
-            1 => {}
+            1 => self.titles[0].verify_structure(errors),
             _ => todo!(),
         }
 
