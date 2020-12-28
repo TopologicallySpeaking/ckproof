@@ -547,6 +547,7 @@ pub enum MathBuilderElement {
     Operator(String),
     Symbol(String),
     Variable(String),
+    Number(String),
 }
 
 impl MathBuilderElement {
@@ -559,6 +560,7 @@ impl MathBuilderElement {
             }
             Rule::ident => Self::Symbol(map_ident(pair.as_str())),
             Rule::var => Self::Variable(map_ident(pair.into_inner().next().unwrap().as_str())),
+            Rule::integer => Self::Number(pair.as_str().to_owned()),
 
             _ => unreachable!(),
         }
@@ -571,6 +573,7 @@ impl MathBuilderElement {
             Self::Operator(op) => MathElement::Operator(op.clone()),
             Self::Symbol(s) => MathElement::Symbol(s.clone()),
             Self::Variable(v) => MathElement::Variable(v.clone()),
+            Self::Number(n) => MathElement::Number(n.clone()),
         }
     }
 }

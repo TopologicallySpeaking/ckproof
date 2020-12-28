@@ -266,6 +266,7 @@ pub enum MathElement {
     Operator(String),
     Symbol(String),
     Variable(String),
+    Number(String),
 }
 
 impl MathElement {
@@ -279,6 +280,7 @@ impl MathElement {
             Self::Operator(op) => format!("<mo>{}</mo>", op),
             Self::Symbol(s) => format!("<mi>{}</mi>", s),
             Self::Variable(v) => format!("<mo class=\"var\">&apos;</mo><mi>{}</mi>", v),
+            Self::Number(n) => format!("<mn>{}</mn>", n),
         }
     }
 }

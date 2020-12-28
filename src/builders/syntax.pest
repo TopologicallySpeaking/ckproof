@@ -26,7 +26,7 @@ url_valid_char = {
   | "@" | "!" | "$" | "&" | "'" | "(" | ")" | "*" | "+" | "," | ";" | "="
 }
 
-integer = { ASCII_DIGIT+ }
+integer = @{ ASCII_DIGIT+ }
 
 string = ${ "\"" ~ string_contents ~ "\"" }
 string_contents = @{ (!"\"" ~ ANY)* }
@@ -54,7 +54,7 @@ inline_math = _{ "\\(" ~ math_row ~ "\\)" }
 display_math = { "\\[" ~ math_row ~ display_math_end }
 display_math_end = ${ "\\]" ~ math_punct }
 math_row = !{ math_item* }
-math_item = _{ math_fenced | display_operator | var | ident }
+math_item = _{ math_fenced | display_operator | var | ident | integer }
 math_fenced = _{ "(" ~ math_row ~ ")" }
 math_punct = @{ PUNCTUATION* }
 
