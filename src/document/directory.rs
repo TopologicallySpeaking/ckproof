@@ -20,11 +20,11 @@ use std::ops::Index;
 
 use crate::deduction::directory::CheckableDirectory;
 
-use crate::rendered::BlockRendered;
+use crate::rendered::{BlockRendered, MlaRendered};
 
 use super::deduction::{AxiomBlock, ProofBlock, ProofBlockStep, TheoremBlock};
 use super::language::{SymbolBlock, SystemBlock, TypeBlock};
-use super::text::{HeadingBlock, QuoteBlock, TableBlock, TextBlock, TodoBlock};
+use super::text::{HeadingBlock, Mla, QuoteBlock, TableBlock, TextBlock, TodoBlock};
 
 #[derive(Clone, Copy, Debug)]
 pub struct SystemBlockRef(usize);
@@ -164,6 +164,28 @@ pub struct TextBlockRef(usize);
 impl TextBlockRef {
     pub fn new(i: usize) -> TextBlockRef {
         TextBlockRef(i)
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct BibliographyRef(usize);
+
+impl BibliographyRef {
+    pub fn new(i: usize) -> BibliographyRef {
+        BibliographyRef(i)
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct LocalBibliographyRef(usize);
+
+impl LocalBibliographyRef {
+    pub fn new(i: usize) -> LocalBibliographyRef {
+        LocalBibliographyRef(i)
+    }
+
+    pub fn get(&self) -> usize {
+        self.0
     }
 }
 
@@ -404,6 +426,8 @@ pub struct BlockDirectory {
     headings: Vec<HeadingBlock>,
     todos: Vec<TodoBlock>,
     texts: Vec<TextBlock>,
+
+    bibliography: Option<Bibliography>,
 }
 
 impl BlockDirectory {
@@ -419,6 +443,7 @@ impl BlockDirectory {
         headings: Vec<HeadingBlock>,
         todos: Vec<TodoBlock>,
         texts: Vec<TextBlock>,
+        bibliography: Option<Bibliography>,
     ) -> BlockDirectory {
         BlockDirectory {
             systems,
@@ -433,6 +458,8 @@ impl BlockDirectory {
             headings,
             todos,
             texts,
+
+            bibliography,
         }
     }
 
@@ -565,5 +592,48 @@ impl Index<TextBlockRef> for BlockDirectory {
 
     fn index(&self, text_ref: TextBlockRef) -> &Self::Output {
         &self.texts[text_ref.0]
+    }
+}
+
+impl Index<BibliographyRef> for BlockDirectory {
+    type Output = Mla;
+
+    fn index(&self, bib_ref: BibliographyRef) -> &Self::Output {
+        &self.bibliography.as_ref().unwrap()[bib_ref]
+    }
+}
+
+pub struct Bibliography {
+    entries: Vec<Mla>,
+}
+
+impl Bibliography {
+    pub fn new(entries: Vec<Mla>) -> Bibliography {
+        Bibliography { entries }
+    }
+}
+
+impl Index<BibliographyRef> for Bibliography {
+    type Output = Mla;
+
+    fn index(&self, bib_ref: BibliographyRef) -> &Self::Output {
+        &self.entries[bib_ref.0]
+    }
+}
+
+pub struct LocalBibliography {
+    entries: Vec<BibliographyRef>,
+}
+
+impl LocalBibliography {
+    pub fn new(entries: Vec<BibliographyRef>) -> LocalBibliography {
+        LocalBibliography { entries }
+    }
+
+    pub fn render(&self, directory: &BlockDirectory) -> Vec<MlaRendered> {
+        self.entries
+            .iter()
+            .map(|bib_ref| directory[*bib_ref].render())
+            .collect()
     }
 }

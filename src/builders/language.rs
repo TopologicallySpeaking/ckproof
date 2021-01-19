@@ -27,8 +27,9 @@ use crate::document::language::{
 };
 
 use super::directory::{
-    BuilderDirectory, LocalIndex, ReadSignature, Readable, ReadableKind, SymbolBuilderRef,
-    SystemBuilderRef, TypeBuilderRef, VariableBuilderRef,
+    BibliographyBuilderRef, BuilderDirectory, LocalBibliographyBuilderIndex, LocalIndex,
+    ReadSignature, Readable, ReadableKind, SymbolBuilderRef, SystemBuilderRef, TypeBuilderRef,
+    VariableBuilderRef,
 };
 use super::errors::{ParsingError, ParsingErrorContext};
 use super::text::{ParagraphBuilder, TextBuilder};
@@ -190,6 +191,25 @@ impl SystemBuilder {
     pub fn verify_structure(&self, directory: &BuilderDirectory, errors: &mut ParsingErrorContext) {
         let self_ref = self.self_ref.unwrap();
         self.entries.verify_structure(self_ref, directory, errors)
+    }
+
+    pub fn bib_refs(&self) -> Box<dyn Iterator<Item = BibliographyBuilderRef> + '_> {
+        let tagline_refs = self.entries.tagline().bib_refs();
+        let description_refs = self
+            .entries
+            .description()
+            .iter()
+            .flat_map(TextBuilder::bib_refs);
+
+        Box::new(tagline_refs.chain(description_refs))
+    }
+
+    pub fn set_local_bib_refs(&self, index: &LocalBibliographyBuilderIndex) {
+        self.entries.tagline().set_local_bib_refs(index);
+
+        for text in self.entries.description() {
+            text.set_local_bib_refs(index);
+        }
     }
 
     pub fn finish(&self) -> SystemBlock {
@@ -384,6 +404,25 @@ impl TypeBuilder {
         }
 
         self.entries.verify_structure(self_ref, directory, errors);
+    }
+
+    pub fn bib_refs(&self) -> Box<dyn Iterator<Item = BibliographyBuilderRef> + '_> {
+        let tagline_refs = self.entries.tagline().bib_refs();
+        let description_refs = self
+            .entries
+            .description()
+            .iter()
+            .flat_map(TextBuilder::bib_refs);
+
+        Box::new(tagline_refs.chain(description_refs))
+    }
+
+    pub fn set_local_bib_refs(&self, index: &LocalBibliographyBuilderIndex) {
+        self.entries.tagline().set_local_bib_refs(index);
+
+        for text in self.entries.description() {
+            text.set_local_bib_refs(index)
+        }
     }
 
     pub fn finish(&self) -> TypeBlock {
@@ -920,6 +959,25 @@ impl SymbolBuilder {
 
         self.entries
             .verify_structure(&self.system_id, self_ref, self.serial, directory, errors);
+    }
+
+    pub fn bib_refs(&self) -> Box<dyn Iterator<Item = BibliographyBuilderRef> + '_> {
+        let tagline = self.entries.tagline().bib_refs();
+        let description = self
+            .entries
+            .description()
+            .iter()
+            .flat_map(TextBuilder::bib_refs);
+
+        Box::new(tagline.chain(description))
+    }
+
+    pub fn set_local_bib_refs(&self, index: &LocalBibliographyBuilderIndex) {
+        self.entries.tagline().set_local_bib_refs(index);
+
+        for text in self.entries.description() {
+            text.set_local_bib_refs(index)
+        }
     }
 
     pub fn finish(&self) -> SymbolBlock {

@@ -31,6 +31,8 @@ integer = @{ ASCII_DIGIT+ }
 string = ${ "\"" ~ string_contents ~ "\"" }
 string_contents = @{ (!"\"" ~ ANY)* }
 
+citation = !{ "<" ~ "cite" ~ ident ~ "/" ~ ">" }
+
 open_bracket = { "\\text[" }
 close_bracket = { "\\text]" }
 
@@ -78,7 +80,7 @@ paragraph = ${
   text_element ~ (text_whitespace? ~ text_element)* ~ text_linebreak?
 }
 text_element = _{
-  text_reference | inline_math
+  text_reference | inline_math | citation
   | unicorn_vomit_begin | unicorn_vomit_end
   | em_begin | em_end
   | unformatted_element
@@ -121,7 +123,8 @@ bare_whitespace = { WHITE_SPACE+ }
 // TODO: Make this use bare_element if possible.
 unformatted_element = _{
   open_bracket | close_bracket
-  | amp | apos | ldquo | rdquo | lsquo | rsquo | ellipsis | hyperlink | word
+  | amp | apos | ldquo | rdquo | lsquo | rsquo | ellipsis
+  | hyperlink | word
 }
 hyperlink = ${
   "<" ~ WHITESPACE* ~ "a" ~ WHITESPACE+ ~ url ~ WHITESPACE* ~ ">"
@@ -257,13 +260,13 @@ table_block = {
 }
 
 quote_original = {
-  "<" ~ "original" ~ ">"
+  "<" ~ "original" ~ ident ~ ">"
     ~ unformatted
   ~ "<" ~ "/" ~ "original" ~ ">"
 }
 
 quote_value = {
-  "<" ~ "value" ~ ">"
+  "<" ~ "value" ~ ident ~ ">"
     ~ unformatted
   ~ "<" ~ "/" ~ "value" ~ ">"
 }
@@ -342,7 +345,8 @@ text_block = { mla | sublist | display_math | paragraph }
 document = { SOI ~ document_block* ~ EOI }
 document_block = _{
   system_block | type_block | symbol_block | axiom_block | theorem_block
-  | proof_block | table_block | quote_block | heading_block | todo_block | text_block
+  | proof_block | table_block | quote_block | heading_block | todo_block
+  | text_block
 }
 
 manifest = { SOI ~ manifest_book* ~ EOI }
@@ -359,5 +363,12 @@ manifest_chapter = {
   ~ "}"
 }
 manifest_page = { ident ~ ":" ~ string ~ "," }
+
+bib = { SOI ~ bib_entry* ~ EOI }
+bib_entry = {
+  ident ~ "{"
+    ~ mla_entry*
+  ~ "}"
+}
 
 WHITESPACE = _{ WHITE_SPACE }

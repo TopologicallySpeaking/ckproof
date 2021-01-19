@@ -23,8 +23,10 @@ use pest::Parser;
 
 use crate::document::structure::{Book, Chapter, Document, Page};
 
-use super::directory::{BlockBuilder, BuilderDirectory};
-use super::errors::{BuilderCreationError, ParsingErrorContext};
+use super::directory::{
+    BibliographyBuilder, BlockBuilder, BuilderDirectory, LocalBibliographyBuilder,
+};
+use super::errors::{BuilderCreationError, ParsingError, ParsingErrorContext};
 use super::text::ParagraphBuilder;
 use super::{BlockCounter, DocumentParser, Rule};
 
@@ -35,6 +37,8 @@ struct PageBuilder {
 
     page_path: PathBuf,
     blocks: Option<Vec<BlockBuilder>>,
+
+    local_bibliography: Option<LocalBibliographyBuilder>,
 }
 
 impl PageBuilder {
@@ -59,6 +63,8 @@ impl PageBuilder {
 
             page_path,
             blocks: None,
+
+            local_bibliography: None,
         }
     }
 
@@ -102,6 +108,15 @@ impl PageBuilder {
         self.blocks = Some(blocks);
     }
 
+    fn build_local_bib(&mut self, directory: &BuilderDirectory) {
+        assert!(self.local_bibliography.is_none());
+
+        self.local_bibliography = Some(LocalBibliographyBuilder::new(
+            self.blocks.as_ref().unwrap(),
+            directory,
+        ));
+    }
+
     fn finish(&self) -> Page {
         let id = self.id.clone();
         let name = self.name.clone();
@@ -113,8 +128,12 @@ impl PageBuilder {
             .iter()
             .map(BlockBuilder::finish)
             .collect();
+        let local_bibliography = self
+            .local_bibliography
+            .as_ref()
+            .map(LocalBibliographyBuilder::finish);
 
-        Page::new(id, name, href, blocks)
+        Page::new(id, name, href, blocks, local_bibliography)
     }
 }
 
@@ -167,6 +186,12 @@ impl ChapterBuilder {
 
     fn verify_structure(&self, directory: &BuilderDirectory, errors: &mut ParsingErrorContext) {
         self.tagline.verify_structure(directory, errors);
+    }
+
+    fn build_local_bib(&mut self, directory: &BuilderDirectory) {
+        for page in &mut self.pages {
+            page.build_local_bib(directory);
+        }
     }
 
     fn finish(&self) -> Chapter {
@@ -235,6 +260,14 @@ impl BookBuilder {
         }
     }
 
+    fn build_local_bib(&mut self, directory: &BuilderDirectory) {
+        // TODO: Figure out what to do about the tagline.
+
+        for chapter in &mut self.chapters {
+            chapter.build_local_bib(directory);
+        }
+    }
+
     fn finish(&self) -> Book {
         let id = self.id.clone();
         let name = self.name.clone();
@@ -247,6 +280,8 @@ impl BookBuilder {
 }
 
 pub struct DocumentBuilder {
+    library_path: PathBuf,
+
     books: Vec<BookBuilder>,
 
     directory: Option<BuilderDirectory>,
@@ -274,10 +309,19 @@ impl DocumentBuilder {
             .collect();
 
         Ok(DocumentBuilder {
+            library_path: library_path.as_ref().to_owned(),
+
             books,
 
             directory: None,
         })
+    }
+
+    fn load_bib(&mut self, bib_path: &Path) -> Result<BibliographyBuilder, ParsingError> {
+        let contents = std::fs::read_to_string(bib_path)?;
+        let pair = DocumentParser::parse(Rule::bib, &contents)?.next().unwrap();
+
+        Ok(BibliographyBuilder::from_pest(pair))
     }
 
     fn load_documents(
@@ -286,15 +330,35 @@ impl DocumentBuilder {
         errors: &mut ParsingErrorContext,
         counter: &mut BlockCounter,
     ) {
+        let bib_path: PathBuf = [self.library_path.as_ref(), Path::new("bib.math")]
+            .iter()
+            .collect();
+        if bib_path.exists() {
+            match self.load_bib(&bib_path) {
+                Ok(bib) => directory.set_bib(bib),
+                Err(_) => todo!(),
+            }
+        }
+
         for book in &mut self.books {
             book.load_documents(directory, errors, counter);
             counter.next_book();
         }
     }
 
-    fn verify_structure(&self, directory: &BuilderDirectory, errors: &mut ParsingErrorContext) {
+    fn verify_structure(&self, errors: &mut ParsingErrorContext) {
+        let directory = self.directory.as_ref().unwrap();
+
         for book in &self.books {
             book.verify_structure(directory, errors);
+        }
+    }
+
+    fn build_local_bib(&mut self) {
+        let directory = self.directory.as_ref().unwrap();
+
+        for book in &mut self.books {
+            book.build_local_bib(directory);
         }
     }
 
@@ -322,12 +386,10 @@ impl DocumentBuilder {
             return Err(errors);
         }
 
-        // If we didn't explicitly drop the mutable reference and replace it with a shared one,
-        // then the borrow checker will complain. We can bring back the mutable reference when we
-        // need it.
-        let directory = self.directory.as_ref().unwrap();
+        // If we didn't explicitly drop the mutable reference, the borrow checker will complain.
+        let directory = ();
 
-        self.verify_structure(directory, &mut errors);
+        self.verify_structure(&mut errors);
         if errors.error_found() {
             return Err(errors);
         }
@@ -338,6 +400,12 @@ impl DocumentBuilder {
         if errors.error_found() {
             return Err(errors);
         }
+
+        // If we didn't explicitly drop the mutable reference, the borrow checker will complain.
+        let directory = ();
+        self.build_local_bib();
+
+        let directory = self.directory.as_mut().unwrap();
 
         directory.build_operators(&mut errors);
         if errors.error_found() {

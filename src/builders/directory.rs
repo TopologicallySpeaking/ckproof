@@ -16,23 +16,27 @@
 // License along with ckproof.  If not, see
 // <https://www.gnu.org/licenses/>.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ops::Index;
 
 use pest::iterators::Pair;
 
 use crate::document::directory::{
-    AxiomBlockRef, Block, BlockDirectory, HeadingBlockRef, ProofBlockRef, ProofBlockStepRef,
-    QuoteBlockRef, SymbolBlockRef, SystemBlockRef, TableBlockRef, TextBlockRef, TheoremBlockRef,
-    TodoBlockRef, TypeBlockRef, VariableBlockRef,
+    AxiomBlockRef, Bibliography, BibliographyRef, Block, BlockDirectory, HeadingBlockRef,
+    LocalBibliography, LocalBibliographyRef, ProofBlockRef, ProofBlockStepRef, QuoteBlockRef,
+    SymbolBlockRef, SystemBlockRef, TableBlockRef, TextBlockRef, TheoremBlockRef, TodoBlockRef,
+    TypeBlockRef, VariableBlockRef,
 };
+use crate::document::text::Mla;
 
 use super::deduction::{AxiomBuilder, ProofBuilder, TheoremBuilder};
 use super::errors::{ParsingError, ParsingErrorContext};
 use super::language::{
     ReadBuilder, SymbolBuilder, SystemBuilder, TypeBuilder, TypeSignatureBuilder, VariableBuilder,
 };
-use super::text::{HeadingBuilder, QuoteBuilder, TableBuilder, TextBlockBuilder, TodoBuilder};
+use super::text::{
+    HeadingBuilder, MlaBuilderEntries, QuoteBuilder, TableBuilder, TextBlockBuilder, TodoBuilder,
+};
 use super::{BlockLocation, Rule};
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -189,6 +193,24 @@ impl TextBlockBuilderRef {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct BibliographyBuilderRef(usize);
+
+impl BibliographyBuilderRef {
+    pub fn finish(&self) -> BibliographyRef {
+        BibliographyRef::new(self.0)
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct LocalBibliographyBuilderRef(usize);
+
+impl LocalBibliographyBuilderRef {
+    pub fn finish(&self) -> LocalBibliographyRef {
+        LocalBibliographyRef::new(self.0)
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub enum ReadableKind {
     Symbol(SymbolBuilderRef),
@@ -272,6 +294,7 @@ impl SystemBuilderChild {
     }
 }
 
+#[derive(Debug)]
 pub enum BlockBuilder {
     System(SystemBuilderRef),
     Type(TypeBuilderRef),
@@ -323,6 +346,47 @@ impl BlockBuilder {
             Rule::text_block => Self::Text(directory.add_text(TextBlockBuilder::from_pest(pair))),
 
             _ => unreachable!(),
+        }
+    }
+
+    fn bib_refs<'a>(
+        &self,
+        directory: &'a BuilderDirectory,
+    ) -> Box<dyn Iterator<Item = BibliographyBuilderRef> + 'a> {
+        match self {
+            Self::System(system_ref) => directory[*system_ref].bib_refs(),
+            Self::Type(type_ref) => directory[*type_ref].bib_refs(),
+            Self::Symbol(symbol_ref) => directory[*symbol_ref].bib_refs(),
+            Self::Axiom(axiom_ref) => directory[*axiom_ref].bib_refs(),
+            Self::Theorem(theorem_ref) => directory[*theorem_ref].bib_refs(),
+            Self::Proof(proof_ref) => directory[*proof_ref].bib_refs(),
+
+            Self::Table(table_ref) => directory[*table_ref].bib_refs(),
+            Self::Heading(heading_ref) => directory[*heading_ref].bib_refs(),
+            Self::Quote(quote_ref) => directory[*quote_ref].bib_refs(),
+            Self::Todo(todo_ref) => directory[*todo_ref].bib_refs(),
+            Self::Text(text_ref) => directory[*text_ref].bib_refs(),
+        }
+    }
+
+    fn set_local_bib_refs(
+        &self,
+        directory: &BuilderDirectory,
+        index: &LocalBibliographyBuilderIndex,
+    ) {
+        match self {
+            Self::System(system_ref) => directory[*system_ref].set_local_bib_refs(index),
+            Self::Type(type_ref) => directory[*type_ref].set_local_bib_refs(index),
+            Self::Symbol(symbol_ref) => directory[*symbol_ref].set_local_bib_refs(index),
+            Self::Axiom(axiom_ref) => directory[*axiom_ref].set_local_bib_refs(index),
+            Self::Theorem(theorem_ref) => directory[*theorem_ref].set_local_bib_refs(index),
+            Self::Proof(proof_ref) => directory[*proof_ref].set_local_bib_refs(index),
+
+            Self::Table(table_ref) => directory[*table_ref].set_local_bib_refs(index),
+            Self::Heading(heading_ref) => directory[*heading_ref].set_local_bib_refs(index),
+            Self::Quote(quote_ref) => directory[*quote_ref].set_local_bib_refs(index),
+            Self::Todo(todo_ref) => directory[*todo_ref].set_local_bib_refs(index),
+            Self::Text(text_ref) => directory[*text_ref].set_local_bib_refs(index),
         }
     }
 
@@ -550,6 +614,7 @@ pub struct BuilderDirectory {
     todos: Vec<TodoBuilder>,
     texts: Vec<TextBlockBuilder>,
 
+    bibliography: Option<BibliographyBuilder>,
     index: Option<BuilderIndex>,
 }
 
@@ -569,6 +634,7 @@ impl BuilderDirectory {
             todos: Vec::new(),
             texts: Vec::new(),
 
+            bibliography: None,
             index: None,
         }
     }
@@ -663,6 +729,11 @@ impl BuilderDirectory {
         TextBlockBuilderRef(self.texts.len() - 1)
     }
 
+    pub fn set_bib(&mut self, bib: BibliographyBuilder) {
+        assert!(self.bibliography.is_none());
+        self.bibliography = Some(bib);
+    }
+
     pub fn get_local(&self, system_id: &str) -> LocalIndex {
         let index = self.index.as_ref().unwrap();
         let parent_system = index.systems.get(system_id).unwrap();
@@ -733,6 +804,10 @@ impl BuilderDirectory {
         }
 
         self.index = Some(index);
+
+        self.bibliography
+            .as_mut()
+            .map(|bib| bib.build_index(errors));
     }
 
     pub fn verify_structure(&self, errors: &mut ParsingErrorContext) {
@@ -764,6 +839,10 @@ impl BuilderDirectory {
             table.verify_structure(&self, errors);
         }
 
+        for quote in &self.quotes {
+            quote.verify_structure(&self, errors);
+        }
+
         for todo in &self.todos {
             todo.verify_structure(&self, errors);
         }
@@ -771,6 +850,10 @@ impl BuilderDirectory {
         for text in &self.texts {
             text.verify_structure(&self, errors);
         }
+
+        self.bibliography
+            .as_ref()
+            .map(|bib| bib.verify_structure(errors));
     }
 
     pub fn build_operators(&mut self, errors: &mut ParsingErrorContext) {
@@ -817,9 +900,21 @@ impl BuilderDirectory {
         let todos = self.todos.iter().map(TodoBuilder::finish).collect();
         let texts = self.texts.iter().map(TextBlockBuilder::finish).collect();
 
+        let bibliography = self.bibliography.as_ref().map(BibliographyBuilder::finish);
+
         BlockDirectory::new(
-            systems, types, symbols, axioms, theorems, proofs, tables, quotes, headings, todos,
+            systems,
+            types,
+            symbols,
+            axioms,
+            theorems,
+            proofs,
+            tables,
+            quotes,
+            headings,
+            todos,
             texts,
+            bibliography,
         )
     }
 
@@ -836,6 +931,20 @@ impl BuilderDirectory {
             .as_ref()
             .unwrap()
             .search_system_child(system_id, child_id)
+    }
+
+    pub fn search_bib_key(&self, bib_key: &str) -> Option<BibliographyBuilderRef> {
+        self.bibliography
+            .as_ref()
+            .and_then(|bib| bib.search_key(bib_key))
+    }
+}
+
+impl Index<SystemBuilderRef> for BuilderDirectory {
+    type Output = SystemBuilder;
+
+    fn index(&self, system_ref: SystemBuilderRef) -> &Self::Output {
+        &self.systems[system_ref.0]
     }
 }
 
@@ -855,10 +964,247 @@ impl Index<SymbolBuilderRef> for BuilderDirectory {
     }
 }
 
+impl Index<AxiomBuilderRef> for BuilderDirectory {
+    type Output = AxiomBuilder;
+
+    fn index(&self, axiom_ref: AxiomBuilderRef) -> &Self::Output {
+        &self.axioms[axiom_ref.0]
+    }
+}
+
 impl Index<TheoremBuilderRef> for BuilderDirectory {
     type Output = TheoremBuilder;
 
     fn index(&self, theorem_ref: TheoremBuilderRef) -> &Self::Output {
         &self.theorems[theorem_ref.0]
+    }
+}
+
+impl Index<ProofBuilderRef> for BuilderDirectory {
+    type Output = ProofBuilder;
+
+    fn index(&self, proof_ref: ProofBuilderRef) -> &Self::Output {
+        &self.proofs[proof_ref.0]
+    }
+}
+
+impl Index<TableBuilderRef> for BuilderDirectory {
+    type Output = TableBuilder;
+
+    fn index(&self, table_ref: TableBuilderRef) -> &Self::Output {
+        &self.tables[table_ref.0]
+    }
+}
+
+impl Index<QuoteBuilderRef> for BuilderDirectory {
+    type Output = QuoteBuilder;
+
+    fn index(&self, quote_ref: QuoteBuilderRef) -> &Self::Output {
+        &self.quotes[quote_ref.0]
+    }
+}
+
+impl Index<HeadingBuilderRef> for BuilderDirectory {
+    type Output = HeadingBuilder;
+
+    fn index(&self, heading_ref: HeadingBuilderRef) -> &Self::Output {
+        &self.headings[heading_ref.0]
+    }
+}
+
+impl Index<TodoBuilderRef> for BuilderDirectory {
+    type Output = TodoBuilder;
+
+    fn index(&self, todo_ref: TodoBuilderRef) -> &Self::Output {
+        &self.todos[todo_ref.0]
+    }
+}
+
+impl Index<TextBlockBuilderRef> for BuilderDirectory {
+    type Output = TextBlockBuilder;
+
+    fn index(&self, text_ref: TextBlockBuilderRef) -> &Self::Output {
+        &self.texts[text_ref.0]
+    }
+}
+
+pub struct BibliographyBuilderIndex {
+    entries: HashMap<String, BibliographyBuilderRef>,
+}
+
+impl BibliographyBuilderIndex {
+    fn new() -> BibliographyBuilderIndex {
+        BibliographyBuilderIndex {
+            entries: HashMap::new(),
+        }
+    }
+
+    fn add_entry(
+        &mut self,
+        key: &str,
+        bib_ref: BibliographyBuilderRef,
+        errors: &mut ParsingErrorContext,
+    ) {
+        if let Some(old_ref) = self.entries.get(key) {
+            todo!()
+        }
+
+        self.entries.insert(key.to_owned(), bib_ref);
+    }
+
+    fn search_key(&self, key: &str) -> Option<BibliographyBuilderRef> {
+        self.entries.get(key).copied()
+    }
+}
+
+struct BibliographyBuilderEntry {
+    key: String,
+    mla: MlaBuilderEntries,
+}
+
+impl BibliographyBuilderEntry {
+    fn from_pest(pair: Pair<Rule>) -> BibliographyBuilderEntry {
+        assert_eq!(pair.as_rule(), Rule::bib_entry);
+
+        let mut inner = pair.into_inner();
+        let key = inner.next().unwrap().as_str().to_owned();
+        let mla = MlaBuilderEntries::from_pest(inner);
+
+        BibliographyBuilderEntry { key, mla }
+    }
+
+    fn verify_structure(&self, errors: &mut ParsingErrorContext) {
+        self.mla.verify_structure(errors);
+    }
+
+    fn finish(&self) -> Mla {
+        self.mla.finish()
+    }
+}
+
+pub struct BibliographyBuilder {
+    entries: Vec<BibliographyBuilderEntry>,
+
+    index: Option<BibliographyBuilderIndex>,
+}
+
+impl BibliographyBuilder {
+    pub fn from_pest(pair: Pair<Rule>) -> BibliographyBuilder {
+        assert_eq!(pair.as_rule(), Rule::bib);
+
+        let entries = pair
+            .into_inner()
+            .filter_map(|pair| match pair.as_rule() {
+                Rule::bib_entry => Some(BibliographyBuilderEntry::from_pest(pair)),
+                Rule::EOI => None,
+
+                _ => unreachable!(),
+            })
+            .collect();
+
+        BibliographyBuilder {
+            entries,
+
+            index: None,
+        }
+    }
+
+    fn build_index(&mut self, errors: &mut ParsingErrorContext) {
+        assert!(self.index.is_none());
+        let mut index = BibliographyBuilderIndex::new();
+
+        for (i, entry) in self.entries.iter().enumerate() {
+            let key = &entry.key;
+
+            index.add_entry(key, BibliographyBuilderRef(i), errors);
+        }
+
+        self.index = Some(index)
+    }
+
+    fn verify_structure(&self, errors: &mut ParsingErrorContext) {
+        for entry in &self.entries {
+            entry.verify_structure(errors);
+        }
+    }
+
+    pub fn search_key(&self, key: &str) -> Option<BibliographyBuilderRef> {
+        self.index.as_ref().unwrap().search_key(key)
+    }
+
+    pub fn finish(&self) -> Bibliography {
+        let entries = self
+            .entries
+            .iter()
+            .map(BibliographyBuilderEntry::finish)
+            .collect();
+
+        Bibliography::new(entries)
+    }
+}
+
+pub struct LocalBibliographyBuilderIndex {
+    map: HashMap<BibliographyBuilderRef, LocalBibliographyBuilderRef>,
+}
+
+impl LocalBibliographyBuilderIndex {
+    fn new(entries: &[BibliographyBuilderRef]) -> LocalBibliographyBuilderIndex {
+        let map = entries
+            .iter()
+            .enumerate()
+            .map(|(i, entry)| (*entry, LocalBibliographyBuilderRef(i)))
+            .collect();
+
+        LocalBibliographyBuilderIndex { map }
+    }
+}
+
+impl Index<BibliographyBuilderRef> for LocalBibliographyBuilderIndex {
+    type Output = LocalBibliographyBuilderRef;
+
+    fn index(&self, bib_ref: BibliographyBuilderRef) -> &Self::Output {
+        &self.map[&bib_ref]
+    }
+}
+
+pub struct LocalBibliographyBuilder {
+    entries: Vec<BibliographyBuilderRef>,
+}
+
+impl LocalBibliographyBuilder {
+    pub fn new(
+        page_blocks: &[BlockBuilder],
+        directory: &BuilderDirectory,
+    ) -> LocalBibliographyBuilder {
+        let mut seen = HashSet::new();
+        let entries: Vec<_> = page_blocks
+            .iter()
+            .flat_map(|block| block.bib_refs(directory))
+            .filter_map(|bib_ref| {
+                if seen.contains(&bib_ref) {
+                    None
+                } else {
+                    seen.insert(bib_ref);
+                    Some(bib_ref)
+                }
+            })
+            .collect();
+
+        let index = LocalBibliographyBuilderIndex::new(&entries);
+        for block in page_blocks {
+            block.set_local_bib_refs(directory, &index);
+        }
+
+        LocalBibliographyBuilder { entries }
+    }
+
+    pub fn finish(&self) -> LocalBibliography {
+        let entries = self
+            .entries
+            .iter()
+            .map(BibliographyBuilderRef::finish)
+            .collect();
+
+        LocalBibliography::new(entries)
     }
 }

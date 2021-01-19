@@ -20,10 +20,11 @@ use url::Url;
 
 use crate::rendered::{
     DisplayMathRendered, HeadingRendered, MlaContainerRendered, MlaRendered, QuoteRendered,
-    SublistItemRendered, TableRendered, TableRenderedRow, TextRendered, TodoRendered,
+    QuoteValueRendered, SublistItemRendered, TableRendered, TableRenderedRow, TextRendered,
+    TodoRendered,
 };
 
-use super::directory::{Block, BlockDirectory};
+use super::directory::{Block, BlockDirectory, LocalBibliographyRef};
 
 #[derive(Clone)]
 pub enum BareElement {
@@ -66,6 +67,23 @@ impl BareText {
 
     fn render(&self) -> String {
         self.elements.iter().map(BareElement::render).collect()
+    }
+}
+
+pub struct Citation {
+    local_bib_ref: LocalBibliographyRef,
+}
+
+impl Citation {
+    pub fn new(local_bib_ref: LocalBibliographyRef) -> Citation {
+        Citation { local_bib_ref }
+    }
+
+    fn render(&self) -> String {
+        format!(
+            "<a href=\"#ref{0}\" class=\"reference\">[{0}]</a>",
+            self.local_bib_ref.get() + 1
+        )
     }
 }
 
@@ -216,7 +234,7 @@ impl Mla {
         }
     }
 
-    fn render(&self) -> MlaRendered {
+    pub fn render(&self) -> MlaRendered {
         let author = self.author.as_ref().map(Unformatted::render);
         let title = self.title.render();
         let containers = self.containers.iter().map(MlaContainer::render).collect();
@@ -324,6 +342,7 @@ impl DisplayMathBlock {
 pub enum ParagraphElement {
     Reference(Block),
     InlineMath(MathBlock),
+    Citation(Citation),
 
     UnicornVomitBegin,
     UnicornVomitEnd,
@@ -338,6 +357,7 @@ impl ParagraphElement {
         match self {
             Self::Reference(block) => block.render_ref(directory),
             Self::InlineMath(math) => format!("<math>{}</math>", math.render()),
+            Self::Citation(citation) => citation.render(),
 
             Self::UnicornVomitBegin => "<span class=\"unicorn\">\u{1F661}".to_owned(),
             Self::UnicornVomitEnd => "\u{1F662}</span>".to_owned(),
@@ -453,18 +473,41 @@ impl TableBlock {
     }
 }
 
+pub struct QuoteValue {
+    quote: Unformatted,
+
+    local_bib_ref: LocalBibliographyRef,
+}
+
+impl QuoteValue {
+    pub fn new(quote: Unformatted, local_bib_ref: LocalBibliographyRef) -> QuoteValue {
+        QuoteValue {
+            quote,
+
+            local_bib_ref,
+        }
+    }
+
+    fn render(&self) -> QuoteValueRendered {
+        let quote = self.quote.render();
+        let local_bib_ref = self.local_bib_ref.get();
+
+        QuoteValueRendered::new(quote, local_bib_ref)
+    }
+}
+
 pub struct QuoteBlock {
-    original: Option<Unformatted>,
-    value: Unformatted,
+    original: Option<QuoteValue>,
+    value: QuoteValue,
 }
 
 impl QuoteBlock {
-    pub fn new(original: Option<Unformatted>, value: Unformatted) -> QuoteBlock {
+    pub fn new(original: Option<QuoteValue>, value: QuoteValue) -> QuoteBlock {
         QuoteBlock { original, value }
     }
 
     pub fn render(&self) -> QuoteRendered {
-        let original = self.original.as_ref().map(Unformatted::render);
+        let original = self.original.as_ref().map(QuoteValue::render);
         let value = self.value.render();
 
         QuoteRendered::new(original, value)

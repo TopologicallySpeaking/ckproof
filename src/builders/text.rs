@@ -25,14 +25,16 @@ use crate::map_ident;
 
 use crate::document::directory::Block;
 use crate::document::text::{
-    BareElement, BareText, DisplayMathBlock, HeadingBlock, HeadingLevel, Hyperlink, MathBlock,
-    MathElement, Mla, MlaContainer, Paragraph, ParagraphElement, QuoteBlock, SubHeadingBlock,
-    Sublist, SublistItem, TableBlock, TableBlockRow, Text, TextBlock, TodoBlock, Unformatted,
-    UnformattedElement,
+    BareElement, BareText, Citation, DisplayMathBlock, HeadingBlock, HeadingLevel, Hyperlink,
+    MathBlock, MathElement, Mla, MlaContainer, Paragraph, ParagraphElement, QuoteBlock, QuoteValue,
+    SubHeadingBlock, Sublist, SublistItem, TableBlock, TableBlockRow, Text, TextBlock, TodoBlock,
+    Unformatted, UnformattedElement,
 };
 
 use super::directory::{
-    BuilderDirectory, ProofBuilderStepRef, SystemBuilderChild, SystemBuilderRef, TagIndex,
+    BibliographyBuilderRef, BuilderDirectory, LocalBibliographyBuilderIndex,
+    LocalBibliographyBuilderRef, ProofBuilderStepRef, SystemBuilderChild, SystemBuilderRef,
+    TagIndex,
 };
 use super::errors::ParsingErrorContext;
 use super::Rule;
@@ -77,6 +79,54 @@ impl BareText {
         let elements = pair.into_inner().map(BareElement::from_pest).collect();
 
         BareText::new(elements)
+    }
+}
+
+struct CitationBuilder {
+    bib_key: String,
+
+    bib_ref: Cell<Option<BibliographyBuilderRef>>,
+    local_bib_ref: Cell<Option<LocalBibliographyBuilderRef>>,
+}
+
+impl CitationBuilder {
+    fn from_pest(pair: Pair<Rule>) -> CitationBuilder {
+        assert_eq!(pair.as_rule(), Rule::citation);
+
+        let bib_key = pair.into_inner().next().unwrap().as_str().to_owned();
+
+        CitationBuilder {
+            bib_key,
+
+            bib_ref: Cell::new(None),
+            local_bib_ref: Cell::new(None),
+        }
+    }
+
+    fn verify_structure(&self, directory: &BuilderDirectory, errors: &mut ParsingErrorContext) {
+        assert!(self.bib_ref.get().is_none());
+        self.bib_ref.set(directory.search_bib_key(&self.bib_key));
+
+        if self.bib_ref.get().is_none() {
+            todo!()
+        }
+    }
+
+    fn bib_refs(&self) -> BibliographyBuilderRef {
+        self.bib_ref.get().unwrap()
+    }
+
+    fn set_local_bib_refs(&self, index: &LocalBibliographyBuilderIndex) {
+        assert!(self.local_bib_ref.get().is_none());
+
+        let local_bib_ref = index[self.bib_ref.get().unwrap()];
+        self.local_bib_ref.set(Some(local_bib_ref));
+    }
+
+    fn finish(&self) -> Citation {
+        let local_bib_ref = self.local_bib_ref.get().unwrap().finish();
+
+        Citation::new(local_bib_ref)
     }
 }
 
@@ -136,6 +186,7 @@ enum UnformattedBuilderElement {
     Ellipsis,
 
     Hyperlink(HyperlinkBuilder),
+
     Word(String),
 }
 
@@ -156,6 +207,7 @@ impl UnformattedBuilderElement {
             Rule::ellipsis => Self::Ellipsis,
 
             Rule::hyperlink => Self::Hyperlink(HyperlinkBuilder::from_pest(pair)),
+
             Rule::word => Self::Word(pair.as_str().to_owned()),
 
             _ => unreachable!("{:#?}", pair.as_span().start_pos().line_col()),
@@ -165,6 +217,7 @@ impl UnformattedBuilderElement {
     fn verify_structure(&self, errors: &mut ParsingErrorContext) {
         match self {
             Self::Hyperlink(hyperlink) => hyperlink.verify_structure(errors),
+
             _ => {}
         }
     }
@@ -184,6 +237,7 @@ impl UnformattedBuilderElement {
             Self::Ellipsis => UnformattedElement::Ellipsis,
 
             Self::Hyperlink(hyperlink) => UnformattedElement::Hyperlink(hyperlink.finish()),
+
             Self::Word(w) => UnformattedElement::Word(w.clone()),
         }
     }
@@ -387,7 +441,7 @@ impl MlaContainerBuilder {
     }
 }
 
-struct MlaBuilderEntries {
+pub struct MlaBuilderEntries {
     authors: Vec<UnformattedBuilder>,
     titles: Vec<UnformattedBuilder>,
     containers: Vec<MlaContainerBuilder>,
@@ -396,7 +450,7 @@ struct MlaBuilderEntries {
 }
 
 impl MlaBuilderEntries {
-    fn from_pest(pairs: Pairs<Rule>) -> MlaBuilderEntries {
+    pub fn from_pest(pairs: Pairs<Rule>) -> MlaBuilderEntries {
         let mut authors = Vec::with_capacity(1);
         let mut titles = Vec::with_capacity(1);
         let mut containers = Vec::new();
@@ -426,7 +480,7 @@ impl MlaBuilderEntries {
         }
     }
 
-    fn verify_structure(&self, errors: &mut ParsingErrorContext) {
+    pub fn verify_structure(&self, errors: &mut ParsingErrorContext) {
         assert!(!self.verified.get());
         let found_error = false;
 
@@ -447,6 +501,18 @@ impl MlaBuilderEntries {
         }
 
         self.verified.set(!found_error);
+    }
+
+    pub fn finish(&self) -> Mla {
+        let author = self.author().map(UnformattedBuilder::finish);
+        let title = self.title().finish();
+        let containers = self
+            .containers
+            .iter()
+            .map(MlaContainerBuilder::finish)
+            .collect();
+
+        Mla::new(author, title, containers)
     }
 
     fn author(&self) -> Option<&UnformattedBuilder> {
@@ -476,16 +542,7 @@ impl MlaBuilder {
     }
 
     fn finish(&self) -> Mla {
-        let author = self.entries.author().map(UnformattedBuilder::finish);
-        let title = self.entries.title().finish();
-        let containers = self
-            .entries
-            .containers
-            .iter()
-            .map(MlaContainerBuilder::finish)
-            .collect();
-
-        Mla::new(author, title, containers)
+        self.entries.finish()
     }
 }
 
@@ -682,6 +739,21 @@ impl TextBuilder {
         }
     }
 
+    pub fn bib_refs(&self) -> Box<dyn Iterator<Item = BibliographyBuilderRef> + '_> {
+        let ret = match self {
+            Self::Paragraph(paragraph) => Some(paragraph.bib_refs()),
+            _ => None,
+        };
+
+        Box::new(ret.into_iter().flatten())
+    }
+
+    pub fn set_local_bib_refs(&self, index: &LocalBibliographyBuilderIndex) {
+        if let Self::Paragraph(paragraph) = self {
+            paragraph.set_local_bib_refs(index);
+        }
+    }
+
     pub fn finish(&self) -> Text {
         match self {
             Self::Mla(mla) => Text::Mla(mla.finish()),
@@ -846,6 +918,7 @@ impl ReferenceBuilder {
 enum ParagraphBuilderElement {
     Reference(ReferenceBuilder),
     InlineMath(MathBuilder),
+    Citation(CitationBuilder),
 
     UnicornVomitBegin,
     UnicornVomitEnd,
@@ -860,6 +933,7 @@ impl ParagraphBuilderElement {
         match pair.as_rule() {
             Rule::text_reference => Self::Reference(ReferenceBuilder::from_pest(pair)),
             Rule::math_row => Self::InlineMath(MathBuilder::from_pest(pair)),
+            Rule::citation => Self::Citation(CitationBuilder::from_pest(pair)),
 
             Rule::unicorn_vomit_begin => Self::UnicornVomitBegin,
             Rule::unicorn_vomit_end => Self::UnicornVomitEnd,
@@ -879,6 +953,7 @@ impl ParagraphBuilderElement {
         match self {
             Self::Reference(r) => r.verify_structure(directory, errors),
             Self::InlineMath(_) => {}
+            Self::Citation(citation) => citation.verify_structure(directory, errors),
 
             Self::UnicornVomitBegin => state.unicorn_begin(errors),
             Self::UnicornVomitEnd => state.unicorn_end(errors),
@@ -899,6 +974,7 @@ impl ParagraphBuilderElement {
         match self {
             Self::Reference(r) => r.verify_structure_with_tags(directory, tags, errors),
             Self::InlineMath(_) => {}
+            Self::Citation(citation) => citation.verify_structure(directory, errors),
 
             Self::UnicornVomitBegin => state.unicorn_begin(errors),
             Self::UnicornVomitEnd => state.unicorn_end(errors),
@@ -909,10 +985,24 @@ impl ParagraphBuilderElement {
         }
     }
 
+    fn bib_refs(&self) -> Option<BibliographyBuilderRef> {
+        match self {
+            Self::Citation(citation) => Some(citation.bib_refs()),
+            _ => None,
+        }
+    }
+
+    fn set_local_bib_refs(&self, index: &LocalBibliographyBuilderIndex) {
+        if let Self::Citation(citation) = self {
+            citation.set_local_bib_refs(index)
+        }
+    }
+
     fn finish(&self) -> ParagraphElement {
         match self {
             Self::Reference(r) => ParagraphElement::Reference(r.finish()),
             Self::InlineMath(math) => ParagraphElement::InlineMath(math.finish()),
+            Self::Citation(citation) => ParagraphElement::Citation(citation.finish()),
 
             Self::UnicornVomitBegin => ParagraphElement::UnicornVomitBegin,
             Self::UnicornVomitEnd => ParagraphElement::UnicornVomitEnd,
@@ -1028,6 +1118,20 @@ impl ParagraphBuilder {
         }
     }
 
+    pub fn bib_refs(&self) -> Box<dyn Iterator<Item = BibliographyBuilderRef> + '_> {
+        Box::new(
+            self.elements
+                .iter()
+                .flat_map(ParagraphBuilderElement::bib_refs),
+        )
+    }
+
+    pub fn set_local_bib_refs(&self, index: &LocalBibliographyBuilderIndex) {
+        for element in &self.elements {
+            element.set_local_bib_refs(index)
+        }
+    }
+
     pub fn finish(&self) -> Paragraph {
         assert!(self.verified.get());
         let elements = self
@@ -1056,6 +1160,16 @@ impl TableBuilderRow {
     fn verify_structure(&self, directory: &BuilderDirectory, errors: &mut ParsingErrorContext) {
         for cell in &self.cells {
             cell.verify_structure(directory, errors);
+        }
+    }
+
+    fn bib_refs(&self) -> Box<dyn Iterator<Item = BibliographyBuilderRef> + '_> {
+        Box::new(self.cells.iter().flat_map(ParagraphBuilder::bib_refs))
+    }
+
+    fn set_local_bib_refs(&self, index: &LocalBibliographyBuilderIndex) {
+        for cell in &self.cells {
+            cell.set_local_bib_refs(index)
         }
     }
 
@@ -1138,6 +1252,33 @@ impl TableBuilder {
         }
     }
 
+    pub fn bib_refs(&self) -> Box<dyn Iterator<Item = BibliographyBuilderRef> + '_> {
+        let head = self.head.iter().flatten();
+        let body = self.body.iter().flatten();
+        let foot = self.foot.iter().flatten();
+        let rows = head.chain(body).chain(foot);
+
+        let row_refs = rows.flat_map(TableBuilderRow::bib_refs);
+        let caption_refs = self.caption.iter().flat_map(ParagraphBuilder::bib_refs);
+
+        Box::new(row_refs.chain(caption_refs))
+    }
+
+    pub fn set_local_bib_refs(&self, index: &LocalBibliographyBuilderIndex) {
+        let head = self.head.iter().flatten();
+        let body = self.body.iter().flatten();
+        let foot = self.foot.iter().flatten();
+        let rows = head.chain(body).chain(foot);
+
+        for row in rows {
+            row.set_local_bib_refs(index);
+        }
+
+        if let Some(paragraph) = self.caption.as_ref() {
+            paragraph.set_local_bib_refs(index);
+        }
+    }
+
     pub fn finish(&self) -> TableBlock {
         let head = self
             .head
@@ -1158,9 +1299,62 @@ impl TableBuilder {
     }
 }
 
+struct QuoteValueBuilder {
+    bib_key: String,
+    quote: UnformattedBuilder,
+
+    bib_ref: Cell<Option<BibliographyBuilderRef>>,
+    local_bib_ref: Cell<Option<LocalBibliographyBuilderRef>>,
+}
+
+impl QuoteValueBuilder {
+    fn from_pest(pair: Pair<Rule>) -> QuoteValueBuilder {
+        assert!(pair.as_rule() == Rule::quote_value || pair.as_rule() == Rule::quote_original);
+
+        let mut inner = pair.into_inner();
+        let bib_key = inner.next().unwrap().as_str().to_owned();
+        let quote = UnformattedBuilder::from_pest(inner.next().unwrap());
+
+        QuoteValueBuilder {
+            bib_key,
+            quote,
+
+            bib_ref: Cell::new(None),
+            local_bib_ref: Cell::new(None),
+        }
+    }
+
+    fn verify_structure(&self, directory: &BuilderDirectory, errors: &mut ParsingErrorContext) {
+        assert!(self.bib_ref.get().is_none());
+
+        self.bib_ref.set(directory.search_bib_key(&self.bib_key));
+        if self.bib_ref.get().is_none() {
+            todo!()
+        }
+    }
+
+    fn bib_ref(&self) -> BibliographyBuilderRef {
+        self.bib_ref.get().unwrap()
+    }
+
+    fn set_local_bib_refs(&self, index: &LocalBibliographyBuilderIndex) {
+        assert!(self.local_bib_ref.get().is_none());
+
+        let local_bib_ref = index[self.bib_ref.get().unwrap()];
+        self.local_bib_ref.set(Some(local_bib_ref))
+    }
+
+    fn finish(&self) -> QuoteValue {
+        let quote = self.quote.finish();
+        let local_bib_ref = self.local_bib_ref.get().unwrap().finish();
+
+        QuoteValue::new(quote, local_bib_ref)
+    }
+}
+
 pub struct QuoteBuilder {
-    original: Option<UnformattedBuilder>,
-    value: UnformattedBuilder,
+    original: Option<QuoteValueBuilder>,
+    value: QuoteValueBuilder,
 }
 
 impl QuoteBuilder {
@@ -1171,21 +1365,43 @@ impl QuoteBuilder {
         let mut curr = inner.next().unwrap();
 
         let original = if curr.as_rule() == Rule::quote_original {
-            let original = curr.into_inner().next().unwrap();
+            let original = curr;
             curr = inner.next().unwrap();
 
-            Some(UnformattedBuilder::from_pest(original))
+            Some(QuoteValueBuilder::from_pest(original))
         } else {
             None
         };
 
-        let value = UnformattedBuilder::from_pest(curr.into_inner().next().unwrap());
+        let value = QuoteValueBuilder::from_pest(curr);
 
         QuoteBuilder { original, value }
     }
 
+    pub fn verify_structure(&self, directory: &BuilderDirectory, errors: &mut ParsingErrorContext) {
+        self.original
+            .as_ref()
+            .map(|original| original.verify_structure(directory, errors));
+        self.value.verify_structure(directory, errors);
+    }
+
+    pub fn bib_refs(&self) -> Box<dyn Iterator<Item = BibliographyBuilderRef> + '_> {
+        let original_ref = self.original.iter().map(QuoteValueBuilder::bib_ref);
+        let value_ref = self.value.bib_ref();
+
+        Box::new(original_ref.chain(Some(value_ref)))
+    }
+
+    pub fn set_local_bib_refs(&self, index: &LocalBibliographyBuilderIndex) {
+        if let Some(original) = &self.original {
+            original.set_local_bib_refs(index);
+        }
+
+        self.value.set_local_bib_refs(index);
+    }
+
     pub fn finish(&self) -> QuoteBlock {
-        let original = self.original.as_ref().map(UnformattedBuilder::finish);
+        let original = self.original.as_ref().map(QuoteValueBuilder::finish);
         let value = self.value.finish();
 
         QuoteBlock::new(original, value)
@@ -1250,6 +1466,12 @@ impl HeadingBuilder {
         HeadingBuilder { subheadings }
     }
 
+    pub fn bib_refs(&self) -> Box<dyn Iterator<Item = BibliographyBuilderRef> + '_> {
+        Box::new(std::iter::empty())
+    }
+
+    pub fn set_local_bib_refs(&self, index: &LocalBibliographyBuilderIndex) {}
+
     pub fn finish(&self) -> HeadingBlock {
         let subheadings = self
             .subheadings
@@ -1278,6 +1500,16 @@ impl TodoBuilder {
         }
     }
 
+    pub fn bib_refs(&self) -> Box<dyn Iterator<Item = BibliographyBuilderRef> + '_> {
+        Box::new(self.elements.iter().flat_map(TextBuilder::bib_refs))
+    }
+
+    pub fn set_local_bib_refs(&self, index: &LocalBibliographyBuilderIndex) {
+        for element in &self.elements {
+            element.set_local_bib_refs(index);
+        }
+    }
+
     pub fn finish(&self) -> TodoBlock {
         let elements = self.elements.iter().map(TextBuilder::finish).collect();
 
@@ -1300,6 +1532,14 @@ impl TextBlockBuilder {
 
     pub fn verify_structure(&self, directory: &BuilderDirectory, errors: &mut ParsingErrorContext) {
         self.text.verify_structure(directory, errors);
+    }
+
+    pub fn bib_refs(&self) -> Box<dyn Iterator<Item = BibliographyBuilderRef> + '_> {
+        self.text.bib_refs()
+    }
+
+    pub fn set_local_bib_refs(&self, index: &LocalBibliographyBuilderIndex) {
+        self.text.set_local_bib_refs(index)
     }
 
     pub fn finish(&self) -> TextBlock {

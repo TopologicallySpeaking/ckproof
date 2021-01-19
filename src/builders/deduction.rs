@@ -26,8 +26,9 @@ use crate::document::deduction::{
 };
 
 use super::directory::{
-    AxiomBuilderRef, BuilderDirectory, LocalIndex, ProofBuilderRef, ProofBuilderStepRef,
-    SystemBuilderChild, SystemBuilderRef, TagIndex, TheoremBuilderRef,
+    AxiomBuilderRef, BibliographyBuilderRef, BuilderDirectory, LocalBibliographyBuilderIndex,
+    LocalIndex, ProofBuilderRef, ProofBuilderStepRef, SystemBuilderChild, SystemBuilderRef,
+    TagIndex, TheoremBuilderRef,
 };
 use super::errors::{ParsingError, ParsingErrorContext};
 use super::language::{FormulaBuilder, VariableBuilder};
@@ -279,6 +280,25 @@ impl AxiomBuilder {
 
         self.entries
             .verify_structure(&self.system_id, self_ref, self.serial, directory, errors);
+    }
+
+    pub fn bib_refs(&self) -> Box<dyn Iterator<Item = BibliographyBuilderRef> + '_> {
+        let tagline_refs = self.entries.tagline().bib_refs();
+        let description_refs = self
+            .entries
+            .description()
+            .iter()
+            .flat_map(TextBuilder::bib_refs);
+
+        Box::new(tagline_refs.chain(description_refs))
+    }
+
+    pub fn set_local_bib_refs(&self, index: &LocalBibliographyBuilderIndex) {
+        self.entries.tagline().set_local_bib_refs(index);
+
+        for text in self.entries.description() {
+            text.set_local_bib_refs(index);
+        }
     }
 
     pub fn finish(&self) -> AxiomBlock {
@@ -580,6 +600,25 @@ impl TheoremBuilder {
 
         self.entries
             .verify_structure(&self.system_id, self_ref, self.serial, directory, errors);
+    }
+
+    pub fn bib_refs(&self) -> Box<dyn Iterator<Item = BibliographyBuilderRef> + '_> {
+        let tagline_refs = self.entries.tagline().bib_refs();
+        let description_refs = self
+            .entries
+            .description()
+            .iter()
+            .flat_map(TextBuilder::bib_refs);
+
+        Box::new(tagline_refs.chain(description_refs))
+    }
+
+    pub fn set_local_bib_refs(&self, index: &LocalBibliographyBuilderIndex) {
+        self.entries.tagline().set_local_bib_refs(index);
+
+        for text in self.entries.description() {
+            text.set_local_bib_refs(index);
+        }
     }
 
     pub fn build_formulas(&self, directory: &BuilderDirectory, errors: &mut ParsingErrorContext) {
@@ -956,6 +995,21 @@ impl ProofBuilderElement {
         }
     }
 
+    fn bib_refs(&self) -> Box<dyn Iterator<Item = BibliographyBuilderRef> + '_> {
+        let ret = match self {
+            Self::Text(text) => Some(text.bib_refs()),
+            _ => None,
+        };
+
+        Box::new(ret.into_iter().flatten())
+    }
+
+    fn set_local_bib_refs(&self, index: &LocalBibliographyBuilderIndex) {
+        if let Self::Text(text) = self {
+            text.set_local_bib_refs(index)
+        }
+    }
+
     fn finish(&self) -> ProofBlockElement {
         match self {
             Self::Text(text) => ProofBlockElement::Text(text.finish()),
@@ -1045,6 +1099,16 @@ impl ProofBuilder {
 
         for element in &self.elements {
             element.verify_structure(directory, &mut tags, errors);
+        }
+    }
+
+    pub fn bib_refs(&self) -> Box<dyn Iterator<Item = BibliographyBuilderRef> + '_> {
+        Box::new(self.elements.iter().flat_map(ProofBuilderElement::bib_refs))
+    }
+
+    pub fn set_local_bib_refs(&self, index: &LocalBibliographyBuilderIndex) {
+        for element in &self.elements {
+            element.set_local_bib_refs(index);
         }
     }
 

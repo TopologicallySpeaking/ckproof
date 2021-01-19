@@ -293,13 +293,30 @@ impl TableRendered {
 }
 
 #[derive(Deserialize, Serialize, Debug)]
+pub struct QuoteValueRendered {
+    quote: String,
+
+    local_bib_ref: usize,
+}
+
+impl QuoteValueRendered {
+    pub fn new(quote: String, local_bib_ref: usize) -> QuoteValueRendered {
+        QuoteValueRendered {
+            quote,
+
+            local_bib_ref,
+        }
+    }
+}
+
+#[derive(Deserialize, Serialize, Debug)]
 pub struct QuoteRendered {
-    original: Option<String>,
-    value: String,
+    original: Option<QuoteValueRendered>,
+    value: QuoteValueRendered,
 }
 
 impl QuoteRendered {
-    pub fn new(original: Option<String>, value: String) -> QuoteRendered {
+    pub fn new(original: Option<QuoteValueRendered>, value: QuoteValueRendered) -> QuoteRendered {
         QuoteRendered { original, value }
     }
 }
@@ -446,6 +463,8 @@ pub struct PageRendered {
     next_href: Option<String>,
 
     blocks: Vec<BlockRendered>,
+
+    local_bibliography: Option<Vec<MlaRendered>>,
 }
 
 impl PageRendered {
@@ -460,6 +479,7 @@ impl PageRendered {
         up_href: String,
         next_href: Option<String>,
         blocks: Vec<BlockRendered>,
+        local_bibliography: Option<Vec<MlaRendered>>,
     ) -> PageRendered {
         PageRendered {
             id,
@@ -472,6 +492,7 @@ impl PageRendered {
             up_href,
             next_href,
             blocks,
+            local_bibliography,
         }
     }
 

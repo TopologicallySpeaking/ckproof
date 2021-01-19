@@ -20,7 +20,7 @@ use crate::deduction::directory::CheckableDirectory;
 
 use crate::rendered::{BookRendered, ChapterRendered, DocumentRendered, PageRendered};
 
-use super::directory::{Block, BlockDirectory};
+use super::directory::{Block, BlockDirectory, LocalBibliography};
 use super::text::Paragraph;
 
 pub struct Page {
@@ -29,16 +29,26 @@ pub struct Page {
     href: String,
 
     blocks: Vec<Block>,
+
+    local_bibliography: Option<LocalBibliography>,
 }
 
 impl Page {
-    pub fn new(id: String, name: String, href: String, blocks: Vec<Block>) -> Page {
+    pub fn new(
+        id: String,
+        name: String,
+        href: String,
+        blocks: Vec<Block>,
+        local_bibliography: Option<LocalBibliography>,
+    ) -> Page {
         Page {
             id,
             name,
             href,
 
             blocks,
+
+            local_bibliography,
         }
     }
 
@@ -64,6 +74,11 @@ impl Page {
             .map(|block| block.render(directory))
             .collect();
 
+        let local_bibliography = self
+            .local_bibliography
+            .as_ref()
+            .map(|local_bibliography| local_bibliography.render(directory));
+
         PageRendered::new(
             id,
             href,
@@ -75,6 +90,7 @@ impl Page {
             up_href.to_owned(),
             next_href.map(str::to_owned),
             blocks,
+            local_bibliography,
         )
     }
 }
