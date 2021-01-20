@@ -621,6 +621,7 @@ impl ReadStyle {
     }
 }
 
+// TODO: Add arithmetic operators, i.e. +-*/=
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 enum ReadOperator {
     Negation,

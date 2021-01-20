@@ -41,6 +41,13 @@ use super::Rule;
 
 fn map_operator(operator: Rule) -> String {
     match operator {
+        Rule::operator_plus => "+".to_owned(),
+        Rule::operator_minus => "-".to_owned(),
+        Rule::operator_asterisk => "*".to_owned(),
+        Rule::operator_slash => "/".to_owned(),
+
+        Rule::operator_eq => "=".to_owned(),
+
         Rule::operator_negation => "\u{00AC}".to_owned(),
         Rule::operator_implies => "\u{21D2}".to_owned(),
 
