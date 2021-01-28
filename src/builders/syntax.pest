@@ -128,11 +128,8 @@ bare_text = ${
 }
 bare_whitespace = { WHITE_SPACE+ }
 
-// TODO: Make this use bare_element if possible.
 unformatted_element = _{
-  open_bracket | close_bracket
-  | amp | apos | ldquo | rdquo | lsquo | rsquo | ellipsis
-  | hyperlink | word
+  hyperlink | bare_element
 }
 hyperlink = ${
   "<" ~ WHITESPACE* ~ "a" ~ WHITESPACE+ ~ url ~ WHITESPACE* ~ ">"

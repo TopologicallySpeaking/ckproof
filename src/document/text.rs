@@ -28,6 +28,9 @@ use super::directory::{Block, BlockDirectory, LocalBibliographyRef};
 
 #[derive(Clone)]
 pub enum BareElement {
+    OpenBracket,
+    CloseBracket,
+
     Whitespace,
     Ampersand,
     Apostrophe,
@@ -36,12 +39,16 @@ pub enum BareElement {
     LeftSingleQuote,
     RightSingleQuote,
     Ellipsis,
+
     Word(String),
 }
 
 impl BareElement {
     fn render(&self) -> &str {
         match self {
+            Self::OpenBracket => "[",
+            Self::CloseBracket => "]",
+
             Self::Whitespace => " ",
             Self::Ampersand => "&amp;",
             Self::Apostrophe => "&apos;",
@@ -50,6 +57,7 @@ impl BareElement {
             Self::LeftSingleQuote => "\u{2018}",
             Self::RightSingleQuote => "\u{2019}",
             Self::Ellipsis => "\u{2026}",
+
             Self::Word(w) => &w,
         }
     }
@@ -109,39 +117,15 @@ impl Hyperlink {
 }
 
 pub enum UnformattedElement {
-    OpenBracket,
-    CloseBracket,
-
-    Whitespace,
-    Ampersand,
-    Apostrophe,
-    LeftDoubleQuote,
-    RightDoubleQuote,
-    LeftSingleQuote,
-    RightSingleQuote,
-    Ellipsis,
-
     Hyperlink(Hyperlink),
-    Word(String),
+    BareElement(BareElement),
 }
 
 impl UnformattedElement {
     fn render(&self) -> String {
         match self {
-            Self::OpenBracket => "[".to_owned(),
-            Self::CloseBracket => "]".to_owned(),
-
-            Self::Whitespace => " ".to_owned(),
-            Self::Ampersand => "&amp;".to_owned(),
-            Self::Apostrophe => "&apos;".to_owned(),
-            Self::LeftDoubleQuote => "\u{201C}".to_owned(),
-            Self::RightDoubleQuote => "\u{201D}".to_owned(),
-            Self::LeftSingleQuote => "\u{2018}".to_owned(),
-            Self::RightSingleQuote => "\u{2019}".to_owned(),
-            Self::Ellipsis => "\u{2026}".to_owned(),
-
             Self::Hyperlink(hyperlink) => hyperlink.render(),
-            Self::Word(w) => w.clone(),
+            Self::BareElement(text) => text.render().to_owned(),
         }
     }
 }

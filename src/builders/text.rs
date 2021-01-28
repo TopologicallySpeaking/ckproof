@@ -58,12 +58,12 @@ fn map_operator(operator: Rule) -> String {
 }
 
 impl BareElement {
-    fn from_pest(pair: Pair<Rule>) -> BareElement {
+    fn from_pest(pair: Pair<Rule>, whitespace_rule: Rule) -> BareElement {
         match pair.as_rule() {
-            Rule::bare_whitespace => Self::Whitespace,
+            rule if rule == whitespace_rule => Self::Whitespace,
 
-            Rule::open_bracket => todo!(),
-            Rule::close_bracket => todo!(),
+            Rule::open_bracket => Self::OpenBracket,
+            Rule::close_bracket => Self::CloseBracket,
 
             Rule::amp => Self::Ampersand,
             Rule::apos => Self::Apostrophe,
@@ -74,7 +74,7 @@ impl BareElement {
             Rule::ellipsis => Self::Ellipsis,
             Rule::word => Self::Word(pair.as_str().to_owned()),
 
-            _ => unreachable!(),
+            _ => unreachable!("{:#?}", pair),
         }
     }
 }
@@ -83,7 +83,10 @@ impl BareText {
     fn from_pest(pair: Pair<Rule>) -> BareText {
         assert_eq!(pair.as_rule(), Rule::bare_text);
 
-        let elements = pair.into_inner().map(BareElement::from_pest).collect();
+        let elements = pair
+            .into_inner()
+            .map(|pair| BareElement::from_pest(pair, Rule::bare_whitespace))
+            .collect();
 
         BareText::new(elements)
     }
@@ -180,44 +183,16 @@ impl HyperlinkBuilder {
 }
 
 enum UnformattedBuilderElement {
-    OpenBracket,
-    CloseBracket,
-
-    Whitespace,
-    Ampersand,
-    Apostrophe,
-    LeftDoubleQuote,
-    RightDoubleQuote,
-    LeftSingleQuote,
-    RightSingleQuote,
-    Ellipsis,
-
     Hyperlink(HyperlinkBuilder),
-
-    Word(String),
+    BareElement(BareElement),
 }
 
 impl UnformattedBuilderElement {
     fn from_pest(pair: Pair<Rule>, whitespace_rule: Rule) -> UnformattedBuilderElement {
         match pair.as_rule() {
-            rule if rule == whitespace_rule => Self::Whitespace,
-
-            Rule::open_bracket => Self::OpenBracket,
-            Rule::close_bracket => Self::CloseBracket,
-
-            Rule::amp => Self::Ampersand,
-            Rule::apos => Self::Apostrophe,
-            Rule::ldquo => Self::LeftDoubleQuote,
-            Rule::rdquo => Self::RightDoubleQuote,
-            Rule::lsquo => Self::LeftSingleQuote,
-            Rule::rsquo => Self::RightSingleQuote,
-            Rule::ellipsis => Self::Ellipsis,
-
             Rule::hyperlink => Self::Hyperlink(HyperlinkBuilder::from_pest(pair)),
 
-            Rule::word => Self::Word(pair.as_str().to_owned()),
-
-            _ => unreachable!("{:#?}", pair.as_span().start_pos().line_col()),
+            _ => Self::BareElement(BareElement::from_pest(pair, whitespace_rule)),
         }
     }
 
@@ -231,21 +206,8 @@ impl UnformattedBuilderElement {
 
     fn finish(&self) -> UnformattedElement {
         match self {
-            Self::OpenBracket => UnformattedElement::OpenBracket,
-            Self::CloseBracket => UnformattedElement::CloseBracket,
-
-            Self::Whitespace => UnformattedElement::Whitespace,
-            Self::Ampersand => UnformattedElement::Ampersand,
-            Self::Apostrophe => UnformattedElement::Apostrophe,
-            Self::LeftDoubleQuote => UnformattedElement::LeftDoubleQuote,
-            Self::RightDoubleQuote => UnformattedElement::RightDoubleQuote,
-            Self::LeftSingleQuote => UnformattedElement::LeftSingleQuote,
-            Self::RightSingleQuote => UnformattedElement::RightSingleQuote,
-            Self::Ellipsis => UnformattedElement::Ellipsis,
-
             Self::Hyperlink(hyperlink) => UnformattedElement::Hyperlink(hyperlink.finish()),
-
-            Self::Word(w) => UnformattedElement::Word(w.clone()),
+            Self::BareElement(text) => UnformattedElement::BareElement(text.clone()),
         }
     }
 }
