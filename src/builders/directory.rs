@@ -30,7 +30,7 @@ use crate::document::directory::{
 use crate::document::text::Mla;
 
 use super::deduction::{AxiomBuilder, ProofBuilder, TheoremBuilder};
-use super::errors::{ParsingError, ParsingErrorContext};
+use super::errors::{ParsingError, ParsingErrorContext, SystemParsingError, VariableParsingError};
 use super::language::{
     ReadBuilder, SymbolBuilder, SystemBuilder, TypeBuilder, TypeSignatureBuilder, VariableBuilder,
 };
@@ -67,40 +67,15 @@ impl SymbolBuilderRef {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub enum VariableBuilderParentRef {
-    Axiom(AxiomBuilderRef),
-    Theorem(TheoremBuilderRef),
-    Proof(ProofBuilderRef),
-}
-
-impl From<AxiomBuilderRef> for VariableBuilderParentRef {
-    fn from(axiom_ref: AxiomBuilderRef) -> VariableBuilderParentRef {
-        VariableBuilderParentRef::Axiom(axiom_ref)
-    }
-}
-
-impl From<TheoremBuilderRef> for VariableBuilderParentRef {
-    fn from(theorem_ref: TheoremBuilderRef) -> VariableBuilderParentRef {
-        VariableBuilderParentRef::Theorem(theorem_ref)
-    }
-}
-
-impl From<ProofBuilderRef> for VariableBuilderParentRef {
-    fn from(proof_ref: ProofBuilderRef) -> VariableBuilderParentRef {
-        VariableBuilderParentRef::Proof(proof_ref)
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub struct VariableBuilderRef(VariableBuilderParentRef, usize);
+pub struct VariableBuilderRef(usize);
 
 impl VariableBuilderRef {
     pub fn get(&self) -> usize {
-        self.1
+        self.0
     }
 
     pub fn finish(&self) -> VariableBlockRef {
-        VariableBlockRef::new(self.1)
+        VariableBlockRef::new(self.0)
     }
 }
 
@@ -415,21 +390,22 @@ pub struct LocalIndex<'a> {
 }
 
 impl<'a> LocalIndex<'a> {
-    pub fn add_vars(
+    pub fn add_vars<F>(
         &mut self,
-        parent: VariableBuilderParentRef,
         vars: &[VariableBuilder],
         errors: &mut ParsingErrorContext,
-    ) {
+        generate_error: F,
+    ) where
+        F: Fn(VariableBuilderRef, VariableParsingError) -> ParsingError,
+    {
         for (i, var) in vars.iter().enumerate() {
             if let Some(old_var) = self.vars.get(var.id()) {
-                errors.err(ParsingError::VariableDuplicateId(
-                    *old_var,
-                    VariableBuilderRef(parent, i),
+                errors.err(generate_error(
+                    VariableBuilderRef(i),
+                    VariableParsingError::IdAlreadyTaken(*old_var),
                 ));
             } else {
-                self.vars
-                    .insert(var.id().to_owned(), VariableBuilderRef(parent, i));
+                self.vars.insert(var.id().to_owned(), VariableBuilderRef(i));
             }
         }
     }
@@ -519,9 +495,9 @@ impl BuilderIndex {
         errors: &mut ParsingErrorContext,
     ) {
         if let Some(old_index) = self.systems.get(id) {
-            errors.err(ParsingError::SystemIdAlreadyTaken(
+            errors.err(ParsingError::SystemError(
                 system_ref,
-                old_index.system_ref,
+                SystemParsingError::IdAlreadyTaken(old_index.system_ref),
             ));
         }
 

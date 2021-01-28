@@ -30,7 +30,9 @@ use super::directory::{
     LocalIndex, ProofBuilderRef, ProofBuilderStepRef, SystemBuilderChild, SystemBuilderRef,
     TagIndex, TheoremBuilderRef,
 };
-use super::errors::{ParsingError, ParsingErrorContext};
+use super::errors::{
+    AxiomParsingError, ParsingError, ParsingErrorContext, ProofParsingError, TheoremParsingError,
+};
 use super::language::{FormulaBuilder, VariableBuilder};
 use super::text::{ParagraphBuilder, TextBuilder};
 use super::{BlockLocation, Rule};
@@ -118,28 +120,40 @@ impl AxiomBuilderEntries {
         match self.names.len() {
             0 => {
                 found_error = true;
-                errors.err(ParsingError::AxiomMissingName(self_ref));
+                errors.err(ParsingError::AxiomError(
+                    self_ref,
+                    AxiomParsingError::MissingName,
+                ));
             }
 
             1 => {}
 
             _ => {
                 found_error = true;
-                errors.err(ParsingError::AxiomDuplicateName(self_ref));
+                errors.err(ParsingError::AxiomError(
+                    self_ref,
+                    AxiomParsingError::DuplicateName,
+                ));
             }
         }
 
         match self.taglines.len() {
             0 => {
                 found_error = true;
-                errors.err(ParsingError::AxiomMissingTagline(self_ref));
+                errors.err(ParsingError::AxiomError(
+                    self_ref,
+                    AxiomParsingError::MissingTagline,
+                ));
             }
 
             1 => self.taglines[0].verify_structure(directory, errors),
 
             _ => {
                 found_error = true;
-                errors.err(ParsingError::AxiomDuplicateTagline(self_ref));
+                errors.err(ParsingError::AxiomError(
+                    self_ref,
+                    AxiomParsingError::DuplicateTagline,
+                ));
             }
         }
 
@@ -153,7 +167,10 @@ impl AxiomBuilderEntries {
 
             _ => {
                 found_error = true;
-                errors.err(ParsingError::AxiomDuplicateDescription(self_ref))
+                errors.err(ParsingError::AxiomError(
+                    self_ref,
+                    AxiomParsingError::DuplicateDescription,
+                ))
             }
         }
 
@@ -175,7 +192,9 @@ impl AxiomBuilderEntries {
 
         let local_index = {
             let mut tmp = directory.get_local(parent_system);
-            tmp.add_vars(self_ref.into(), &self.vars, errors);
+            tmp.add_vars(&self.vars, errors, |var_ref, e| {
+                ParsingError::AxiomError(self_ref, AxiomParsingError::VariableError(var_ref, e))
+            });
             tmp
         };
 
@@ -275,7 +294,10 @@ impl AxiomBuilder {
         self.system_ref
             .set(directory.search_system(&self.system_id));
         if self.system_ref.get().is_none() {
-            errors.err(ParsingError::AxiomParentNotFound(self_ref));
+            errors.err(ParsingError::AxiomError(
+                self_ref,
+                AxiomParsingError::ParentNotFound,
+            ));
         }
 
         self.entries
@@ -438,28 +460,40 @@ impl TheoremBuilderEntries {
         match self.names.len() {
             0 => {
                 found_error = true;
-                errors.err(ParsingError::TheoremMissingName(self_ref));
+                errors.err(ParsingError::TheoremError(
+                    self_ref,
+                    TheoremParsingError::MissingName,
+                ));
             }
 
             1 => {}
 
             _ => {
                 found_error = true;
-                errors.err(ParsingError::TheoremDuplicateName(self_ref));
+                errors.err(ParsingError::TheoremError(
+                    self_ref,
+                    TheoremParsingError::DuplicateName,
+                ));
             }
         }
 
         match self.taglines.len() {
             0 => {
                 found_error = true;
-                errors.err(ParsingError::TheoremMissingTagline(self_ref));
+                errors.err(ParsingError::TheoremError(
+                    self_ref,
+                    TheoremParsingError::MissingTagline,
+                ));
             }
 
             1 => self.taglines[0].verify_structure(directory, errors),
 
             _ => {
                 found_error = true;
-                errors.err(ParsingError::TheoremDuplicateTagline(self_ref));
+                errors.err(ParsingError::TheoremError(
+                    self_ref,
+                    TheoremParsingError::DuplicateTagline,
+                ));
             }
         }
 
@@ -473,7 +507,10 @@ impl TheoremBuilderEntries {
 
             _ => {
                 found_error = true;
-                errors.err(ParsingError::TheoremDuplicateDescription(self_ref))
+                errors.err(ParsingError::TheoremError(
+                    self_ref,
+                    TheoremParsingError::DuplicateDescription,
+                ))
             }
         }
 
@@ -495,7 +532,9 @@ impl TheoremBuilderEntries {
 
         let local_index = {
             let mut tmp = directory.get_local(parent_system);
-            tmp.add_vars(self_ref.into(), &self.vars, errors);
+            tmp.add_vars(&self.vars, errors, |var_ref, e| {
+                ParsingError::TheoremError(self_ref, TheoremParsingError::VariableError(var_ref, e))
+            });
             tmp
         };
 
@@ -595,7 +634,10 @@ impl TheoremBuilder {
         self.system_ref
             .set(directory.search_system(&self.system_id));
         if self.system_ref.get().is_none() {
-            errors.err(ParsingError::TheoremParentNotFound(self_ref));
+            errors.err(ParsingError::TheoremError(
+                self_ref,
+                TheoremParsingError::ParentNotFound,
+            ));
         }
 
         self.entries
@@ -1079,10 +1121,16 @@ impl ProofBuilder {
             self.theorem_ref.set(child.theorem());
 
             if self.theorem_ref.get().is_none() {
-                errors.err(ParsingError::ProofParentNotTheorem(self_ref));
+                errors.err(ParsingError::ProofError(
+                    self_ref,
+                    ProofParsingError::ParentNotTheorem,
+                ));
             }
         } else {
-            errors.err(ParsingError::ProofParentNotFound(self_ref));
+            errors.err(ParsingError::ProofError(
+                self_ref,
+                ProofParsingError::ParentNotFound,
+            ));
         }
 
         let mut tags = TagIndex::new();
@@ -1118,7 +1166,12 @@ impl ProofBuilder {
 
         let local_index = {
             let mut tmp = directory.get_local(&self.system_id);
-            tmp.add_vars(self.self_ref.unwrap().into(), vars, errors);
+            tmp.add_vars(vars, errors, |var_ref, e| {
+                ParsingError::ProofError(
+                    self.self_ref.unwrap(),
+                    ProofParsingError::VariableError(var_ref, e),
+                )
+            });
             tmp
         };
 

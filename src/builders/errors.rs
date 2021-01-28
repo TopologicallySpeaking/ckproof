@@ -45,58 +45,92 @@ impl From<PestError<Rule>> for BuilderCreationError {
 }
 
 #[derive(Debug)]
+pub enum SystemParsingError {
+    IdAlreadyTaken(SystemBuilderRef),
+
+    MissingName,
+    MissingTagline,
+    DuplicateName,
+    DuplicateTagline,
+    DuplicateDescription,
+}
+
+#[derive(Debug)]
+pub enum TypeParsingError {
+    ParentNotFound,
+    MissingName,
+    MissingTagline,
+    DuplicateName,
+    DuplicateTagline,
+    DuplicateDescription,
+}
+
+#[derive(Debug)]
+pub enum SymbolParsingError {
+    ParentNotFound,
+    MissingName,
+    MissingTagline,
+    MissingTypeSignature,
+    DuplicateName,
+    DuplicateTagline,
+    DuplicateDescription,
+    DuplicateTypeSignature,
+    DuplicateReads,
+    DuplicateDisplays,
+}
+
+#[derive(Debug)]
+pub enum VariableParsingError {
+    IdAlreadyTaken(VariableBuilderRef),
+}
+
+#[derive(Debug)]
+pub enum AxiomParsingError {
+    ParentNotFound,
+    MissingName,
+    MissingTagline,
+    DuplicateName,
+    DuplicateTagline,
+    DuplicateDescription,
+
+    VariableError(VariableBuilderRef, VariableParsingError),
+}
+
+#[derive(Debug)]
+pub enum TheoremParsingError {
+    ParentNotFound,
+    MissingName,
+    MissingTagline,
+    DuplicateName,
+    DuplicateTagline,
+    DuplicateDescription,
+
+    VariableError(VariableBuilderRef, VariableParsingError),
+}
+
+#[derive(Debug)]
+pub enum ProofParsingError {
+    ParentNotFound,
+    ParentNotTheorem,
+    VariableError(VariableBuilderRef, VariableParsingError),
+}
+
+#[derive(Debug)]
 pub enum ParsingError {
     IoError(IoError),
     PestError(PestError<Rule>),
     UrlError(UrlError),
 
-    SystemIdAlreadyTaken(SystemBuilderRef, SystemBuilderRef),
+    SystemError(SystemBuilderRef, SystemParsingError),
+    TypeError(TypeBuilderRef, TypeParsingError),
+    SymbolError(SymbolBuilderRef, SymbolParsingError),
+    AxiomError(AxiomBuilderRef, AxiomParsingError),
+    TheoremError(TheoremBuilderRef, TheoremParsingError),
+    ProofError(ProofBuilderRef, ProofParsingError),
+
     SystemChildIdAlreadyTaken(SystemBuilderChild, SystemBuilderChild),
     SystemChildParentIdNotFound(SystemBuilderChild),
     SystemReadSignatureAlreadyTaken(Readable, Readable),
-
-    SystemMissingName(SystemBuilderRef),
-    SystemMissingTagline(SystemBuilderRef),
-    SystemDuplicateName(SystemBuilderRef),
-    SystemDuplicateTagline(SystemBuilderRef),
-    SystemDuplicateDescription(SystemBuilderRef),
-
-    TypeParentNotFound(TypeBuilderRef),
-    TypeMissingName(TypeBuilderRef),
-    TypeMissingTagline(TypeBuilderRef),
-    TypeDuplicateName(TypeBuilderRef),
-    TypeDuplicateTagline(TypeBuilderRef),
-    TypeDuplicateDescription(TypeBuilderRef),
-
-    SymbolParentNotFound(SymbolBuilderRef),
-    SymbolMissingName(SymbolBuilderRef),
-    SymbolMissingTagline(SymbolBuilderRef),
-    SymbolMissingTypeSignature(SymbolBuilderRef),
-    SymbolDuplicateName(SymbolBuilderRef),
-    SymbolDuplicateTagline(SymbolBuilderRef),
-    SymbolDuplicateDescription(SymbolBuilderRef),
-    SymbolDuplicateTypeSignature(SymbolBuilderRef),
-    SymbolDuplicateReads(SymbolBuilderRef),
-    SymbolDuplicateDisplays(SymbolBuilderRef),
-
-    AxiomParentNotFound(AxiomBuilderRef),
-    AxiomMissingName(AxiomBuilderRef),
-    AxiomMissingTagline(AxiomBuilderRef),
-    AxiomDuplicateName(AxiomBuilderRef),
-    AxiomDuplicateTagline(AxiomBuilderRef),
-    AxiomDuplicateDescription(AxiomBuilderRef),
-
-    TheoremParentNotFound(TheoremBuilderRef),
-    TheoremMissingName(TheoremBuilderRef),
-    TheoremMissingTagline(TheoremBuilderRef),
-    TheoremDuplicateName(TheoremBuilderRef),
-    TheoremDuplicateTagline(TheoremBuilderRef),
-    TheoremDuplicateDescription(TheoremBuilderRef),
-
-    VariableDuplicateId(VariableBuilderRef, VariableBuilderRef),
-
-    ProofParentNotFound(ProofBuilderRef),
-    ProofParentNotTheorem(ProofBuilderRef),
 
     ProofStepTagAlreadyTaken(ProofBuilderStepRef, ProofBuilderStepRef),
     ProofStepMissingJustification(ProofBuilderStepRef),

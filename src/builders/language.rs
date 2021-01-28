@@ -31,7 +31,9 @@ use super::directory::{
     ReadSignature, Readable, ReadableKind, SymbolBuilderRef, SystemBuilderRef, TypeBuilderRef,
     VariableBuilderRef,
 };
-use super::errors::{ParsingError, ParsingErrorContext};
+use super::errors::{
+    ParsingError, ParsingErrorContext, SymbolParsingError, SystemParsingError, TypeParsingError,
+};
 use super::text::{ParagraphBuilder, TextBuilder};
 use super::{BlockLocation, Rule};
 
@@ -94,28 +96,40 @@ impl SystemBuilderEntries {
         match self.names.len() {
             0 => {
                 found_error = true;
-                errors.err(ParsingError::SystemMissingName(self_ref));
+                errors.err(ParsingError::SystemError(
+                    self_ref,
+                    SystemParsingError::MissingName,
+                ));
             }
 
             1 => {}
 
             _ => {
                 found_error = true;
-                errors.err(ParsingError::SystemDuplicateName(self_ref));
+                errors.err(ParsingError::SystemError(
+                    self_ref,
+                    SystemParsingError::DuplicateName,
+                ));
             }
         }
 
         match self.taglines.len() {
             0 => {
                 found_error = true;
-                errors.err(ParsingError::SystemMissingTagline(self_ref));
+                errors.err(ParsingError::SystemError(
+                    self_ref,
+                    SystemParsingError::MissingTagline,
+                ));
             }
 
             1 => self.taglines[0].verify_structure(directory, errors),
 
             _ => {
                 found_error = true;
-                errors.err(ParsingError::SystemDuplicateTagline(self_ref))
+                errors.err(ParsingError::SystemError(
+                    self_ref,
+                    SystemParsingError::DuplicateTagline,
+                ))
             }
         }
 
@@ -129,7 +143,10 @@ impl SystemBuilderEntries {
 
             _ => {
                 found_error = true;
-                errors.err(ParsingError::SystemDuplicateDescription(self_ref));
+                errors.err(ParsingError::SystemError(
+                    self_ref,
+                    SystemParsingError::DuplicateDescription,
+                ));
             }
         }
 
@@ -291,28 +308,40 @@ impl TypeBuilderEntries {
         match self.names.len() {
             0 => {
                 found_error = true;
-                errors.err(ParsingError::TypeMissingName(self_ref));
+                errors.err(ParsingError::TypeError(
+                    self_ref,
+                    TypeParsingError::MissingName,
+                ));
             }
 
             1 => {}
 
             _ => {
                 found_error = true;
-                errors.err(ParsingError::TypeDuplicateName(self_ref));
+                errors.err(ParsingError::TypeError(
+                    self_ref,
+                    TypeParsingError::DuplicateName,
+                ));
             }
         }
 
         match self.taglines.len() {
             0 => {
                 found_error = true;
-                errors.err(ParsingError::TypeMissingTagline(self_ref));
+                errors.err(ParsingError::TypeError(
+                    self_ref,
+                    TypeParsingError::MissingTagline,
+                ));
             }
 
             1 => self.taglines[0].verify_structure(directory, errors),
 
             _ => {
                 found_error = true;
-                errors.err(ParsingError::TypeDuplicateTagline(self_ref));
+                errors.err(ParsingError::TypeError(
+                    self_ref,
+                    TypeParsingError::DuplicateTagline,
+                ));
             }
         }
 
@@ -326,7 +355,10 @@ impl TypeBuilderEntries {
 
             _ => {
                 found_error = true;
-                errors.err(ParsingError::TypeDuplicateDescription(self_ref));
+                errors.err(ParsingError::TypeError(
+                    self_ref,
+                    TypeParsingError::DuplicateDescription,
+                ));
             }
         }
 
@@ -400,7 +432,10 @@ impl TypeBuilder {
         self.system_ref
             .set(directory.search_system(&self.system_id));
         if self.system_ref.get().is_none() {
-            errors.err(ParsingError::TypeParentNotFound(self_ref));
+            errors.err(ParsingError::TypeError(
+                self_ref,
+                TypeParsingError::ParentNotFound,
+            ));
         }
 
         self.entries.verify_structure(self_ref, directory, errors);
@@ -770,28 +805,40 @@ impl SymbolBuilderEntries {
         match self.names.len() {
             0 => {
                 found_error = true;
-                errors.err(ParsingError::SymbolMissingName(symbol_ref));
+                errors.err(ParsingError::SymbolError(
+                    symbol_ref,
+                    SymbolParsingError::MissingName,
+                ));
             }
 
             1 => {}
 
             _ => {
                 found_error = true;
-                errors.err(ParsingError::SymbolDuplicateName(symbol_ref));
+                errors.err(ParsingError::SymbolError(
+                    symbol_ref,
+                    SymbolParsingError::DuplicateName,
+                ));
             }
         }
 
         match self.taglines.len() {
             0 => {
                 found_error = true;
-                errors.err(ParsingError::SymbolMissingTagline(symbol_ref));
+                errors.err(ParsingError::SymbolError(
+                    symbol_ref,
+                    SymbolParsingError::MissingTagline,
+                ));
             }
 
             1 => self.taglines[0].verify_structure(directory, errors),
 
             _ => {
                 found_error = true;
-                errors.err(ParsingError::SymbolDuplicateTagline(symbol_ref));
+                errors.err(ParsingError::SymbolError(
+                    symbol_ref,
+                    SymbolParsingError::DuplicateTagline,
+                ));
             }
         }
 
@@ -805,14 +852,20 @@ impl SymbolBuilderEntries {
 
             _ => {
                 found_error = true;
-                errors.err(ParsingError::SymbolDuplicateDescription(symbol_ref));
+                errors.err(ParsingError::SymbolError(
+                    symbol_ref,
+                    SymbolParsingError::DuplicateDescription,
+                ));
             }
         }
 
         match self.type_signatures.len() {
             0 => {
                 found_error = true;
-                errors.err(ParsingError::SymbolMissingTypeSignature(symbol_ref));
+                errors.err(ParsingError::SymbolError(
+                    symbol_ref,
+                    SymbolParsingError::MissingTypeSignature,
+                ));
             }
 
             1 => self.type_signatures[0].verify_structure(
@@ -824,18 +877,27 @@ impl SymbolBuilderEntries {
 
             _ => {
                 found_error = true;
-                errors.err(ParsingError::SymbolDuplicateTypeSignature(symbol_ref));
+                errors.err(ParsingError::SymbolError(
+                    symbol_ref,
+                    SymbolParsingError::DuplicateTypeSignature,
+                ));
             }
         }
 
         if self.reads.len() > 1 {
             found_error = true;
-            errors.err(ParsingError::SymbolDuplicateReads(symbol_ref));
+            errors.err(ParsingError::SymbolError(
+                symbol_ref,
+                SymbolParsingError::DuplicateReads,
+            ));
         }
 
         if self.displays.len() > 1 {
             found_error = true;
-            errors.err(ParsingError::SymbolDuplicateDisplays(symbol_ref));
+            errors.err(ParsingError::SymbolError(
+                symbol_ref,
+                SymbolParsingError::DuplicateDisplays,
+            ));
         }
 
         self.verified.set(!found_error);
@@ -955,7 +1017,10 @@ impl SymbolBuilder {
         self.system_ref
             .set(directory.search_system(&self.system_id));
         if self.system_ref.get().is_none() {
-            errors.err(ParsingError::SymbolParentNotFound(self_ref));
+            errors.err(ParsingError::SymbolError(
+                self_ref,
+                SymbolParsingError::ParentNotFound,
+            ));
         }
 
         self.entries
