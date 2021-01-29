@@ -23,7 +23,7 @@ use url::Url;
 
 use crate::map_ident;
 
-use crate::document::directory::Block;
+use crate::document::directory::BlockReference;
 use crate::document::text::{
     BareElement, BareText, Citation, DisplayMathBlock, HeadingBlock, HeadingLevel, Hyperlink,
     MathBlock, MathElement, Mla, MlaContainer, Paragraph, ParagraphElement, QuoteBlock, QuoteValue,
@@ -760,7 +760,7 @@ impl SystemReferenceBuilder {
         }
     }
 
-    fn finish(&self) -> Block {
+    fn finish(&self) -> BlockReference {
         self.system_ref.get().unwrap().finish().into()
     }
 }
@@ -797,7 +797,7 @@ impl SystemChildReferenceBuilder {
         }
     }
 
-    fn finish(&self) -> Block {
+    fn finish(&self) -> BlockReference {
         self.child_ref.get().unwrap().finish()
     }
 }
@@ -829,7 +829,7 @@ impl TagReferenceBuilder {
         }
     }
 
-    fn finish(&self) -> Block {
+    fn finish(&self) -> BlockReference {
         self.step_ref.get().unwrap().finish().into()
     }
 }
@@ -875,7 +875,7 @@ impl ReferenceBuilder {
         }
     }
 
-    fn finish(&self) -> Block {
+    fn finish(&self) -> BlockReference {
         match self {
             Self::System(r) => r.finish(),
             Self::SystemChild(r) => r.finish(),

@@ -24,7 +24,9 @@ use crate::rendered::{
     ProofRenderedStep, TheoremRendered,
 };
 
-use super::directory::{AxiomBlockRef, BlockDirectory, SystemBlockRef, TheoremBlockRef};
+use super::directory::{
+    AxiomBlockRef, BlockDirectory, ProofBlockRef, SystemBlockRef, TheoremBlockRef,
+};
 use super::language::{FormulaBlock, VariableBlock};
 use super::text::{Paragraph, Text};
 
@@ -348,13 +350,17 @@ pub enum ProofBlockElement {
 impl ProofBlockElement {
     fn render(
         &self,
+        self_ref: ProofBlockRef,
         steps: &[ProofBlockStep],
         directory: &BlockDirectory,
         vars: &[VariableBlock],
         step_counter: &mut usize,
     ) -> ProofRenderedElement {
         match self {
-            Self::Text(text) => ProofRenderedElement::Text(text.render(directory)),
+            Self::Text(text) => {
+                ProofRenderedElement::Text(text.render_with_proof_steps(directory, self_ref))
+            }
+
             Self::Step => {
                 let step = &steps[*step_counter];
                 let ret =
@@ -368,6 +374,7 @@ impl ProofBlockElement {
 }
 
 pub struct ProofBlock {
+    self_ref: ProofBlockRef,
     theorem_ref: TheoremBlockRef,
     steps: Vec<ProofBlockStep>,
     elements: Vec<ProofBlockElement>,
@@ -375,11 +382,13 @@ pub struct ProofBlock {
 
 impl ProofBlock {
     pub fn new(
+        self_ref: ProofBlockRef,
         theorem_ref: TheoremBlockRef,
         steps: Vec<ProofBlockStep>,
         elements: Vec<ProofBlockElement>,
     ) -> ProofBlock {
         ProofBlock {
+            self_ref,
             theorem_ref,
             steps,
             elements,
@@ -411,7 +420,15 @@ impl ProofBlock {
         let elements = self
             .elements
             .iter()
-            .map(|element| element.render(&self.steps, directory, &theorem.vars, &mut step_counter))
+            .map(|element| {
+                element.render(
+                    self.self_ref,
+                    &self.steps,
+                    directory,
+                    &theorem.vars,
+                    &mut step_counter,
+                )
+            })
             .collect();
 
         ProofRendered::new(theorem_name, elements)

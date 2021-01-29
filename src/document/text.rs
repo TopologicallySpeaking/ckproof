@@ -24,7 +24,7 @@ use crate::rendered::{
     TodoRendered,
 };
 
-use super::directory::{Block, BlockDirectory, LocalBibliographyRef};
+use super::directory::{BlockDirectory, BlockReference, LocalBibliographyRef, ProofBlockRef};
 
 #[derive(Clone)]
 pub enum BareElement {
@@ -324,7 +324,7 @@ impl DisplayMathBlock {
 }
 
 pub enum ParagraphElement {
-    Reference(Block),
+    Reference(BlockReference),
     InlineMath(MathBlock),
     Citation(Citation),
 
@@ -339,7 +339,26 @@ pub enum ParagraphElement {
 impl ParagraphElement {
     fn render(&self, directory: &BlockDirectory) -> String {
         match self {
-            Self::Reference(block) => block.render_ref(directory),
+            Self::Reference(block_ref) => block_ref.render(directory),
+            Self::InlineMath(math) => format!("<math>{}</math>", math.render()),
+            Self::Citation(citation) => citation.render(),
+
+            Self::UnicornVomitBegin => "<span class=\"unicorn\">\u{1F661}".to_owned(),
+            Self::UnicornVomitEnd => "\u{1F662}</span>".to_owned(),
+            Self::EmBegin => "<em>".to_owned(),
+            Self::EmEnd => "</em>".to_owned(),
+
+            Self::Unformatted(element) => element.render().to_owned(),
+        }
+    }
+
+    fn render_with_proof_steps(
+        &self,
+        directory: &BlockDirectory,
+        proof_ref: ProofBlockRef,
+    ) -> String {
+        match self {
+            Self::Reference(block_ref) => block_ref.render_with_proof_steps(directory, proof_ref),
             Self::InlineMath(math) => format!("<math>{}</math>", math.render()),
             Self::Citation(citation) => citation.render(),
 
@@ -364,6 +383,17 @@ impl Paragraph {
             .map(|element| element.render(directory))
             .collect()
     }
+
+    pub fn render_with_proof_steps(
+        &self,
+        directory: &BlockDirectory,
+        proof_ref: ProofBlockRef,
+    ) -> String {
+        self.elements
+            .iter()
+            .map(|element| element.render_with_proof_steps(directory, proof_ref))
+            .collect()
+    }
 }
 
 impl Paragraph {
@@ -386,6 +416,21 @@ impl Text {
             Self::Sublist(sublist) => TextRendered::Sublist(sublist.render()),
             Self::DisplayMath(display_math) => TextRendered::DisplayMath(display_math.render()),
             Self::Paragraph(paragraph) => TextRendered::Paragraph(paragraph.render(directory)),
+        }
+    }
+
+    pub fn render_with_proof_steps(
+        &self,
+        directory: &BlockDirectory,
+        proof_ref: ProofBlockRef,
+    ) -> TextRendered {
+        match self {
+            Self::Mla(mla) => TextRendered::Mla(mla.render()),
+            Self::Sublist(sublist) => TextRendered::Sublist(sublist.render()),
+            Self::DisplayMath(display_math) => TextRendered::DisplayMath(display_math.render()),
+            Self::Paragraph(paragraph) => {
+                TextRendered::Paragraph(paragraph.render_with_proof_steps(directory, proof_ref))
+            }
         }
     }
 }

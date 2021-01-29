@@ -22,7 +22,7 @@ use crate::deduction::directory::CheckableDirectory;
 
 use crate::rendered::{BlockRendered, MlaRendered};
 
-use super::deduction::{AxiomBlock, ProofBlock, ProofBlockStep, TheoremBlock};
+use super::deduction::{AxiomBlock, ProofBlock, TheoremBlock};
 use super::language::{SymbolBlock, SystemBlock, TypeBlock};
 use super::text::{HeadingBlock, Mla, QuoteBlock, TableBlock, TextBlock, TodoBlock};
 
@@ -114,11 +114,11 @@ impl ProofBlockRef {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct ProofBlockStepRef(ProofBlockRef, usize);
+pub struct ProofBlockStepRef(usize);
 
 impl ProofBlockStepRef {
-    pub fn new(proof_ref: ProofBlockRef, i: usize) -> ProofBlockStepRef {
-        ProofBlockStepRef(proof_ref, i)
+    pub fn new(i: usize) -> ProofBlockStepRef {
+        ProofBlockStepRef(i)
     }
 }
 
@@ -190,85 +190,19 @@ impl LocalBibliographyRef {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub enum Block {
+pub enum BlockReference {
     System(SystemBlockRef),
+
     Type(TypeBlockRef),
     Symbol(SymbolBlockRef),
     Axiom(AxiomBlockRef),
     Theorem(TheoremBlockRef),
-    Proof(ProofBlockRef),
-    ProofStep(ProofBlockStepRef),
 
-    Table(TableBlockRef),
-    Quote(QuoteBlockRef),
-    Heading(HeadingBlockRef),
-    Todo(TodoBlockRef),
-    Text(TextBlockRef),
+    ProofStep(ProofBlockStepRef),
 }
 
-impl Block {
-    pub fn render(&self, directory: &BlockDirectory) -> BlockRendered {
-        match self {
-            Self::System(system_ref) => {
-                let system = directory[*system_ref].render(directory);
-                BlockRendered::System(system)
-            }
-
-            Self::Type(type_ref) => {
-                let ty = directory[*type_ref].render(directory);
-                BlockRendered::Type(ty)
-            }
-
-            Self::Symbol(symbol_ref) => {
-                let symbol = directory[*symbol_ref].render(directory);
-                BlockRendered::Symbol(symbol)
-            }
-
-            Self::Axiom(axiom_ref) => {
-                let axiom = directory[*axiom_ref].render(directory);
-                BlockRendered::Axiom(axiom)
-            }
-
-            Self::Theorem(theorem_ref) => {
-                let theorem = directory[*theorem_ref].render(directory);
-                BlockRendered::Theorem(theorem)
-            }
-
-            Self::Proof(proof_ref) => {
-                let proof = directory[*proof_ref].render(directory);
-                BlockRendered::Proof(proof)
-            }
-
-            Self::ProofStep(_) => unreachable!(),
-
-            Self::Table(table_ref) => {
-                let table = directory[*table_ref].render(directory);
-                BlockRendered::Table(table)
-            }
-
-            Self::Quote(quote_ref) => {
-                let quote = directory[*quote_ref].render();
-                BlockRendered::Quote(quote)
-            }
-
-            Self::Heading(heading_ref) => {
-                let heading = directory[*heading_ref].render();
-                BlockRendered::Heading(heading)
-            }
-
-            Self::Todo(todo_ref) => {
-                let todo = directory[*todo_ref].render(directory);
-                BlockRendered::Todo(todo)
-            }
-
-            Self::Text(text_ref) => {
-                let text = directory[*text_ref].render(directory);
-                BlockRendered::Text(text)
-            }
-        }
-    }
-
-    pub fn render_ref(&self, directory: &BlockDirectory) -> String {
+impl BlockReference {
+    pub fn render(&self, directory: &BlockDirectory) -> String {
         match self {
             Self::System(system_ref) => {
                 let system = &directory[*system_ref];
@@ -320,23 +254,140 @@ impl Block {
                 )
             }
 
-            Self::Proof(_) => todo!(),
+            Self::ProofStep(_) => unreachable!(),
+        }
+    }
 
+    pub fn render_with_proof_steps(
+        &self,
+        directory: &BlockDirectory,
+        proof_ref: ProofBlockRef,
+    ) -> String {
+        match self {
             Self::ProofStep(proof_step_ref) => {
-                let proof_step = &directory[*proof_step_ref];
+                let proof_step = directory[proof_ref].step(proof_step_ref.0);
 
                 format!(
                     "<a href=\"{}\">({})</a>",
                     proof_step.href(),
-                    proof_step_ref.1 + 1
+                    proof_step_ref.0 + 1
                 )
             }
 
-            Self::Table(_) => todo!(),
-            Self::Quote(_) => todo!(),
-            Self::Heading(_) => todo!(),
-            Self::Todo(_) => todo!(),
-            Self::Text(_) => todo!(),
+            _ => self.render(directory),
+        }
+    }
+}
+
+impl From<SystemBlockRef> for BlockReference {
+    fn from(system_ref: SystemBlockRef) -> BlockReference {
+        BlockReference::System(system_ref)
+    }
+}
+
+impl From<TypeBlockRef> for BlockReference {
+    fn from(type_ref: TypeBlockRef) -> BlockReference {
+        BlockReference::Type(type_ref)
+    }
+}
+
+impl From<SymbolBlockRef> for BlockReference {
+    fn from(symbol_ref: SymbolBlockRef) -> BlockReference {
+        BlockReference::Symbol(symbol_ref)
+    }
+}
+
+impl From<AxiomBlockRef> for BlockReference {
+    fn from(axiom_ref: AxiomBlockRef) -> BlockReference {
+        BlockReference::Axiom(axiom_ref)
+    }
+}
+
+impl From<TheoremBlockRef> for BlockReference {
+    fn from(theorem_ref: TheoremBlockRef) -> BlockReference {
+        BlockReference::Theorem(theorem_ref)
+    }
+}
+
+impl From<ProofBlockStepRef> for BlockReference {
+    fn from(step_ref: ProofBlockStepRef) -> BlockReference {
+        BlockReference::ProofStep(step_ref)
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum Block {
+    System(SystemBlockRef),
+    Type(TypeBlockRef),
+    Symbol(SymbolBlockRef),
+    Axiom(AxiomBlockRef),
+    Theorem(TheoremBlockRef),
+    Proof(ProofBlockRef),
+
+    Table(TableBlockRef),
+    Quote(QuoteBlockRef),
+    Heading(HeadingBlockRef),
+    Todo(TodoBlockRef),
+    Text(TextBlockRef),
+}
+
+impl Block {
+    pub fn render(&self, directory: &BlockDirectory) -> BlockRendered {
+        match self {
+            Self::System(system_ref) => {
+                let system = directory[*system_ref].render(directory);
+                BlockRendered::System(system)
+            }
+
+            Self::Type(type_ref) => {
+                let ty = directory[*type_ref].render(directory);
+                BlockRendered::Type(ty)
+            }
+
+            Self::Symbol(symbol_ref) => {
+                let symbol = directory[*symbol_ref].render(directory);
+                BlockRendered::Symbol(symbol)
+            }
+
+            Self::Axiom(axiom_ref) => {
+                let axiom = directory[*axiom_ref].render(directory);
+                BlockRendered::Axiom(axiom)
+            }
+
+            Self::Theorem(theorem_ref) => {
+                let theorem = directory[*theorem_ref].render(directory);
+                BlockRendered::Theorem(theorem)
+            }
+
+            Self::Proof(proof_ref) => {
+                let proof = directory[*proof_ref].render(directory);
+                BlockRendered::Proof(proof)
+            }
+
+            Self::Table(table_ref) => {
+                let table = directory[*table_ref].render(directory);
+                BlockRendered::Table(table)
+            }
+
+            Self::Quote(quote_ref) => {
+                let quote = directory[*quote_ref].render();
+                BlockRendered::Quote(quote)
+            }
+
+            Self::Heading(heading_ref) => {
+                let heading = directory[*heading_ref].render();
+                BlockRendered::Heading(heading)
+            }
+
+            Self::Todo(todo_ref) => {
+                let todo = directory[*todo_ref].render(directory);
+                BlockRendered::Todo(todo)
+            }
+
+            Self::Text(text_ref) => {
+                let text = directory[*text_ref].render(directory);
+                BlockRendered::Text(text)
+            }
         }
     }
 }
@@ -374,12 +425,6 @@ impl From<TheoremBlockRef> for Block {
 impl From<ProofBlockRef> for Block {
     fn from(proof_ref: ProofBlockRef) -> Block {
         Block::Proof(proof_ref)
-    }
-}
-
-impl From<ProofBlockStepRef> for Block {
-    fn from(proof_ref: ProofBlockStepRef) -> Block {
-        Block::ProofStep(proof_ref)
     }
 }
 
@@ -544,14 +589,6 @@ impl Index<ProofBlockRef> for BlockDirectory {
 
     fn index(&self, proof_ref: ProofBlockRef) -> &Self::Output {
         &self.proofs[proof_ref.0]
-    }
-}
-
-impl Index<ProofBlockStepRef> for BlockDirectory {
-    type Output = ProofBlockStep;
-
-    fn index(&self, proof_step_ref: ProofBlockStepRef) -> &Self::Output {
-        &self[proof_step_ref.0].step(proof_step_ref.1)
     }
 }
 

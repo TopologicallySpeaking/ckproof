@@ -22,10 +22,10 @@ use std::ops::Index;
 use pest::iterators::Pair;
 
 use crate::document::directory::{
-    AxiomBlockRef, Bibliography, BibliographyRef, Block, BlockDirectory, HeadingBlockRef,
-    LocalBibliography, LocalBibliographyRef, ProofBlockRef, ProofBlockStepRef, QuoteBlockRef,
-    SymbolBlockRef, SystemBlockRef, TableBlockRef, TextBlockRef, TheoremBlockRef, TodoBlockRef,
-    TypeBlockRef, VariableBlockRef,
+    AxiomBlockRef, Bibliography, BibliographyRef, Block, BlockDirectory, BlockReference,
+    HeadingBlockRef, LocalBibliography, LocalBibliographyRef, ProofBlockRef, ProofBlockStepRef,
+    QuoteBlockRef, SymbolBlockRef, SystemBlockRef, TableBlockRef, TextBlockRef, TheoremBlockRef,
+    TodoBlockRef, TypeBlockRef, VariableBlockRef,
 };
 use crate::document::text::Mla;
 
@@ -101,25 +101,21 @@ impl TheoremBuilderRef {
 pub struct ProofBuilderRef(usize);
 
 impl ProofBuilderRef {
-    pub fn step(self, step: usize) -> ProofBuilderStepRef {
-        ProofBuilderStepRef(self, step)
-    }
-
     pub fn finish(&self) -> ProofBlockRef {
         ProofBlockRef::new(self.0)
     }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub struct ProofBuilderStepRef(ProofBuilderRef, usize);
+pub struct ProofBuilderStepRef(usize);
 
 impl ProofBuilderStepRef {
-    pub fn parent_proof(&self) -> ProofBuilderRef {
-        self.0
+    pub fn new(i: usize) -> ProofBuilderStepRef {
+        ProofBuilderStepRef(i)
     }
 
     pub fn finish(&self) -> ProofBlockStepRef {
-        ProofBlockStepRef::new(self.0.finish(), self.1)
+        ProofBlockStepRef::new(self.0)
     }
 }
 
@@ -259,7 +255,7 @@ impl SystemBuilderChild {
         }
     }
 
-    pub fn finish(&self) -> Block {
+    pub fn finish(&self) -> BlockReference {
         match self {
             Self::Type(type_ref) => type_ref.finish().into(),
             Self::Symbol(symbol_ref) => symbol_ref.finish().into(),

@@ -1137,7 +1137,7 @@ impl ProofBuilder {
         for (i, step) in self.steps.iter().enumerate() {
             step.verify_structure(
                 &self.system_id,
-                self_ref.step(i),
+                ProofBuilderStepRef::new(i),
                 self.theorem_ref.get().unwrap(),
                 directory,
                 &mut tags,
@@ -1181,6 +1181,7 @@ impl ProofBuilder {
     }
 
     pub fn finish(&self) -> ProofBlock {
+        let self_ref = self.self_ref.unwrap().finish();
         let theorem_ref = self.theorem_ref.get().unwrap().finish();
         let steps = self.steps.iter().map(ProofBuilderStep::finish).collect();
         let elements = self
@@ -1189,6 +1190,6 @@ impl ProofBuilder {
             .map(ProofBuilderElement::finish)
             .collect();
 
-        ProofBlock::new(theorem_ref, steps, elements)
+        ProofBlock::new(self_ref, theorem_ref, steps, elements)
     }
 }
