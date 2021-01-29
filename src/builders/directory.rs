@@ -442,7 +442,7 @@ impl SystemIndex {
         errors: &mut ParsingErrorContext,
     ) {
         if let Some(old_child_ref) = self.children.get(id).copied() {
-            errors.err(ParsingError::SystemChildIdAlreadyTaken(
+            errors.err(ParsingError::system_child_id_already_taken(
                 child_ref,
                 old_child_ref,
             ));
@@ -517,7 +517,7 @@ impl BuilderIndex {
     ) {
         match self.systems.get_mut(system_id) {
             Some(index) => index.add_child(child_id, child_ref, errors),
-            None => errors.err(ParsingError::SystemChildParentIdNotFound(child_ref)),
+            None => errors.err(ParsingError::system_child_parent_not_found(child_ref)),
         }
     }
 

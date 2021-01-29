@@ -58,6 +58,8 @@ pub enum SystemParsingError {
 #[derive(Debug)]
 pub enum TypeParsingError {
     ParentNotFound,
+    IdAlreadyTaken(SystemBuilderChild),
+
     MissingName,
     MissingTagline,
     DuplicateName,
@@ -68,6 +70,8 @@ pub enum TypeParsingError {
 #[derive(Debug)]
 pub enum SymbolParsingError {
     ParentNotFound,
+    IdAlreadyTaken(SystemBuilderChild),
+
     MissingName,
     MissingTagline,
     MissingTypeSignature,
@@ -87,6 +91,8 @@ pub enum VariableParsingError {
 #[derive(Debug)]
 pub enum AxiomParsingError {
     ParentNotFound,
+    IdAlreadyTaken(SystemBuilderChild),
+
     MissingName,
     MissingTagline,
     DuplicateName,
@@ -99,6 +105,8 @@ pub enum AxiomParsingError {
 #[derive(Debug)]
 pub enum TheoremParsingError {
     ParentNotFound,
+    IdAlreadyTaken(SystemBuilderChild),
+
     MissingName,
     MissingTagline,
     DuplicateName,
@@ -141,9 +149,46 @@ pub enum ParsingError {
     TheoremError(TheoremBuilderRef, TheoremParsingError),
     ProofError(ProofBuilderRef, ProofParsingError),
 
-    SystemChildIdAlreadyTaken(SystemBuilderChild, SystemBuilderChild),
-    SystemChildParentIdNotFound(SystemBuilderChild),
     SystemReadSignatureAlreadyTaken(Readable, Readable),
+}
+
+impl ParsingError {
+    pub fn system_child_parent_not_found(child_ref: SystemBuilderChild) -> ParsingError {
+        match child_ref {
+            SystemBuilderChild::Type(type_ref) => {
+                ParsingError::TypeError(type_ref, TypeParsingError::ParentNotFound)
+            }
+            SystemBuilderChild::Symbol(symbol_ref) => {
+                ParsingError::SymbolError(symbol_ref, SymbolParsingError::ParentNotFound)
+            }
+            SystemBuilderChild::Axiom(axiom_ref) => {
+                ParsingError::AxiomError(axiom_ref, AxiomParsingError::ParentNotFound)
+            }
+            SystemBuilderChild::Theorem(axiom_ref) => {
+                ParsingError::TheoremError(axiom_ref, TheoremParsingError::ParentNotFound)
+            }
+        }
+    }
+
+    pub fn system_child_id_already_taken(
+        child_ref: SystemBuilderChild,
+        old_ref: SystemBuilderChild,
+    ) -> ParsingError {
+        match child_ref {
+            SystemBuilderChild::Type(type_ref) => {
+                ParsingError::TypeError(type_ref, TypeParsingError::IdAlreadyTaken(old_ref))
+            }
+            SystemBuilderChild::Symbol(symbol_ref) => {
+                ParsingError::SymbolError(symbol_ref, SymbolParsingError::IdAlreadyTaken(old_ref))
+            }
+            SystemBuilderChild::Axiom(axiom_ref) => {
+                ParsingError::AxiomError(axiom_ref, AxiomParsingError::IdAlreadyTaken(old_ref))
+            }
+            SystemBuilderChild::Theorem(axiom_ref) => {
+                ParsingError::TheoremError(axiom_ref, TheoremParsingError::IdAlreadyTaken(old_ref))
+            }
+        }
+    }
 }
 
 impl From<IoError> for ParsingError {
