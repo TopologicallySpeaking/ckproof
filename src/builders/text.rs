@@ -33,11 +33,12 @@ use crate::document::text::{
 
 use super::directory::{
     BibliographyBuilderRef, BuilderDirectory, LocalBibliographyBuilderIndex,
-    LocalBibliographyBuilderRef, ProofBuilderStepRef, SystemBuilderChild, SystemBuilderRef,
-    TagIndex, TextBlockBuilderRef, TodoBuilderRef,
+    LocalBibliographyBuilderRef, ProofBuilderStepRef, QuoteBuilderRef, SystemBuilderChild,
+    SystemBuilderRef, TableBuilderRef, TagIndex, TextBlockBuilderRef, TodoBuilderRef,
 };
 use super::errors::{
-    MlaContainerParsingError, MlaParsingError, ParsingError, ParsingErrorContext, TextParsingError,
+    MlaContainerParsingError, MlaParsingError, ParagraphElementParsingError, ParagraphParsingError,
+    ParsingError, ParsingErrorContext, QuoteParsingError, TableParsingError, TextParsingError,
     TodoParsingError,
 };
 use super::Rule;
@@ -116,12 +117,21 @@ impl CitationBuilder {
         }
     }
 
-    fn verify_structure(&self, directory: &BuilderDirectory, errors: &mut ParsingErrorContext) {
+    fn verify_structure<F>(
+        &self,
+        directory: &BuilderDirectory,
+        errors: &mut ParsingErrorContext,
+        generate_error: F,
+    ) where
+        F: Fn(ParagraphElementParsingError) -> ParsingError,
+    {
         assert!(self.bib_ref.get().is_none());
         self.bib_ref.set(directory.search_bib_key(&self.bib_key));
 
         if self.bib_ref.get().is_none() {
-            todo!()
+            errors.err(generate_error(
+                ParagraphElementParsingError::CitationKeyNotFound,
+            ));
         }
     }
 
@@ -743,7 +753,9 @@ impl TextBuilder {
             Self::Mla(mla) => {
                 mla.verify_structure(errors, |e| generate_error(TextParsingError::MlaError(e)))
             }
-            Self::Paragraph(paragraph) => paragraph.verify_structure(directory, errors),
+            Self::Paragraph(paragraph) => paragraph.verify_structure(directory, errors, |e| {
+                generate_error(TextParsingError::ParagraphError(e))
+            }),
 
             Self::Sublist(_) | Self::DisplayMath(_) => {}
         }
@@ -763,7 +775,9 @@ impl TextBuilder {
                 mla.verify_structure(errors, |e| generate_error(TextParsingError::MlaError(e)))
             }
             Self::Paragraph(paragraph) => {
-                paragraph.verify_structure_with_tags(directory, tags, errors)
+                paragraph.verify_structure_with_tags(directory, tags, errors, |e| {
+                    generate_error(TextParsingError::ParagraphError(e))
+                })
             }
 
             Self::Sublist(_) | Self::DisplayMath(_) => {}
@@ -814,11 +828,20 @@ impl SystemReferenceBuilder {
         }
     }
 
-    fn verify_structure(&self, directory: &BuilderDirectory, errors: &mut ParsingErrorContext) {
+    fn verify_structure<F>(
+        &self,
+        directory: &BuilderDirectory,
+        errors: &mut ParsingErrorContext,
+        generate_error: F,
+    ) where
+        F: Fn(ParagraphElementParsingError) -> ParsingError,
+    {
         self.system_ref.set(directory.search_system(&self.id));
 
         if self.system_ref.get().is_none() {
-            todo!()
+            errors.err(generate_error(
+                ParagraphElementParsingError::SystemReferenceIdNotFound,
+            ));
         }
     }
 
@@ -850,12 +873,21 @@ impl SystemChildReferenceBuilder {
         }
     }
 
-    fn verify_structure(&self, directory: &BuilderDirectory, errors: &mut ParsingErrorContext) {
+    fn verify_structure<F>(
+        &self,
+        directory: &BuilderDirectory,
+        errors: &mut ParsingErrorContext,
+        generate_error: F,
+    ) where
+        F: Fn(ParagraphElementParsingError) -> ParsingError,
+    {
         self.child_ref
             .set(directory.search_system_child(&self.system_id, &self.child_id));
 
         if self.child_ref.get().is_none() {
-            todo!()
+            errors.err(generate_error(
+                ParagraphElementParsingError::SystemChildReferenceIdNotFound,
+            ));
         }
     }
 
@@ -883,11 +915,20 @@ impl TagReferenceBuilder {
         }
     }
 
-    fn verify_structure(&self, tags: &TagIndex, errors: &mut ParsingErrorContext) {
+    fn verify_structure<F>(
+        &self,
+        tags: &TagIndex,
+        errors: &mut ParsingErrorContext,
+        generate_error: F,
+    ) where
+        F: Fn(ParagraphElementParsingError) -> ParsingError,
+    {
         self.step_ref.set(tags.search(&self.tag));
 
         if self.step_ref.get().is_none() {
-            todo!()
+            errors.err(generate_error(
+                ParagraphElementParsingError::TagReferenceNotFound,
+            ));
         }
     }
 
@@ -916,24 +957,34 @@ impl ReferenceBuilder {
         }
     }
 
-    fn verify_structure(&self, directory: &BuilderDirectory, errors: &mut ParsingErrorContext) {
+    fn verify_structure<F>(
+        &self,
+        directory: &BuilderDirectory,
+        errors: &mut ParsingErrorContext,
+        generate_error: F,
+    ) where
+        F: Fn(ParagraphElementParsingError) -> ParsingError,
+    {
         match self {
-            Self::System(r) => r.verify_structure(directory, errors),
-            Self::SystemChild(r) => r.verify_structure(directory, errors),
+            Self::System(r) => r.verify_structure(directory, errors, generate_error),
+            Self::SystemChild(r) => r.verify_structure(directory, errors, generate_error),
             Self::Tag(_) => unreachable!(),
         }
     }
 
-    fn verify_structure_with_tags(
+    fn verify_structure_with_tags<F>(
         &self,
         directory: &BuilderDirectory,
         tags: &TagIndex,
         errors: &mut ParsingErrorContext,
-    ) {
+        generate_error: F,
+    ) where
+        F: Fn(ParagraphElementParsingError) -> ParsingError,
+    {
         match self {
-            Self::System(r) => r.verify_structure(directory, errors),
-            Self::SystemChild(r) => r.verify_structure(directory, errors),
-            Self::Tag(r) => r.verify_structure(tags, errors),
+            Self::System(r) => r.verify_structure(directory, errors, generate_error),
+            Self::SystemChild(r) => r.verify_structure(directory, errors, generate_error),
+            Self::Tag(r) => r.verify_structure(tags, errors, generate_error),
         }
     }
 
@@ -975,42 +1026,54 @@ impl ParagraphBuilderElement {
         }
     }
 
-    fn verify_structure(
+    fn verify_structure<F>(
         &self,
         directory: &BuilderDirectory,
         state: &mut ParagraphFormattingState,
         errors: &mut ParsingErrorContext,
-    ) {
+        generate_error: F,
+    ) where
+        F: Fn(ParagraphElementParsingError) -> ParsingError,
+    {
         match self {
-            Self::Reference(r) => r.verify_structure(directory, errors),
+            Self::Reference(r) => r.verify_structure(directory, errors, generate_error),
             Self::InlineMath(_) => {}
-            Self::Citation(citation) => citation.verify_structure(directory, errors),
+            Self::Citation(citation) => {
+                citation.verify_structure(directory, errors, generate_error)
+            }
 
-            Self::UnicornVomitBegin => state.unicorn_begin(errors),
-            Self::UnicornVomitEnd => state.unicorn_end(errors),
-            Self::EmBegin => state.em_begin(errors),
-            Self::EmEnd => state.em_end(errors),
+            Self::UnicornVomitBegin => state.unicorn_begin(errors, generate_error),
+            Self::UnicornVomitEnd => state.unicorn_end(errors, generate_error),
+            Self::EmBegin => state.em_begin(errors, generate_error),
+            Self::EmEnd => state.em_end(errors, generate_error),
 
             Self::Unformatted(builder) => builder.verify_structure(errors),
         }
     }
 
-    fn verify_structure_with_tags(
+    fn verify_structure_with_tags<F>(
         &self,
         directory: &BuilderDirectory,
         tags: &TagIndex,
         state: &mut ParagraphFormattingState,
         errors: &mut ParsingErrorContext,
-    ) {
+        generate_error: F,
+    ) where
+        F: Fn(ParagraphElementParsingError) -> ParsingError,
+    {
         match self {
-            Self::Reference(r) => r.verify_structure_with_tags(directory, tags, errors),
+            Self::Reference(r) => {
+                r.verify_structure_with_tags(directory, tags, errors, generate_error)
+            }
             Self::InlineMath(_) => {}
-            Self::Citation(citation) => citation.verify_structure(directory, errors),
+            Self::Citation(citation) => {
+                citation.verify_structure(directory, errors, generate_error)
+            }
 
-            Self::UnicornVomitBegin => state.unicorn_begin(errors),
-            Self::UnicornVomitEnd => state.unicorn_end(errors),
-            Self::EmBegin => state.em_begin(errors),
-            Self::EmEnd => state.em_end(errors),
+            Self::UnicornVomitBegin => state.unicorn_begin(errors, generate_error),
+            Self::UnicornVomitEnd => state.unicorn_end(errors, generate_error),
+            Self::EmBegin => state.em_begin(errors, generate_error),
+            Self::EmEnd => state.em_end(errors, generate_error),
 
             Self::Unformatted(builder) => builder.verify_structure(errors),
         }
@@ -1052,38 +1115,80 @@ enum ParagraphFormattingState {
 }
 
 impl ParagraphFormattingState {
-    fn unicorn_begin(&mut self, errors: &mut ParsingErrorContext) {
+    fn unicorn_begin<F>(&mut self, errors: &mut ParsingErrorContext, generate_error: F)
+    where
+        F: Fn(ParagraphElementParsingError) -> ParsingError,
+    {
         match self {
             Self::None => *self = Self::Unicorn,
 
-            _ => todo!(),
+            _ => errors.err(generate_error(
+                ParagraphElementParsingError::UnexpectedUnicornVomitBegin,
+            )),
         }
     }
 
-    fn unicorn_end(&mut self, errors: &mut ParsingErrorContext) {
+    fn unicorn_end<F>(&mut self, errors: &mut ParsingErrorContext, generate_error: F)
+    where
+        F: Fn(ParagraphElementParsingError) -> ParsingError,
+    {
         match self {
             Self::Unicorn => *self = Self::None,
 
-            _ => todo!(),
+            _ => errors.err(generate_error(
+                ParagraphElementParsingError::UnexpectedUnicornVomitEnd,
+            )),
         }
     }
 
-    fn em_begin(&mut self, errors: &mut ParsingErrorContext) {
+    fn em_begin<F>(&mut self, errors: &mut ParsingErrorContext, generate_error: F)
+    where
+        F: Fn(ParagraphElementParsingError) -> ParsingError,
+    {
         match self {
             Self::None => *self = Self::Em,
 
-            _ => todo!(),
+            _ => errors.err(generate_error(
+                ParagraphElementParsingError::UnexpectedEmBegin,
+            )),
         }
     }
 
-    fn em_end(&mut self, errors: &mut ParsingErrorContext) {
+    fn em_end<F>(&mut self, errors: &mut ParsingErrorContext, generate_error: F)
+    where
+        F: Fn(ParagraphElementParsingError) -> ParsingError,
+    {
         match self {
             Self::Em => *self = Self::None,
 
-            _ => todo!(),
+            _ => errors.err(generate_error(
+                ParagraphElementParsingError::UnexpectedEmEnd,
+            )),
+        }
+    }
+
+    fn verify<F>(self, errors: &mut ParsingErrorContext, generate_error: F) -> bool
+    where
+        F: Fn(ParagraphParsingError) -> ParsingError,
+    {
+        match self {
+            Self::None => true,
+
+            Self::Unicorn => {
+                errors.err(generate_error(ParagraphParsingError::UnclosedUnicornVomit));
+                false
+            }
+
+            Self::Em => {
+                errors.err(generate_error(ParagraphParsingError::UnclosedEm));
+                false
+            }
         }
     }
 }
+
+#[derive(Clone, Copy, Debug)]
+pub struct ParagraphBuilderElementRef(usize);
 
 pub struct ParagraphBuilder {
     elements: Vec<ParagraphBuilderElement>,
@@ -1112,40 +1217,56 @@ impl ParagraphBuilder {
         }
     }
 
-    pub fn verify_structure(&self, directory: &BuilderDirectory, errors: &mut ParsingErrorContext) {
+    pub fn verify_structure<F>(
+        &self,
+        directory: &BuilderDirectory,
+        errors: &mut ParsingErrorContext,
+        generate_error: F,
+    ) where
+        F: Fn(ParagraphParsingError) -> ParsingError,
+    {
         assert!(!self.verified.get());
 
         let mut state = ParagraphFormattingState::None;
 
-        for element in &self.elements {
-            element.verify_structure(directory, &mut state, errors);
+        for (i, element) in self.elements.iter().enumerate() {
+            element.verify_structure(directory, &mut state, errors, |e| {
+                generate_error(ParagraphParsingError::ElementError(
+                    ParagraphBuilderElementRef(i),
+                    e,
+                ))
+            });
         }
 
-        match state {
-            ParagraphFormattingState::None => self.verified.set(true),
-
-            _ => todo!(),
+        if state.verify(errors, generate_error) {
+            self.verified.set(true);
         }
     }
 
-    pub fn verify_structure_with_tags(
+    pub fn verify_structure_with_tags<F>(
         &self,
         directory: &BuilderDirectory,
         tags: &TagIndex,
         errors: &mut ParsingErrorContext,
-    ) {
+        generate_error: F,
+    ) where
+        F: Fn(ParagraphParsingError) -> ParsingError,
+    {
         assert!(!self.verified.get());
 
         let mut state = ParagraphFormattingState::None;
 
-        for element in &self.elements {
-            element.verify_structure_with_tags(directory, tags, &mut state, errors);
+        for (i, element) in self.elements.iter().enumerate() {
+            element.verify_structure_with_tags(directory, tags, &mut state, errors, |e| {
+                generate_error(ParagraphParsingError::ElementError(
+                    ParagraphBuilderElementRef(i),
+                    e,
+                ))
+            });
         }
 
-        match state {
-            ParagraphFormattingState::None => self.verified.set(true),
-
-            _ => todo!(),
+        if state.verify(errors, generate_error) {
+            self.verified.set(true);
         }
     }
 
@@ -1175,6 +1296,16 @@ impl ParagraphBuilder {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+enum CellLocation {
+    Head,
+    Body,
+    Foot,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct TableBuilderCellRef(CellLocation, usize, usize);
+
 struct TableBuilderRow {
     cells: Vec<ParagraphBuilder>,
 }
@@ -1188,9 +1319,24 @@ impl TableBuilderRow {
         TableBuilderRow { cells }
     }
 
-    fn verify_structure(&self, directory: &BuilderDirectory, errors: &mut ParsingErrorContext) {
-        for cell in &self.cells {
-            cell.verify_structure(directory, errors);
+    fn verify_structure(
+        &self,
+        table_ref: TableBuilderRef,
+        location: CellLocation,
+        row_index: usize,
+        directory: &BuilderDirectory,
+        errors: &mut ParsingErrorContext,
+    ) {
+        for (cell_index, cell) in self.cells.iter().enumerate() {
+            cell.verify_structure(directory, errors, |e| {
+                ParsingError::TableError(
+                    table_ref,
+                    TableParsingError::CellParsingError(
+                        TableBuilderCellRef(location, row_index, cell_index),
+                        e,
+                    ),
+                )
+            });
         }
     }
 
@@ -1217,6 +1363,8 @@ pub struct TableBuilder {
     foot: Option<Vec<TableBuilderRow>>,
 
     caption: Option<ParagraphBuilder>,
+
+    self_ref: Option<TableBuilderRef>,
 }
 
 impl TableBuilder {
@@ -1265,21 +1413,58 @@ impl TableBuilder {
             foot,
 
             caption,
+
+            self_ref: None,
         }
     }
 
-    pub fn verify_structure(&self, directory: &BuilderDirectory, errors: &mut ParsingErrorContext) {
-        let head = self.head.iter().flatten();
-        let body = self.body.iter().flatten();
-        let foot = self.foot.iter().flatten();
-        let rows = head.chain(body).chain(foot);
+    pub fn set_self_ref(&mut self, self_ref: TableBuilderRef) {
+        assert!(self.self_ref.is_none());
+        self.self_ref = Some(self_ref);
+    }
 
-        for row in rows {
-            row.verify_structure(directory, errors);
+    pub fn verify_structure(&self, directory: &BuilderDirectory, errors: &mut ParsingErrorContext) {
+        if let Some(head) = &self.head {
+            for (row_index, row) in head.iter().enumerate() {
+                row.verify_structure(
+                    self.self_ref.unwrap(),
+                    CellLocation::Head,
+                    row_index,
+                    directory,
+                    errors,
+                );
+            }
+        }
+        if let Some(body) = &self.body {
+            for (row_index, row) in body.iter().enumerate() {
+                row.verify_structure(
+                    self.self_ref.unwrap(),
+                    CellLocation::Body,
+                    row_index,
+                    directory,
+                    errors,
+                );
+            }
+        }
+        if let Some(foot) = &self.foot {
+            for (row_index, row) in foot.iter().enumerate() {
+                row.verify_structure(
+                    self.self_ref.unwrap(),
+                    CellLocation::Foot,
+                    row_index,
+                    directory,
+                    errors,
+                );
+            }
         }
 
         if let Some(paragraph) = self.caption.as_ref() {
-            paragraph.verify_structure(directory, errors);
+            paragraph.verify_structure(directory, errors, |e| {
+                ParsingError::TableError(
+                    self.self_ref.unwrap(),
+                    TableParsingError::CaptionParsingError(e),
+                )
+            });
         }
     }
 
@@ -1355,12 +1540,19 @@ impl QuoteValueBuilder {
         }
     }
 
-    fn verify_structure(&self, directory: &BuilderDirectory, errors: &mut ParsingErrorContext) {
+    fn verify_structure<F>(
+        &self,
+        directory: &BuilderDirectory,
+        errors: &mut ParsingErrorContext,
+        generate_error: F,
+    ) where
+        F: Fn() -> ParsingError,
+    {
         assert!(self.bib_ref.get().is_none());
 
         self.bib_ref.set(directory.search_bib_key(&self.bib_key));
         if self.bib_ref.get().is_none() {
-            todo!()
+            errors.err(generate_error());
         }
     }
 
@@ -1386,6 +1578,8 @@ impl QuoteValueBuilder {
 pub struct QuoteBuilder {
     original: Option<QuoteValueBuilder>,
     value: QuoteValueBuilder,
+
+    self_ref: Option<QuoteBuilderRef>,
 }
 
 impl QuoteBuilder {
@@ -1406,14 +1600,31 @@ impl QuoteBuilder {
 
         let value = QuoteValueBuilder::from_pest(curr);
 
-        QuoteBuilder { original, value }
+        QuoteBuilder {
+            original,
+            value,
+
+            self_ref: None,
+        }
+    }
+
+    pub fn set_self_ref(&mut self, self_ref: QuoteBuilderRef) {
+        assert!(self.self_ref.is_none());
+        self.self_ref = Some(self_ref);
     }
 
     pub fn verify_structure(&self, directory: &BuilderDirectory, errors: &mut ParsingErrorContext) {
-        self.original
-            .as_ref()
-            .map(|original| original.verify_structure(directory, errors));
-        self.value.verify_structure(directory, errors);
+        self.original.as_ref().map(|original| {
+            original.verify_structure(directory, errors, || {
+                ParsingError::QuoteError(
+                    self.self_ref.unwrap(),
+                    QuoteParsingError::OriginalKeyNotFound,
+                )
+            })
+        });
+        self.value.verify_structure(directory, errors, || {
+            ParsingError::QuoteError(self.self_ref.unwrap(), QuoteParsingError::ValueKeyNotFound)
+        });
     }
 
     pub fn bib_refs(&self) -> Box<dyn Iterator<Item = BibliographyBuilderRef> + '_> {

@@ -185,7 +185,8 @@ impl ChapterBuilder {
     }
 
     fn verify_structure(&self, directory: &BuilderDirectory, errors: &mut ParsingErrorContext) {
-        self.tagline.verify_structure(directory, errors);
+        self.tagline
+            .verify_structure(directory, errors, |_| todo!());
     }
 
     fn build_local_bib(&mut self, directory: &BuilderDirectory) {
@@ -253,7 +254,8 @@ impl BookBuilder {
     }
 
     fn verify_structure(&self, directory: &BuilderDirectory, errors: &mut ParsingErrorContext) {
-        self.tagline.verify_structure(directory, errors);
+        self.tagline
+            .verify_structure(directory, errors, |_| todo!());
 
         for chapter in &self.chapters {
             chapter.verify_structure(directory, errors);

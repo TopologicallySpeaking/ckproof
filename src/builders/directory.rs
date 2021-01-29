@@ -677,10 +677,14 @@ impl BuilderDirectory {
         proof_ref
     }
 
-    pub fn add_table(&mut self, table: TableBuilder) -> TableBuilderRef {
+    pub fn add_table(&mut self, mut table: TableBuilder) -> TableBuilderRef {
         assert!(self.index.is_none());
+
+        let table_ref = TableBuilderRef(self.tables.len());
+        table.set_self_ref(table_ref);
+
         self.tables.push(table);
-        TableBuilderRef(self.tables.len() - 1)
+        table_ref
     }
 
     pub fn add_quote(&mut self, quote: QuoteBuilder) -> QuoteBuilderRef {

@@ -147,7 +147,9 @@ impl AxiomBuilderEntries {
                 ));
             }
 
-            1 => self.taglines[0].verify_structure(directory, errors),
+            1 => self.taglines[0].verify_structure(directory, errors, |e| {
+                ParsingError::AxiomError(self_ref, AxiomParsingError::TaglineParsingError(e))
+            }),
 
             _ => {
                 found_error = true;
@@ -492,7 +494,9 @@ impl TheoremBuilderEntries {
                 ));
             }
 
-            1 => self.taglines[0].verify_structure(directory, errors),
+            1 => self.taglines[0].verify_structure(directory, errors, |e| {
+                ParsingError::TheoremError(self_ref, TheoremParsingError::TaglineParsingError(e))
+            }),
 
             _ => {
                 found_error = true;

@@ -22,11 +22,14 @@ use url::ParseError as UrlError;
 
 use super::deduction::ProofBuilderElementRef;
 use super::directory::{
-    AxiomBuilderRef, BibliographyBuilderRef, ProofBuilderRef, ProofBuilderStepRef, Readable,
-    ReadableKind, SymbolBuilderRef, SystemBuilderChild, SystemBuilderRef, TextBlockBuilderRef,
-    TheoremBuilderRef, TodoBuilderRef, TypeBuilderRef, VariableBuilderRef,
+    AxiomBuilderRef, BibliographyBuilderRef, ProofBuilderRef, ProofBuilderStepRef, QuoteBuilderRef,
+    Readable, ReadableKind, SymbolBuilderRef, SystemBuilderChild, SystemBuilderRef,
+    TableBuilderRef, TextBlockBuilderRef, TheoremBuilderRef, TodoBuilderRef, TypeBuilderRef,
+    VariableBuilderRef,
 };
-use super::text::{MlaContainerRef, TodoBuilderElementRef};
+use super::text::{
+    MlaContainerRef, ParagraphBuilderElementRef, TableBuilderCellRef, TodoBuilderElementRef,
+};
 use super::Rule;
 
 #[derive(Debug)]
@@ -45,6 +48,27 @@ impl From<PestError<Rule>> for BuilderCreationError {
     fn from(e: PestError<Rule>) -> BuilderCreationError {
         BuilderCreationError::PestError(e)
     }
+}
+
+#[derive(Debug)]
+pub enum ParagraphElementParsingError {
+    SystemReferenceIdNotFound,
+    SystemChildReferenceIdNotFound,
+    TagReferenceNotFound,
+    CitationKeyNotFound,
+
+    UnexpectedUnicornVomitBegin,
+    UnexpectedUnicornVomitEnd,
+    UnexpectedEmBegin,
+    UnexpectedEmEnd,
+}
+
+#[derive(Debug)]
+pub enum ParagraphParsingError {
+    ElementError(ParagraphBuilderElementRef, ParagraphElementParsingError),
+
+    UnclosedUnicornVomit,
+    UnclosedEm,
 }
 
 #[derive(Debug)]
@@ -69,6 +93,7 @@ pub enum MlaParsingError {
 
 #[derive(Debug)]
 pub enum TextParsingError {
+    ParagraphError(ParagraphParsingError),
     MlaError(MlaParsingError),
 }
 
@@ -81,6 +106,7 @@ pub enum SystemParsingError {
     DuplicateName,
     DuplicateTagline,
     DuplicateDescription,
+    TaglineParsingError(ParagraphParsingError),
     DescriptionParsingError(TextParsingError),
 }
 
@@ -94,6 +120,7 @@ pub enum TypeParsingError {
     DuplicateName,
     DuplicateTagline,
     DuplicateDescription,
+    TaglineParsingError(ParagraphParsingError),
     DescriptionParsingError(TextParsingError),
 }
 
@@ -112,6 +139,7 @@ pub enum SymbolParsingError {
     DuplicateTypeSignature,
     DuplicateReads,
     DuplicateDisplays,
+    TaglineParsingError(ParagraphParsingError),
     DescriptionParsingError(TextParsingError),
 }
 
@@ -130,6 +158,7 @@ pub enum AxiomParsingError {
     DuplicateName,
     DuplicateTagline,
     DuplicateDescription,
+    TaglineParsingError(ParagraphParsingError),
     DescriptionParsingError(TextParsingError),
 
     VariableError(VariableBuilderRef, VariableParsingError),
@@ -145,6 +174,7 @@ pub enum TheoremParsingError {
     DuplicateName,
     DuplicateTagline,
     DuplicateDescription,
+    TaglineParsingError(ParagraphParsingError),
     DescriptionParsingError(TextParsingError),
 
     VariableError(VariableBuilderRef, VariableParsingError),
@@ -177,6 +207,18 @@ pub enum ProofParsingError {
 }
 
 #[derive(Debug)]
+pub enum TableParsingError {
+    CellParsingError(TableBuilderCellRef, ParagraphParsingError),
+    CaptionParsingError(ParagraphParsingError),
+}
+
+#[derive(Debug)]
+pub enum QuoteParsingError {
+    OriginalKeyNotFound,
+    ValueKeyNotFound,
+}
+
+#[derive(Debug)]
 pub enum TodoParsingError {
     TextError(TodoBuilderElementRef, TextParsingError),
 }
@@ -199,6 +241,8 @@ pub enum ParsingError {
     TheoremError(TheoremBuilderRef, TheoremParsingError),
     ProofError(ProofBuilderRef, ProofParsingError),
 
+    TableError(TableBuilderRef, TableParsingError),
+    QuoteError(QuoteBuilderRef, QuoteParsingError),
     TodoError(TodoBuilderRef, TodoParsingError),
     TextBlockError(TextBlockBuilderRef, TextParsingError),
 

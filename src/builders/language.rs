@@ -122,7 +122,9 @@ impl SystemBuilderEntries {
                 ));
             }
 
-            1 => self.taglines[0].verify_structure(directory, errors),
+            1 => self.taglines[0].verify_structure(directory, errors, |e| {
+                ParsingError::SystemError(self_ref, SystemParsingError::TaglineParsingError(e))
+            }),
 
             _ => {
                 found_error = true;
@@ -339,7 +341,9 @@ impl TypeBuilderEntries {
                 ));
             }
 
-            1 => self.taglines[0].verify_structure(directory, errors),
+            1 => self.taglines[0].verify_structure(directory, errors, |e| {
+                ParsingError::TypeError(self_ref, TypeParsingError::TaglineParsingError(e))
+            }),
 
             _ => {
                 found_error = true;
@@ -841,7 +845,9 @@ impl SymbolBuilderEntries {
                 ));
             }
 
-            1 => self.taglines[0].verify_structure(directory, errors),
+            1 => self.taglines[0].verify_structure(directory, errors, |e| {
+                ParsingError::SymbolError(symbol_ref, SymbolParsingError::TaglineParsingError(e))
+            }),
 
             _ => {
                 found_error = true;
