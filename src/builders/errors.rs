@@ -21,8 +21,9 @@ use std::io::Error as IoError;
 use url::ParseError as UrlError;
 
 use super::directory::{
-    AxiomBuilderRef, ProofBuilderRef, ProofBuilderStepRef, Readable, SymbolBuilderRef,
-    SystemBuilderChild, SystemBuilderRef, TheoremBuilderRef, TypeBuilderRef, VariableBuilderRef,
+    AxiomBuilderRef, ProofBuilderRef, ProofBuilderStepRef, Readable, ReadableKind,
+    SymbolBuilderRef, SystemBuilderChild, SystemBuilderRef, TheoremBuilderRef, TypeBuilderRef,
+    VariableBuilderRef,
 };
 use super::Rule;
 
@@ -71,6 +72,7 @@ pub enum TypeParsingError {
 pub enum SymbolParsingError {
     ParentNotFound,
     IdAlreadyTaken(SystemBuilderChild),
+    ReadSignatureAlreadyTaken(Readable),
 
     MissingName,
     MissingTagline,
@@ -148,8 +150,6 @@ pub enum ParsingError {
     AxiomError(AxiomBuilderRef, AxiomParsingError),
     TheoremError(TheoremBuilderRef, TheoremParsingError),
     ProofError(ProofBuilderRef, ProofParsingError),
-
-    SystemReadSignatureAlreadyTaken(Readable, Readable),
 }
 
 impl ParsingError {
@@ -187,6 +187,15 @@ impl ParsingError {
             SystemBuilderChild::Theorem(axiom_ref) => {
                 ParsingError::TheoremError(axiom_ref, TheoremParsingError::IdAlreadyTaken(old_ref))
             }
+        }
+    }
+
+    pub fn read_signature_already_taken(read: Readable, old_read: Readable) -> ParsingError {
+        match read.kind() {
+            ReadableKind::Symbol(symbol_ref) => ParsingError::SymbolError(
+                symbol_ref,
+                SymbolParsingError::ReadSignatureAlreadyTaken(old_read),
+            ),
         }
     }
 }

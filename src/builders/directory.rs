@@ -462,7 +462,7 @@ impl SystemIndex {
         errors: &mut ParsingErrorContext,
     ) {
         if let Some(old_readable) = self.operators.get(&read_signature).copied() {
-            errors.err(ParsingError::SystemReadSignatureAlreadyTaken(
+            errors.err(ParsingError::read_signature_already_taken(
                 readable,
                 old_readable,
             ));
