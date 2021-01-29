@@ -20,11 +20,13 @@ use pest::error::Error as PestError;
 use std::io::Error as IoError;
 use url::ParseError as UrlError;
 
+use super::deduction::ProofBuilderElementRef;
 use super::directory::{
-    AxiomBuilderRef, ProofBuilderRef, ProofBuilderStepRef, Readable, ReadableKind,
-    SymbolBuilderRef, SystemBuilderChild, SystemBuilderRef, TheoremBuilderRef, TypeBuilderRef,
-    VariableBuilderRef,
+    AxiomBuilderRef, BibliographyBuilderRef, ProofBuilderRef, ProofBuilderStepRef, Readable,
+    ReadableKind, SymbolBuilderRef, SystemBuilderChild, SystemBuilderRef, TextBlockBuilderRef,
+    TheoremBuilderRef, TodoBuilderRef, TypeBuilderRef, VariableBuilderRef,
 };
+use super::text::{MlaContainerRef, TodoBuilderElementRef};
 use super::Rule;
 
 #[derive(Debug)]
@@ -46,6 +48,31 @@ impl From<PestError<Rule>> for BuilderCreationError {
 }
 
 #[derive(Debug)]
+pub enum MlaContainerParsingError {
+    DuplicateTitle,
+    DuplicateOtherContributors,
+    DuplicateVersion,
+    DuplicateNumber,
+    DuplicatePublisher,
+    DuplicatePublicationDate,
+    DuplicateLocation,
+}
+
+#[derive(Debug)]
+pub enum MlaParsingError {
+    MissingTitle,
+    DuplicateName,
+    DuplicateTitle,
+
+    ContainerError(MlaContainerRef, MlaContainerParsingError),
+}
+
+#[derive(Debug)]
+pub enum TextParsingError {
+    MlaError(MlaParsingError),
+}
+
+#[derive(Debug)]
 pub enum SystemParsingError {
     IdAlreadyTaken(SystemBuilderRef),
 
@@ -54,6 +81,7 @@ pub enum SystemParsingError {
     DuplicateName,
     DuplicateTagline,
     DuplicateDescription,
+    DescriptionParsingError(TextParsingError),
 }
 
 #[derive(Debug)]
@@ -66,6 +94,7 @@ pub enum TypeParsingError {
     DuplicateName,
     DuplicateTagline,
     DuplicateDescription,
+    DescriptionParsingError(TextParsingError),
 }
 
 #[derive(Debug)]
@@ -83,6 +112,7 @@ pub enum SymbolParsingError {
     DuplicateTypeSignature,
     DuplicateReads,
     DuplicateDisplays,
+    DescriptionParsingError(TextParsingError),
 }
 
 #[derive(Debug)]
@@ -100,6 +130,7 @@ pub enum AxiomParsingError {
     DuplicateName,
     DuplicateTagline,
     DuplicateDescription,
+    DescriptionParsingError(TextParsingError),
 
     VariableError(VariableBuilderRef, VariableParsingError),
 }
@@ -114,6 +145,7 @@ pub enum TheoremParsingError {
     DuplicateName,
     DuplicateTagline,
     DuplicateDescription,
+    DescriptionParsingError(TextParsingError),
 
     VariableError(VariableBuilderRef, VariableParsingError),
 }
@@ -130,12 +162,28 @@ pub enum ProofStepParsingError {
 }
 
 #[derive(Debug)]
+pub enum ProofElementParsingError {
+    TextError(TextParsingError),
+}
+
+#[derive(Debug)]
 pub enum ProofParsingError {
     ParentNotFound,
     ParentNotTheorem,
 
     VariableError(VariableBuilderRef, VariableParsingError),
     StepError(ProofBuilderStepRef, ProofStepParsingError),
+    ElementError(ProofBuilderElementRef, ProofElementParsingError),
+}
+
+#[derive(Debug)]
+pub enum TodoParsingError {
+    TextError(TodoBuilderElementRef, TextParsingError),
+}
+
+#[derive(Debug)]
+pub enum BibliographyParsingError {
+    MlaError(BibliographyBuilderRef, MlaParsingError),
 }
 
 #[derive(Debug)]
@@ -150,6 +198,11 @@ pub enum ParsingError {
     AxiomError(AxiomBuilderRef, AxiomParsingError),
     TheoremError(TheoremBuilderRef, TheoremParsingError),
     ProofError(ProofBuilderRef, ProofParsingError),
+
+    TodoError(TodoBuilderRef, TodoParsingError),
+    TextBlockError(TextBlockBuilderRef, TextParsingError),
+
+    BibliographyError(BibliographyParsingError),
 }
 
 impl ParsingError {

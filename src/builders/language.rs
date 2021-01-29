@@ -137,7 +137,12 @@ impl SystemBuilderEntries {
             0 => {}
             1 => {
                 for paragraph in &self.descriptions[0] {
-                    paragraph.verify_structure(directory, errors);
+                    paragraph.verify_structure(directory, errors, |e| {
+                        ParsingError::SystemError(
+                            self_ref,
+                            SystemParsingError::DescriptionParsingError(e),
+                        )
+                    });
                 }
             }
 
@@ -349,7 +354,12 @@ impl TypeBuilderEntries {
             0 => {}
             1 => {
                 for paragraph in &self.descriptions[0] {
-                    paragraph.verify_structure(directory, errors)
+                    paragraph.verify_structure(directory, errors, |e| {
+                        ParsingError::TypeError(
+                            self_ref,
+                            TypeParsingError::DescriptionParsingError(e),
+                        )
+                    })
                 }
             }
 
@@ -846,7 +856,12 @@ impl SymbolBuilderEntries {
             0 => {}
             1 => {
                 for paragraph in &self.descriptions[0] {
-                    paragraph.verify_structure(directory, errors);
+                    paragraph.verify_structure(directory, errors, |e| {
+                        ParsingError::SymbolError(
+                            symbol_ref,
+                            SymbolParsingError::DescriptionParsingError(e),
+                        )
+                    });
                 }
             }
 

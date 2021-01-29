@@ -34,9 +34,12 @@ use crate::document::text::{
 use super::directory::{
     BibliographyBuilderRef, BuilderDirectory, LocalBibliographyBuilderIndex,
     LocalBibliographyBuilderRef, ProofBuilderStepRef, SystemBuilderChild, SystemBuilderRef,
-    TagIndex,
+    TagIndex, TextBlockBuilderRef, TodoBuilderRef,
 };
-use super::errors::ParsingErrorContext;
+use super::errors::{
+    MlaContainerParsingError, MlaParsingError, ParsingError, ParsingErrorContext, TextParsingError,
+    TodoParsingError,
+};
 use super::Rule;
 
 fn map_operator(operator: Rule) -> String {
@@ -245,6 +248,9 @@ impl UnformattedBuilder {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct MlaContainerRef(usize);
+
 pub struct MlaContainerBuilder {
     container_titles: Vec<UnformattedBuilder>,
     other_contributors: Vec<UnformattedBuilder>,
@@ -254,11 +260,12 @@ pub struct MlaContainerBuilder {
     publication_dates: Vec<UnformattedBuilder>,
     locations: Vec<UnformattedBuilder>,
 
+    self_ref: MlaContainerRef,
     verified: Cell<bool>,
 }
 
 impl MlaContainerBuilder {
-    fn from_pest(pairs: Pairs<Rule>) -> MlaContainerBuilder {
+    fn from_pest(pairs: Pairs<Rule>, self_ref: MlaContainerRef) -> MlaContainerBuilder {
         let mut container_titles = Vec::with_capacity(1);
         let mut other_contributors = Vec::with_capacity(1);
         let mut versions = Vec::with_capacity(1);
@@ -328,54 +335,79 @@ impl MlaContainerBuilder {
             publication_dates,
             locations,
 
+            self_ref,
             verified: Cell::new(false),
         }
     }
 
-    fn verify_structure(&self, errors: &mut ParsingErrorContext) {
+    fn verify_structure<F>(&self, errors: &mut ParsingErrorContext, generate_error: F)
+    where
+        F: Fn(MlaParsingError) -> ParsingError,
+    {
         assert!(!self.verified.get());
         let mut found_error = false;
 
         match self.container_titles.len() {
             0 => {}
             1 => self.container_titles[0].verify_structure(errors),
-            _ => todo!(),
+            _ => errors.err(generate_error(MlaParsingError::ContainerError(
+                self.self_ref,
+                MlaContainerParsingError::DuplicateTitle,
+            ))),
         }
 
         match self.other_contributors.len() {
             0 => {}
             1 => self.other_contributors[0].verify_structure(errors),
-            _ => todo!(),
+            _ => errors.err(generate_error(MlaParsingError::ContainerError(
+                self.self_ref,
+                MlaContainerParsingError::DuplicateOtherContributors,
+            ))),
         }
 
         match self.versions.len() {
             0 => {}
             1 => self.versions[0].verify_structure(errors),
-            _ => todo!(),
+            _ => errors.err(generate_error(MlaParsingError::ContainerError(
+                self.self_ref,
+                MlaContainerParsingError::DuplicateVersion,
+            ))),
         }
 
         match self.numbers.len() {
             0 => {}
             1 => self.numbers[0].verify_structure(errors),
-            _ => todo!(),
+            _ => errors.err(generate_error(MlaParsingError::ContainerError(
+                self.self_ref,
+                MlaContainerParsingError::DuplicateNumber,
+            ))),
         }
 
         match self.publishers.len() {
             0 => {}
             1 => self.publishers[0].verify_structure(errors),
-            _ => todo!(),
+            _ => errors.err(generate_error(MlaParsingError::ContainerError(
+                self.self_ref,
+                MlaContainerParsingError::DuplicatePublisher,
+            ))),
         }
 
         match self.publication_dates.len() {
             0 => {}
             1 => self.publication_dates[0].verify_structure(errors),
-            _ => todo!(),
+            _ => errors.err(generate_error(MlaParsingError::ContainerError(
+                self.self_ref,
+                MlaContainerParsingError::DuplicatePublicationDate,
+            ))),
         }
 
         match self.locations.len() {
             0 => {}
             1 => self.locations[0].verify_structure(errors),
-            _ => todo!(),
+            _ => errors.err(generate_error(MlaParsingError::ContainerError(
+                self.self_ref,
+                MlaContainerParsingError::DuplicateLocation,
+            ))),
         }
 
         self.verified.set(!found_error);
@@ -433,7 +465,11 @@ impl MlaBuilderEntries {
                     pair.into_inner().next().unwrap(),
                 )),
                 Rule::mla_container => {
-                    containers.push(MlaContainerBuilder::from_pest(pair.into_inner()))
+                    let container_ref = MlaContainerRef(containers.len());
+                    containers.push(MlaContainerBuilder::from_pest(
+                        pair.into_inner(),
+                        container_ref,
+                    ))
                 }
 
                 _ => unreachable!(),
@@ -449,24 +485,27 @@ impl MlaBuilderEntries {
         }
     }
 
-    pub fn verify_structure(&self, errors: &mut ParsingErrorContext) {
+    pub fn verify_structure<F>(&self, errors: &mut ParsingErrorContext, generate_error: F)
+    where
+        F: Fn(MlaParsingError) -> ParsingError,
+    {
         assert!(!self.verified.get());
         let found_error = false;
 
         match self.authors.len() {
             0 => {}
             1 => self.authors[0].verify_structure(errors),
-            _ => todo!(),
+            _ => errors.err(generate_error(MlaParsingError::DuplicateName)),
         }
 
         match self.titles.len() {
-            0 => todo!(),
+            0 => errors.err(generate_error(MlaParsingError::MissingTitle)),
             1 => self.titles[0].verify_structure(errors),
-            _ => todo!(),
+            _ => errors.err(generate_error(MlaParsingError::DuplicateTitle)),
         }
 
         for container in &self.containers {
-            container.verify_structure(errors);
+            container.verify_structure(errors, |e| generate_error(e));
         }
 
         self.verified.set(!found_error);
@@ -497,17 +536,26 @@ impl MlaBuilderEntries {
 
 pub struct MlaBuilder {
     entries: MlaBuilderEntries,
+
+    self_ref: Option<TextBlockBuilderRef>,
 }
 
 impl MlaBuilder {
     fn from_pest(pair: Pair<Rule>) -> MlaBuilder {
         let entries = MlaBuilderEntries::from_pest(pair.into_inner());
 
-        MlaBuilder { entries }
+        MlaBuilder {
+            entries,
+
+            self_ref: None,
+        }
     }
 
-    fn verify_structure(&self, errors: &mut ParsingErrorContext) {
-        self.entries.verify_structure(errors);
+    fn verify_structure<F>(&self, errors: &mut ParsingErrorContext, generate_error: F)
+    where
+        F: Fn(MlaParsingError) -> ParsingError,
+    {
+        self.entries.verify_structure(errors, generate_error);
     }
 
     fn finish(&self) -> Mla {
@@ -683,23 +731,37 @@ impl TextBuilder {
         }
     }
 
-    pub fn verify_structure(&self, directory: &BuilderDirectory, errors: &mut ParsingErrorContext) {
+    pub fn verify_structure<F>(
+        &self,
+        directory: &BuilderDirectory,
+        errors: &mut ParsingErrorContext,
+        generate_error: F,
+    ) where
+        F: Fn(TextParsingError) -> ParsingError,
+    {
         match self {
-            Self::Mla(mla) => mla.verify_structure(errors),
+            Self::Mla(mla) => {
+                mla.verify_structure(errors, |e| generate_error(TextParsingError::MlaError(e)))
+            }
             Self::Paragraph(paragraph) => paragraph.verify_structure(directory, errors),
 
             Self::Sublist(_) | Self::DisplayMath(_) => {}
         }
     }
 
-    pub fn verify_structure_with_tags(
+    pub fn verify_structure_with_tags<F>(
         &self,
         directory: &BuilderDirectory,
         tags: &TagIndex,
         errors: &mut ParsingErrorContext,
-    ) {
+        generate_error: F,
+    ) where
+        F: Fn(TextParsingError) -> ParsingError,
+    {
         match self {
-            Self::Mla(mla) => mla.verify_structure(errors),
+            Self::Mla(mla) => {
+                mla.verify_structure(errors, |e| generate_error(TextParsingError::MlaError(e)))
+            }
             Self::Paragraph(paragraph) => {
                 paragraph.verify_structure_with_tags(directory, tags, errors)
             }
@@ -1452,20 +1514,39 @@ impl HeadingBuilder {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct TodoBuilderElementRef(usize);
+
 pub struct TodoBuilder {
     elements: Vec<TextBuilder>,
+
+    self_ref: Option<TodoBuilderRef>,
 }
 
 impl TodoBuilder {
     pub fn from_pest(pair: Pair<Rule>) -> TodoBuilder {
         let elements = pair.into_inner().map(TextBuilder::from_pest).collect();
 
-        TodoBuilder { elements }
+        TodoBuilder {
+            elements,
+
+            self_ref: None,
+        }
+    }
+
+    pub fn set_self_ref(&mut self, self_ref: TodoBuilderRef) {
+        assert!(self.self_ref.is_none());
+        self.self_ref = Some(self_ref);
     }
 
     pub fn verify_structure(&self, directory: &BuilderDirectory, errors: &mut ParsingErrorContext) {
-        for element in &self.elements {
-            element.verify_structure(directory, errors)
+        for (i, element) in self.elements.iter().enumerate() {
+            element.verify_structure(directory, errors, |e| {
+                ParsingError::TodoError(
+                    self.self_ref.unwrap(),
+                    TodoParsingError::TextError(TodoBuilderElementRef(i), e),
+                )
+            });
         }
     }
 
@@ -1488,6 +1569,8 @@ impl TodoBuilder {
 
 pub struct TextBlockBuilder {
     text: TextBuilder,
+
+    self_ref: Option<TextBlockBuilderRef>,
 }
 
 impl TextBlockBuilder {
@@ -1496,11 +1579,22 @@ impl TextBlockBuilder {
 
         let text = TextBuilder::from_pest(pair);
 
-        TextBlockBuilder { text }
+        TextBlockBuilder {
+            text,
+
+            self_ref: None,
+        }
+    }
+
+    pub fn set_self_ref(&mut self, self_ref: TextBlockBuilderRef) {
+        assert!(self.self_ref.is_none());
+        self.self_ref = Some(self_ref);
     }
 
     pub fn verify_structure(&self, directory: &BuilderDirectory, errors: &mut ParsingErrorContext) {
-        self.text.verify_structure(directory, errors);
+        self.text.verify_structure(directory, errors, |e| {
+            ParsingError::TextBlockError(self.self_ref.unwrap(), e)
+        });
     }
 
     pub fn bib_refs(&self) -> Box<dyn Iterator<Item = BibliographyBuilderRef> + '_> {

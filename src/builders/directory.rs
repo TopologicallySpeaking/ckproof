@@ -31,8 +31,8 @@ use crate::document::text::Mla;
 
 use super::deduction::{AxiomBuilder, ProofBuilder, TheoremBuilder};
 use super::errors::{
-    ParsingError, ParsingErrorContext, ProofStepParsingError, SystemParsingError,
-    VariableParsingError,
+    BibliographyParsingError, ParsingError, ParsingErrorContext, ProofStepParsingError,
+    SystemParsingError, VariableParsingError,
 };
 use super::language::{
     ReadBuilder, SymbolBuilder, SystemBuilder, TypeBuilder, TypeSignatureBuilder, VariableBuilder,
@@ -695,16 +695,24 @@ impl BuilderDirectory {
         HeadingBuilderRef(self.headings.len() - 1)
     }
 
-    pub fn add_todo(&mut self, todo: TodoBuilder) -> TodoBuilderRef {
+    pub fn add_todo(&mut self, mut todo: TodoBuilder) -> TodoBuilderRef {
         assert!(self.index.is_none());
+
+        let todo_ref = TodoBuilderRef(self.todos.len());
+        todo.set_self_ref(todo_ref);
+
         self.todos.push(todo);
-        TodoBuilderRef(self.todos.len() - 1)
+        todo_ref
     }
 
-    pub fn add_text(&mut self, text: TextBlockBuilder) -> TextBlockBuilderRef {
+    pub fn add_text(&mut self, mut text: TextBlockBuilder) -> TextBlockBuilderRef {
         assert!(self.index.is_none());
+
+        let text_ref = TextBlockBuilderRef(self.texts.len());
+        text.set_self_ref(text_ref);
+
         self.texts.push(text);
-        TextBlockBuilderRef(self.texts.len() - 1)
+        text_ref
     }
 
     pub fn set_bib(&mut self, bib: BibliographyBuilder) {
@@ -1038,6 +1046,8 @@ impl BibliographyBuilderIndex {
 struct BibliographyBuilderEntry {
     key: String,
     mla: MlaBuilderEntries,
+
+    self_ref: Option<BibliographyBuilderRef>,
 }
 
 impl BibliographyBuilderEntry {
@@ -1048,11 +1058,26 @@ impl BibliographyBuilderEntry {
         let key = inner.next().unwrap().as_str().to_owned();
         let mla = MlaBuilderEntries::from_pest(inner);
 
-        BibliographyBuilderEntry { key, mla }
+        BibliographyBuilderEntry {
+            key,
+            mla,
+
+            self_ref: None,
+        }
+    }
+
+    fn set_self_ref(&mut self, self_ref: BibliographyBuilderRef) {
+        assert!(self.self_ref.is_none());
+        self.self_ref = Some(self_ref);
     }
 
     fn verify_structure(&self, errors: &mut ParsingErrorContext) {
-        self.mla.verify_structure(errors);
+        self.mla.verify_structure(errors, |e| {
+            ParsingError::BibliographyError(BibliographyParsingError::MlaError(
+                self.self_ref.unwrap(),
+                e,
+            ))
+        });
     }
 
     fn finish(&self) -> Mla {
@@ -1091,10 +1116,12 @@ impl BibliographyBuilder {
         assert!(self.index.is_none());
         let mut index = BibliographyBuilderIndex::new();
 
-        for (i, entry) in self.entries.iter().enumerate() {
-            let key = &entry.key;
+        for (i, entry) in self.entries.iter_mut().enumerate() {
+            let self_ref = BibliographyBuilderRef(i);
+            entry.set_self_ref(self_ref);
 
-            index.add_entry(key, BibliographyBuilderRef(i), errors);
+            let key = &entry.key;
+            index.add_entry(key, self_ref, errors);
         }
 
         self.index = Some(index)

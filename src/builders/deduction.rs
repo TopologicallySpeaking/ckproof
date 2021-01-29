@@ -31,8 +31,8 @@ use super::directory::{
     TagIndex, TheoremBuilderRef,
 };
 use super::errors::{
-    AxiomParsingError, ParsingError, ParsingErrorContext, ProofParsingError, ProofStepParsingError,
-    TheoremParsingError,
+    AxiomParsingError, ParsingError, ParsingErrorContext, ProofElementParsingError,
+    ProofParsingError, ProofStepParsingError, TheoremParsingError,
 };
 use super::language::{FormulaBuilder, VariableBuilder};
 use super::text::{ParagraphBuilder, TextBuilder};
@@ -162,7 +162,12 @@ impl AxiomBuilderEntries {
             0 => {}
             1 => {
                 for paragraph in &self.descriptions[0] {
-                    paragraph.verify_structure(directory, errors)
+                    paragraph.verify_structure(directory, errors, |e| {
+                        ParsingError::AxiomError(
+                            self_ref,
+                            AxiomParsingError::DescriptionParsingError(e),
+                        )
+                    })
                 }
             }
 
@@ -502,7 +507,12 @@ impl TheoremBuilderEntries {
             0 => {}
             1 => {
                 for paragraph in &self.descriptions[0] {
-                    paragraph.verify_structure(directory, errors)
+                    paragraph.verify_structure(directory, errors, |e| {
+                        ParsingError::TheoremError(
+                            self_ref,
+                            TheoremParsingError::DescriptionParsingError(e),
+                        )
+                    })
                 }
             }
 
@@ -1023,6 +1033,9 @@ impl ProofBuilderStep {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct ProofBuilderElementRef(usize);
+
 enum ProofBuilderElement {
     Text(TextBuilder),
     Step,
@@ -1053,14 +1066,19 @@ impl ProofBuilderElement {
         }
     }
 
-    fn verify_structure(
+    fn verify_structure<F>(
         &self,
         directory: &BuilderDirectory,
         tags: &TagIndex,
         errors: &mut ParsingErrorContext,
-    ) {
+        generate_error: F,
+    ) where
+        F: Fn(ProofElementParsingError) -> ParsingError,
+    {
         match self {
-            Self::Text(text) => text.verify_structure_with_tags(directory, tags, errors),
+            Self::Text(text) => text.verify_structure_with_tags(directory, tags, errors, |e| {
+                generate_error(ProofElementParsingError::TextError(e))
+            }),
             Self::Step => {}
         }
     }
@@ -1179,8 +1197,13 @@ impl ProofBuilder {
             );
         }
 
-        for element in &self.elements {
-            element.verify_structure(directory, &mut tags, errors);
+        for (i, element) in self.elements.iter().enumerate() {
+            element.verify_structure(directory, &mut tags, errors, |e| {
+                ParsingError::ProofError(
+                    self_ref,
+                    ProofParsingError::ElementError(ProofBuilderElementRef(i), e),
+                )
+            });
         }
     }
 
