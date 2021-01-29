@@ -109,10 +109,23 @@ pub enum TheoremParsingError {
 }
 
 #[derive(Debug)]
+pub enum ProofStepParsingError {
+    TagAlreadyTaken(ProofBuilderStepRef),
+    MissingJustification,
+    DuplicateJustification,
+    DuplicateTags,
+
+    SystemChildJustificationNotFound,
+    SystemChildJustificationWrongKind,
+}
+
+#[derive(Debug)]
 pub enum ProofParsingError {
     ParentNotFound,
     ParentNotTheorem,
+
     VariableError(VariableBuilderRef, VariableParsingError),
+    StepError(ProofBuilderStepRef, ProofStepParsingError),
 }
 
 #[derive(Debug)]
@@ -131,14 +144,6 @@ pub enum ParsingError {
     SystemChildIdAlreadyTaken(SystemBuilderChild, SystemBuilderChild),
     SystemChildParentIdNotFound(SystemBuilderChild),
     SystemReadSignatureAlreadyTaken(Readable, Readable),
-
-    ProofStepTagAlreadyTaken(ProofBuilderStepRef, ProofBuilderStepRef),
-    ProofStepMissingJustification(ProofBuilderStepRef),
-    ProofStepDuplicateJustification(ProofBuilderStepRef),
-    ProofStepDuplicateTags(ProofBuilderStepRef),
-
-    ProofStepSystemChildJustificationNotFound(ProofBuilderStepRef),
-    ProofStepSystemChildJustificationWrongKind(ProofBuilderStepRef),
 }
 
 impl From<IoError> for ParsingError {

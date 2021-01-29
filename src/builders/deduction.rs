@@ -31,7 +31,8 @@ use super::directory::{
     TagIndex, TheoremBuilderRef,
 };
 use super::errors::{
-    AxiomParsingError, ParsingError, ParsingErrorContext, ProofParsingError, TheoremParsingError,
+    AxiomParsingError, ParsingError, ParsingErrorContext, ProofParsingError, ProofStepParsingError,
+    TheoremParsingError,
 };
 use super::language::{FormulaBuilder, VariableBuilder};
 use super::text::{ParagraphBuilder, TextBuilder};
@@ -740,25 +741,27 @@ impl SystemChildJustificationBuilder {
         }
     }
 
-    fn verify_structure(
+    fn verify_structure<F>(
         &self,
         parent_system: &str,
-        step_ref: ProofBuilderStepRef,
         directory: &BuilderDirectory,
         errors: &mut ParsingErrorContext,
-    ) {
+        generate_error: F,
+    ) where
+        F: Fn(ProofStepParsingError) -> ParsingError,
+    {
         self.child
             .set(directory.search_system_child(parent_system, &self.id));
 
         match self.child.get() {
-            None => errors.err(ParsingError::ProofStepSystemChildJustificationNotFound(
-                step_ref,
+            None => errors.err(generate_error(
+                ProofStepParsingError::SystemChildJustificationNotFound,
             )),
 
             Some(SystemBuilderChild::Axiom(_)) | Some(SystemBuilderChild::Theorem(_)) => {}
 
-            _ => errors.err(ParsingError::ProofStepSystemChildJustificationWrongKind(
-                step_ref,
+            _ => errors.err(generate_error(
+                ProofStepParsingError::SystemChildJustificationWrongKind,
             )),
         }
     }
@@ -800,17 +803,19 @@ impl ProofJustificationBuilder {
         ProofJustificationBuilder::Hypothesis(pair.as_str().parse().unwrap_or_else(|_| todo!()))
     }
 
-    fn verify_structure(
+    fn verify_structure<F>(
         &self,
         parent_system: &str,
-        step_ref: ProofBuilderStepRef,
         theorem_ref: TheoremBuilderRef,
         directory: &BuilderDirectory,
         errors: &mut ParsingErrorContext,
-    ) {
+        generate_error: F,
+    ) where
+        F: Fn(ProofStepParsingError) -> ParsingError,
+    {
         match self {
             Self::SystemChild(builder) => {
-                builder.verify_structure(parent_system, step_ref, directory, errors)
+                builder.verify_structure(parent_system, directory, errors, generate_error)
             }
 
             Self::Hypothesis(id) => {
@@ -840,7 +845,7 @@ struct ProofBuilderMeta {
     justifications: Vec<ProofJustificationBuilder>,
     tags: Vec<String>,
 
-    self_ref: Cell<Option<ProofBuilderStepRef>>,
+    self_ref: Option<ProofBuilderStepRef>,
     verified: Cell<bool>,
 }
 
@@ -869,54 +874,71 @@ impl ProofBuilderMeta {
             justifications,
             tags,
 
-            self_ref: Cell::new(None),
+            self_ref: None,
             verified: Cell::new(false),
         }
     }
 
-    fn verify_structure(
+    fn set_self_ref(&mut self, self_ref: ProofBuilderStepRef) {
+        assert!(self.self_ref.is_none());
+        self.self_ref = Some(self_ref);
+    }
+
+    fn verify_structure<F>(
         &self,
         parent_system: &str,
-        self_ref: ProofBuilderStepRef,
         theorem_ref: TheoremBuilderRef,
         directory: &BuilderDirectory,
         tags: &mut TagIndex,
         errors: &mut ParsingErrorContext,
-    ) {
+        generate_error: F,
+    ) where
+        F: Fn(ProofBuilderStepRef, ProofStepParsingError) -> ParsingError,
+    {
         assert!(!self.verified.get());
         let mut found_error = false;
+
+        let self_ref = self.self_ref.unwrap();
 
         match self.justifications.len() {
             0 => {
                 found_error = true;
-                errors.err(ParsingError::ProofStepMissingJustification(self_ref));
+                errors.err(generate_error(
+                    self_ref,
+                    ProofStepParsingError::MissingJustification,
+                ));
             }
 
             1 => self.justifications[0].verify_structure(
                 parent_system,
-                self_ref,
                 theorem_ref,
                 directory,
                 errors,
+                |e| generate_error(self_ref, e),
             ),
 
             _ => {
                 found_error = true;
-                errors.err(ParsingError::ProofStepDuplicateJustification(self_ref));
+                errors.err(generate_error(
+                    self_ref,
+                    ProofStepParsingError::DuplicateJustification,
+                ));
             }
         }
 
         match self.tags.len() {
             0 => {}
-            1 => tags.add_tag(&self.tags[0], self_ref, errors),
+            1 => tags.add_tag(&self.tags[0], self_ref, errors, generate_error),
 
             _ => {
                 found_error = true;
-                errors.err(ParsingError::ProofStepDuplicateTags(self_ref));
+                errors.err(generate_error(
+                    self_ref,
+                    ProofStepParsingError::DuplicateTags,
+                ));
             }
         }
 
-        self.self_ref.set(Some(self_ref));
         self.verified.set(!found_error);
     }
 
@@ -955,22 +977,28 @@ impl ProofBuilderStep {
         }
     }
 
-    fn verify_structure(
+    fn set_self_ref(&mut self, step_ref: ProofBuilderStepRef) {
+        self.meta.set_self_ref(step_ref)
+    }
+
+    fn verify_structure<F>(
         &self,
         parent_system: &str,
-        self_ref: ProofBuilderStepRef,
         theorem_ref: TheoremBuilderRef,
         directory: &BuilderDirectory,
         tags: &mut TagIndex,
         errors: &mut ParsingErrorContext,
-    ) {
+        generate_error: F,
+    ) where
+        F: Fn(ProofBuilderStepRef, ProofStepParsingError) -> ParsingError,
+    {
         self.meta.verify_structure(
             parent_system,
-            self_ref,
             theorem_ref,
             directory,
             tags,
             errors,
+            generate_error,
         );
     }
 
@@ -1112,6 +1140,10 @@ impl ProofBuilder {
     pub fn set_self_ref(&mut self, proof_ref: ProofBuilderRef) {
         assert!(self.self_ref.is_none());
         self.self_ref = Some(proof_ref);
+
+        for (i, step) in self.steps.iter_mut().enumerate() {
+            step.set_self_ref(ProofBuilderStepRef::new(i));
+        }
     }
 
     pub fn verify_structure(&self, directory: &BuilderDirectory, errors: &mut ParsingErrorContext) {
@@ -1134,14 +1166,16 @@ impl ProofBuilder {
         }
 
         let mut tags = TagIndex::new();
-        for (i, step) in self.steps.iter().enumerate() {
+        for step in &self.steps {
             step.verify_structure(
                 &self.system_id,
-                ProofBuilderStepRef::new(i),
                 self.theorem_ref.get().unwrap(),
                 directory,
                 &mut tags,
                 errors,
+                |step_ref, e| {
+                    ParsingError::ProofError(self_ref, ProofParsingError::StepError(step_ref, e))
+                },
             );
         }
 

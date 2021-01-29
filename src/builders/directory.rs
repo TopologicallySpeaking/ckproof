@@ -30,7 +30,10 @@ use crate::document::directory::{
 use crate::document::text::Mla;
 
 use super::deduction::{AxiomBuilder, ProofBuilder, TheoremBuilder};
-use super::errors::{ParsingError, ParsingErrorContext, SystemParsingError, VariableParsingError};
+use super::errors::{
+    ParsingError, ParsingErrorContext, ProofStepParsingError, SystemParsingError,
+    VariableParsingError,
+};
 use super::language::{
     ReadBuilder, SymbolBuilder, SystemBuilder, TypeBuilder, TypeSignatureBuilder, VariableBuilder,
 };
@@ -551,20 +554,23 @@ impl TagIndex {
         }
     }
 
-    pub fn add_tag(
+    pub fn add_tag<F>(
         &mut self,
         tag: &str,
-        proof_step_ref: ProofBuilderStepRef,
+        step_ref: ProofBuilderStepRef,
         errors: &mut ParsingErrorContext,
-    ) {
+        generate_error: F,
+    ) where
+        F: Fn(ProofBuilderStepRef, ProofStepParsingError) -> ParsingError,
+    {
         if let Some(old_step) = self.tags.get(tag) {
-            errors.err(ParsingError::ProofStepTagAlreadyTaken(
-                proof_step_ref,
-                *old_step,
+            errors.err(generate_error(
+                step_ref,
+                ProofStepParsingError::TagAlreadyTaken(*old_step),
             ));
         }
 
-        self.tags.insert(tag.to_owned(), proof_step_ref);
+        self.tags.insert(tag.to_owned(), step_ref);
     }
 
     pub fn search(&self, tag: &str) -> Option<ProofBuilderStepRef> {
