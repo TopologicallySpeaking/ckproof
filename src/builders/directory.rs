@@ -308,7 +308,7 @@ impl BlockBuilder {
                 Self::Theorem(directory.add_theorem(TheoremBuilder::from_pest(pair, serial, href)))
             }
             Rule::proof_block => {
-                Self::Proof(directory.add_proof(ProofBuilder::from_pest(pair, href)))
+                Self::Proof(directory.add_proof(ProofBuilder::from_pest(pair, serial, href)))
             }
 
             Rule::table_block => Self::Table(directory.add_table(TableBuilder::from_pest(pair))),

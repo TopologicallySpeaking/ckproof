@@ -189,6 +189,9 @@ pub enum ProofStepParsingError {
 
     SystemChildJustificationNotFound,
     SystemChildJustificationWrongKind,
+    TheoremJustificationUsedBeforeProof,
+    TheoremJustificationCircularProof,
+    TheoremJustificationUnproven,
 }
 
 #[derive(Debug)]

@@ -16,7 +16,7 @@
 // License along with ckproof.  If not, see
 // <https://www.gnu.org/licenses/>.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 
 use pest::iterators::{Pair, Pairs};
 
@@ -611,6 +611,7 @@ pub struct TheoremBuilder {
 
     self_ref: Option<TheoremBuilderRef>,
     system_ref: Cell<Option<SystemBuilderRef>>,
+    proofs: RefCell<Vec<ProofBuilderRef>>,
 }
 
 impl TheoremBuilder {
@@ -634,6 +635,7 @@ impl TheoremBuilder {
 
             self_ref: None,
             system_ref: Cell::new(None),
+            proofs: RefCell::new(Vec::new()),
         }
     }
 
@@ -734,6 +736,16 @@ impl TheoremBuilder {
     pub fn premise(&self) -> &[FormulaBuilder] {
         self.entries.premise()
     }
+
+    fn add_proof(&self, proof_ref: ProofBuilderRef) {
+        let mut proofs = self.proofs.borrow_mut();
+        proofs.push(proof_ref);
+    }
+
+    fn first_proof(&self) -> Option<ProofBuilderRef> {
+        let proofs = self.proofs.borrow();
+        proofs.get(0).copied()
+    }
 }
 
 struct SystemChildJustificationBuilder {
@@ -758,6 +770,7 @@ impl SystemChildJustificationBuilder {
     fn verify_structure<F>(
         &self,
         parent_system: &str,
+        serial: BlockLocation,
         directory: &BuilderDirectory,
         errors: &mut ParsingErrorContext,
         generate_error: F,
@@ -772,7 +785,29 @@ impl SystemChildJustificationBuilder {
                 ProofStepParsingError::SystemChildJustificationNotFound,
             )),
 
-            Some(SystemBuilderChild::Axiom(_)) | Some(SystemBuilderChild::Theorem(_)) => {}
+            Some(SystemBuilderChild::Axiom(_)) => {}
+
+            Some(SystemBuilderChild::Theorem(theorem_ref)) => {
+                if let Some(first_proof) = directory[theorem_ref].first_proof() {
+                    let first_proof_location = directory[first_proof].serial();
+
+                    if serial < first_proof_location {
+                        errors.err(generate_error(
+                            ProofStepParsingError::TheoremJustificationUsedBeforeProof,
+                        ));
+                    }
+
+                    if serial == first_proof_location {
+                        errors.err(generate_error(
+                            ProofStepParsingError::TheoremJustificationCircularProof,
+                        ));
+                    }
+                } else {
+                    errors.err(generate_error(
+                        ProofStepParsingError::TheoremJustificationUnproven,
+                    ))
+                }
+            }
 
             _ => errors.err(generate_error(
                 ProofStepParsingError::SystemChildJustificationWrongKind,
@@ -820,6 +855,7 @@ impl ProofJustificationBuilder {
     fn verify_structure<F>(
         &self,
         parent_system: &str,
+        serial: BlockLocation,
         theorem_ref: TheoremBuilderRef,
         directory: &BuilderDirectory,
         errors: &mut ParsingErrorContext,
@@ -829,7 +865,7 @@ impl ProofJustificationBuilder {
     {
         match self {
             Self::SystemChild(builder) => {
-                builder.verify_structure(parent_system, directory, errors, generate_error)
+                builder.verify_structure(parent_system, serial, directory, errors, generate_error)
             }
 
             Self::Hypothesis(id) => {
@@ -901,6 +937,7 @@ impl ProofBuilderMeta {
     fn verify_structure<F>(
         &self,
         parent_system: &str,
+        serial: BlockLocation,
         theorem_ref: TheoremBuilderRef,
         directory: &BuilderDirectory,
         tags: &mut TagIndex,
@@ -925,6 +962,7 @@ impl ProofBuilderMeta {
 
             1 => self.justifications[0].verify_structure(
                 parent_system,
+                serial,
                 theorem_ref,
                 directory,
                 errors,
@@ -998,6 +1036,7 @@ impl ProofBuilderStep {
     fn verify_structure<F>(
         &self,
         parent_system: &str,
+        serial: BlockLocation,
         theorem_ref: TheoremBuilderRef,
         directory: &BuilderDirectory,
         tags: &mut TagIndex,
@@ -1008,6 +1047,7 @@ impl ProofBuilderStep {
     {
         self.meta.verify_structure(
             parent_system,
+            serial,
             theorem_ref,
             directory,
             tags,
@@ -1113,6 +1153,7 @@ impl ProofBuilderElement {
 pub struct ProofBuilder {
     theorem_id: String,
     system_id: String,
+    serial: BlockLocation,
 
     elements: Vec<ProofBuilderElement>,
     steps: Vec<ProofBuilderStep>,
@@ -1122,7 +1163,7 @@ pub struct ProofBuilder {
 }
 
 impl ProofBuilder {
-    pub fn from_pest(pair: Pair<Rule>, href: &str) -> ProofBuilder {
+    pub fn from_pest(pair: Pair<Rule>, serial: BlockLocation, href: &str) -> ProofBuilder {
         assert_eq!(pair.as_rule(), Rule::proof_block);
 
         let mut inner = pair.into_inner();
@@ -1150,6 +1191,7 @@ impl ProofBuilder {
         ProofBuilder {
             theorem_id,
             system_id,
+            serial,
 
             steps,
             elements,
@@ -1180,6 +1222,9 @@ impl ProofBuilder {
                     ProofParsingError::ParentNotTheorem,
                 ));
             }
+
+            let theorem_ref = self.theorem_ref.get().unwrap();
+            directory[theorem_ref].add_proof(self_ref);
         } else {
             errors.err(ParsingError::ProofError(
                 self_ref,
@@ -1191,6 +1236,7 @@ impl ProofBuilder {
         for step in &self.steps {
             step.verify_structure(
                 &self.system_id,
+                self.serial,
                 self.theorem_ref.get().unwrap(),
                 directory,
                 &mut tags,
@@ -1252,5 +1298,9 @@ impl ProofBuilder {
             .collect();
 
         ProofBlock::new(self_ref, theorem_ref, steps, elements)
+    }
+
+    pub fn serial(&self) -> BlockLocation {
+        self.serial
     }
 }
