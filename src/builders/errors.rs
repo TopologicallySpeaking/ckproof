@@ -229,6 +229,7 @@ pub enum TodoParsingError {
 #[derive(Debug)]
 pub enum BibliographyParsingError {
     MlaError(BibliographyBuilderRef, MlaParsingError),
+    KeyAlreadyTaken(BibliographyBuilderRef, BibliographyBuilderRef),
 }
 
 #[derive(Debug)]

@@ -1036,10 +1036,12 @@ impl BibliographyBuilderIndex {
         errors: &mut ParsingErrorContext,
     ) {
         if let Some(old_ref) = self.entries.get(key) {
-            todo!()
+            errors.err(ParsingError::BibliographyError(
+                BibliographyParsingError::KeyAlreadyTaken(bib_ref, *old_ref),
+            ));
+        } else {
+            self.entries.insert(key.to_owned(), bib_ref);
         }
-
-        self.entries.insert(key.to_owned(), bib_ref);
     }
 
     fn search_key(&self, key: &str) -> Option<BibliographyBuilderRef> {
