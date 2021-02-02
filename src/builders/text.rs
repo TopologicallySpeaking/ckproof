@@ -360,64 +360,92 @@ impl MlaContainerBuilder {
         match self.container_titles.len() {
             0 => {}
             1 => self.container_titles[0].verify_structure(errors),
-            _ => errors.err(generate_error(MlaParsingError::ContainerError(
-                self.self_ref,
-                MlaContainerParsingError::DuplicateTitle,
-            ))),
+            _ => {
+                found_error = true;
+
+                errors.err(generate_error(MlaParsingError::ContainerError(
+                    self.self_ref,
+                    MlaContainerParsingError::DuplicateTitle,
+                )))
+            }
         }
 
         match self.other_contributors.len() {
             0 => {}
             1 => self.other_contributors[0].verify_structure(errors),
-            _ => errors.err(generate_error(MlaParsingError::ContainerError(
-                self.self_ref,
-                MlaContainerParsingError::DuplicateOtherContributors,
-            ))),
+            _ => {
+                found_error = true;
+
+                errors.err(generate_error(MlaParsingError::ContainerError(
+                    self.self_ref,
+                    MlaContainerParsingError::DuplicateOtherContributors,
+                )))
+            }
         }
 
         match self.versions.len() {
             0 => {}
             1 => self.versions[0].verify_structure(errors),
-            _ => errors.err(generate_error(MlaParsingError::ContainerError(
-                self.self_ref,
-                MlaContainerParsingError::DuplicateVersion,
-            ))),
+            _ => {
+                found_error = true;
+
+                errors.err(generate_error(MlaParsingError::ContainerError(
+                    self.self_ref,
+                    MlaContainerParsingError::DuplicateVersion,
+                )))
+            }
         }
 
         match self.numbers.len() {
             0 => {}
             1 => self.numbers[0].verify_structure(errors),
-            _ => errors.err(generate_error(MlaParsingError::ContainerError(
-                self.self_ref,
-                MlaContainerParsingError::DuplicateNumber,
-            ))),
+            _ => {
+                found_error = true;
+
+                errors.err(generate_error(MlaParsingError::ContainerError(
+                    self.self_ref,
+                    MlaContainerParsingError::DuplicateNumber,
+                )))
+            }
         }
 
         match self.publishers.len() {
             0 => {}
             1 => self.publishers[0].verify_structure(errors),
-            _ => errors.err(generate_error(MlaParsingError::ContainerError(
-                self.self_ref,
-                MlaContainerParsingError::DuplicatePublisher,
-            ))),
+            _ => {
+                found_error = true;
+
+                errors.err(generate_error(MlaParsingError::ContainerError(
+                    self.self_ref,
+                    MlaContainerParsingError::DuplicatePublisher,
+                )))
+            }
         }
 
         match self.publication_dates.len() {
             0 => {}
             1 => self.publication_dates[0].verify_structure(errors),
-            _ => errors.err(generate_error(MlaParsingError::ContainerError(
-                self.self_ref,
-                MlaContainerParsingError::DuplicatePublicationDate,
-            ))),
+            _ => {
+                found_error = true;
+
+                errors.err(generate_error(MlaParsingError::ContainerError(
+                    self.self_ref,
+                    MlaContainerParsingError::DuplicatePublicationDate,
+                )))
+            }
         }
 
         match self.locations.len() {
             0 => {}
             1 => self.locations[0].verify_structure(errors),
-            _ => errors.err(generate_error(MlaParsingError::ContainerError(
-                self.self_ref,
-                MlaContainerParsingError::DuplicateLocation,
-            ))),
+            _ => {
+                found_error = true;
+
+                errors.err(generate_error(MlaParsingError::ContainerError(
+                    self.self_ref,
+                    MlaContainerParsingError::DuplicateLocation,
+                )))
+            }
         }
 
         self.verified.set(!found_error);
