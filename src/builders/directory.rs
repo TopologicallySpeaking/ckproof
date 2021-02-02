@@ -687,10 +687,14 @@ impl BuilderDirectory {
         table_ref
     }
 
-    pub fn add_quote(&mut self, quote: QuoteBuilder) -> QuoteBuilderRef {
+    pub fn add_quote(&mut self, mut quote: QuoteBuilder) -> QuoteBuilderRef {
         assert!(self.index.is_none());
+
+        let quote_ref = QuoteBuilderRef(self.quotes.len());
+        quote.set_self_ref(quote_ref);
+
         self.quotes.push(quote);
-        QuoteBuilderRef(self.quotes.len() - 1)
+        quote_ref
     }
 
     pub fn add_heading(&mut self, heading: HeadingBuilder) -> HeadingBuilderRef {
