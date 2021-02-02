@@ -357,7 +357,7 @@ impl BlockBuilder {
             Self::Proof(proof_ref) => directory[*proof_ref].set_local_bib_refs(index),
 
             Self::Table(table_ref) => directory[*table_ref].set_local_bib_refs(index),
-            Self::Heading(heading_ref) => directory[*heading_ref].set_local_bib_refs(index),
+            Self::Heading(_) => {}
             Self::Quote(quote_ref) => directory[*quote_ref].set_local_bib_refs(index),
             Self::Todo(todo_ref) => directory[*todo_ref].set_local_bib_refs(index),
             Self::Text(text_ref) => directory[*text_ref].set_local_bib_refs(index),

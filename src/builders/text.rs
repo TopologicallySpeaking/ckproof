@@ -574,19 +574,13 @@ impl MlaBuilderEntries {
 
 pub struct MlaBuilder {
     entries: MlaBuilderEntries,
-
-    self_ref: Option<TextBlockBuilderRef>,
 }
 
 impl MlaBuilder {
     fn from_pest(pair: Pair<Rule>) -> MlaBuilder {
         let entries = MlaBuilderEntries::from_pest(pair.into_inner());
 
-        MlaBuilder {
-            entries,
-
-            self_ref: None,
-        }
+        MlaBuilder { entries }
     }
 
     fn verify_structure<F>(&self, errors: &mut ParsingErrorContext, generate_error: F)
@@ -1739,8 +1733,6 @@ impl HeadingBuilder {
     pub fn bib_refs(&self) -> Box<dyn Iterator<Item = BibliographyBuilderRef> + '_> {
         Box::new(std::iter::empty())
     }
-
-    pub fn set_local_bib_refs(&self, index: &LocalBibliographyBuilderIndex) {}
 
     pub fn finish(&self) -> HeadingBlock {
         let subheadings = self
