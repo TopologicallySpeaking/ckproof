@@ -381,44 +381,49 @@ impl DocumentBuilder {
         }
 
         self.directory = Some(directory);
-        let directory = self.directory.as_mut().unwrap();
 
-        directory.build_index(&mut errors);
-        if errors.error_found() {
-            return Err(errors);
+        // Braces like these used anywhere in this function are so directory gets dropped outside
+        // of them. We do this because the mutable borrow makes the borrow checker complain when
+        // calling self.verify_structure(), for example.
+        {
+            let directory = self.directory.as_mut().unwrap();
+
+            directory.build_index(&mut errors);
+            if errors.error_found() {
+                return Err(errors);
+            }
         }
-
-        // If we didn't explicitly drop the mutable reference, the borrow checker will complain.
-        let directory = ();
 
         self.verify_structure(&mut errors);
         if errors.error_found() {
             return Err(errors);
         }
 
-        let directory = self.directory.as_mut().unwrap();
+        {
+            let directory = self.directory.as_mut().unwrap();
 
-        directory.verify_structure(&mut errors);
-        if errors.error_found() {
-            return Err(errors);
+            directory.verify_structure(&mut errors);
+            if errors.error_found() {
+                return Err(errors);
+            }
         }
 
-        // If we didn't explicitly drop the mutable reference, the borrow checker will complain.
-        let directory = ();
         self.build_local_bib();
 
-        let directory = self.directory.as_mut().unwrap();
+        {
+            let directory = self.directory.as_mut().unwrap();
 
-        directory.build_operators(&mut errors);
-        if errors.error_found() {
-            return Err(errors);
-        }
+            directory.build_operators(&mut errors);
+            if errors.error_found() {
+                return Err(errors);
+            }
 
-        directory.build_formulas(&mut errors);
-        if errors.error_found() {
-            Err(errors)
-        } else {
-            Ok(self.finish())
+            directory.build_formulas(&mut errors);
+            if errors.error_found() {
+                Err(errors)
+            } else {
+                Ok(self.finish())
+            }
         }
     }
 }
