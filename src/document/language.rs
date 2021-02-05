@@ -28,7 +28,7 @@ use crate::rendered::{Denoted, DenotedStyle, SymbolRendered, SystemRendered, Typ
 use super::directory::{
     BlockDirectory, SymbolBlockRef, SystemBlockRef, TypeBlockRef, VariableBlockRef,
 };
-use super::text::{Paragraph, Text};
+use super::text::{MathBlock, Paragraph, Text};
 
 pub struct SystemBlock {
     id: String,
@@ -335,7 +335,7 @@ pub enum FormulaBlock {
 }
 
 impl FormulaBlock {
-    pub fn checkable(
+    fn checkable(
         &self,
         directory: &CheckableDirectory,
         local_directory: &LocalCheckableDirectory,
@@ -362,55 +362,27 @@ impl FormulaBlock {
             }
         }
     }
+}
 
-    pub fn render(&self, directory: &BlockDirectory, vars: &[VariableBlock]) -> String {
-        match self {
-            Self::Symbol(symbol_ref) => {
-                let display = &directory[*symbol_ref].display;
+pub struct DisplayFormulaBlock {
+    display: MathBlock,
+    contents: FormulaBlock,
+}
 
-                format!("<mi>{}</mi>", display.id)
-            }
+impl DisplayFormulaBlock {
+    pub fn new(display: MathBlock, contents: FormulaBlock) -> DisplayFormulaBlock {
+        DisplayFormulaBlock { display, contents }
+    }
 
-            Self::Variable(variable_ref) => {
-                let var = &vars[variable_ref.get()];
+    pub fn checkable(
+        &self,
+        directory: &CheckableDirectory,
+        local_directory: &LocalCheckableDirectory,
+    ) -> Formula {
+        self.contents.checkable(directory, local_directory)
+    }
 
-                format!(
-                    "<mo class=\"var\">&apos;</mo><mi>{}</mi>",
-                    map_ident(&var.id)
-                )
-            }
-
-            Self::SymbolApplication(symbol_ref, inputs) => {
-                let display = &directory[*symbol_ref].display;
-
-                match display.style {
-                    DisplayStyle::Prefix => {
-                        assert_eq!(inputs.len(), 1);
-
-                        format!(
-                            "<mo>{}</mo>{}",
-                            display.id,
-                            inputs[0].render(directory, vars)
-                        )
-                    }
-
-                    DisplayStyle::Infix => {
-                        assert_eq!(inputs.len(), 2);
-
-                        // TODO: Only put parentheses if actually required.
-                        format!(
-                            "<mrow><mo class=\"paren\">(</mo>{}<mo>{}</mo>{}<mo class=\"paren\">)</mo></mrow>",
-                            inputs[0].render(directory, vars),
-                            display.id,
-                            inputs[1].render(directory, vars)
-                        )
-                    }
-
-                    _ => todo!(),
-                }
-            }
-
-            Self::VariableApplication(_, _) => todo!(),
-        }
+    pub fn render(&self) -> String {
+        self.display.render()
     }
 }

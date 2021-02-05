@@ -672,6 +672,22 @@ impl MathBuilderElement {
         }
     }
 
+    fn from_pest_formula(pair: Pair<Rule>) -> MathBuilderElement {
+        match pair.as_rule() {
+            Rule::primary_paren => Self::Fenced(MathBuilder::from_pest_formula(
+                pair.into_inner().next().unwrap(),
+            )),
+
+            Rule::read_operator => {
+                Self::Operator(map_operator(pair.into_inner().next().unwrap().as_rule()))
+            }
+            Rule::ident => Self::Symbol(map_ident(pair.as_str())),
+            Rule::var => Self::Variable(map_ident(pair.into_inner().next().unwrap().as_str())),
+
+            _ => unreachable!("{:#?}", pair),
+        }
+    }
+
     fn finish(&self) -> MathElement {
         match self {
             Self::Fenced(builder) => MathElement::Fenced(builder.finish()),
@@ -700,7 +716,26 @@ impl MathBuilder {
         MathBuilder { elements }
     }
 
-    fn finish(&self) -> MathBlock {
+    pub fn from_pest_formula(pair: Pair<Rule>) -> MathBuilder {
+        assert_eq!(pair.as_rule(), Rule::formula);
+
+        let elements = pair
+            .into_inner()
+            .flat_map(|pair| match pair.as_rule() {
+                Rule::prefix_list => {
+                    Box::new(pair.into_inner().map(MathBuilderElement::from_pest_formula))
+                        as Box<dyn Iterator<Item = MathBuilderElement>>
+                }
+
+                _ => Box::new(Some(MathBuilderElement::from_pest_formula(pair)).into_iter())
+                    as Box<dyn Iterator<Item = MathBuilderElement>>,
+            })
+            .collect();
+
+        MathBuilder { elements }
+    }
+
+    pub fn finish(&self) -> MathBlock {
         let elements = self
             .elements
             .iter()

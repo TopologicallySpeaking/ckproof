@@ -34,7 +34,7 @@ use super::errors::{
     AxiomParsingError, ParsingError, ParsingErrorContext, ProofElementParsingError,
     ProofParsingError, ProofStepParsingError, TheoremParsingError,
 };
-use super::language::{FormulaBuilder, VariableBuilder};
+use super::language::{DisplayFormulaBuilder, VariableBuilder};
 use super::text::{ParagraphBuilder, TextBuilder};
 use super::{BlockLocation, Rule};
 
@@ -44,8 +44,8 @@ struct AxiomBuilderEntries {
     descriptions: Vec<Vec<TextBuilder>>,
 
     vars: Vec<VariableBuilder>,
-    premises: Vec<Vec<FormulaBuilder>>,
-    assertions: Vec<FormulaBuilder>,
+    premises: Vec<Vec<DisplayFormulaBuilder>>,
+    assertions: Vec<DisplayFormulaBuilder>,
 
     verified: Cell<bool>,
 }
@@ -80,12 +80,16 @@ impl AxiomBuilderEntries {
                 }
                 Rule::var_declaration => vars.push(VariableBuilder::from_pest(pair)),
                 Rule::premise => {
-                    let premise = pair.into_inner().map(FormulaBuilder::from_pest).collect();
+                    let premise = pair
+                        .into_inner()
+                        .map(DisplayFormulaBuilder::from_pest)
+                        .collect();
 
                     premises.push(premise);
                 }
                 Rule::assertion => {
-                    let assertion = FormulaBuilder::from_pest(pair.into_inner().next().unwrap());
+                    let assertion =
+                        DisplayFormulaBuilder::from_pest(pair.into_inner().next().unwrap());
 
                     assertions.push(assertion);
                 }
@@ -239,7 +243,7 @@ impl AxiomBuilderEntries {
         &self.vars
     }
 
-    fn premise(&self) -> &[FormulaBuilder] {
+    fn premise(&self) -> &[DisplayFormulaBuilder] {
         assert!(self.verified.get());
         if self.premises.is_empty() {
             &[]
@@ -248,7 +252,7 @@ impl AxiomBuilderEntries {
         }
     }
 
-    fn assertion(&self) -> &FormulaBuilder {
+    fn assertion(&self) -> &DisplayFormulaBuilder {
         assert!(self.verified.get());
         &self.assertions[0]
     }
@@ -354,7 +358,7 @@ impl AxiomBuilder {
             .entries
             .premise()
             .iter()
-            .map(FormulaBuilder::finish)
+            .map(DisplayFormulaBuilder::finish)
             .collect();
         let assertion = self.entries.assertion().finish();
 
@@ -391,8 +395,8 @@ struct TheoremBuilderEntries {
     descriptions: Vec<Vec<TextBuilder>>,
 
     vars: Vec<VariableBuilder>,
-    premises: Vec<Vec<FormulaBuilder>>,
-    assertions: Vec<FormulaBuilder>,
+    premises: Vec<Vec<DisplayFormulaBuilder>>,
+    assertions: Vec<DisplayFormulaBuilder>,
 
     verified: Cell<bool>,
 }
@@ -427,12 +431,16 @@ impl TheoremBuilderEntries {
                 }
                 Rule::var_declaration => vars.push(VariableBuilder::from_pest(pair)),
                 Rule::premise => {
-                    let premise = pair.into_inner().map(FormulaBuilder::from_pest).collect();
+                    let premise = pair
+                        .into_inner()
+                        .map(DisplayFormulaBuilder::from_pest)
+                        .collect();
 
                     premises.push(premise);
                 }
                 Rule::assertion => {
-                    let assertion = FormulaBuilder::from_pest(pair.into_inner().next().unwrap());
+                    let assertion =
+                        DisplayFormulaBuilder::from_pest(pair.into_inner().next().unwrap());
 
                     assertions.push(assertion);
                 }
@@ -586,7 +594,7 @@ impl TheoremBuilderEntries {
         &self.vars
     }
 
-    fn premise(&self) -> &[FormulaBuilder] {
+    fn premise(&self) -> &[DisplayFormulaBuilder] {
         assert!(self.verified.get());
         if self.premises.is_empty() {
             &[]
@@ -595,7 +603,7 @@ impl TheoremBuilderEntries {
         }
     }
 
-    fn assertion(&self) -> &FormulaBuilder {
+    fn assertion(&self) -> &DisplayFormulaBuilder {
         assert!(self.verified.get());
         &self.assertions[0]
     }
@@ -708,7 +716,7 @@ impl TheoremBuilder {
             .entries
             .premise()
             .iter()
-            .map(FormulaBuilder::finish)
+            .map(DisplayFormulaBuilder::finish)
             .collect();
         let assertion = self.entries.assertion().finish();
 
@@ -733,7 +741,7 @@ impl TheoremBuilder {
         &self.system_id
     }
 
-    pub fn premise(&self) -> &[FormulaBuilder] {
+    pub fn premise(&self) -> &[DisplayFormulaBuilder] {
         self.entries.premise()
     }
 
@@ -1004,7 +1012,7 @@ struct ProofBuilderStep {
     id: String,
     href: String,
     meta: ProofBuilderMeta,
-    formula: FormulaBuilder,
+    formula: DisplayFormulaBuilder,
     end: String,
 }
 
@@ -1014,7 +1022,7 @@ impl ProofBuilderStep {
 
         let mut inner = pair.into_inner();
         let meta = ProofBuilderMeta::from_pest(inner.next().unwrap());
-        let formula = FormulaBuilder::from_pest(inner.next().unwrap());
+        let formula = DisplayFormulaBuilder::from_pest(inner.next().unwrap());
 
         let end_pair = inner.next().unwrap();
         let end_inner = end_pair.into_inner().next().unwrap();

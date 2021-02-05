@@ -22,8 +22,8 @@ use std::hash::{Hash, Hasher};
 use pest::iterators::{Pair, Pairs};
 
 use crate::document::language::{
-    Display, DisplayStyle, FormulaBlock, SymbolBlock, SystemBlock, TypeBlock, TypeSignatureBlock,
-    VariableBlock,
+    Display, DisplayFormulaBlock, DisplayStyle, FormulaBlock, SymbolBlock, SystemBlock, TypeBlock,
+    TypeSignatureBlock, VariableBlock,
 };
 
 use super::directory::{
@@ -34,7 +34,7 @@ use super::directory::{
 use super::errors::{
     ParsingError, ParsingErrorContext, SymbolParsingError, SystemParsingError, TypeParsingError,
 };
-use super::text::{ParagraphBuilder, TextBuilder};
+use super::text::{MathBuilder, ParagraphBuilder, TextBuilder};
 use super::{BlockLocation, Rule};
 
 struct SystemBuilderEntries {
@@ -679,7 +679,9 @@ enum ReadOperator {
 
 impl ReadOperator {
     fn from_pest(pair: Pair<Rule>) -> ReadOperator {
-        match pair.as_rule() {
+        assert_eq!(pair.as_rule(), Rule::read_operator);
+
+        match pair.into_inner().next().unwrap().as_rule() {
             Rule::operator_negation => Self::Negation,
             Rule::operator_implies => Self::Implies,
 
@@ -1343,7 +1345,7 @@ impl FormulaInfixBuilder {
     }
 }
 
-pub enum FormulaBuilder {
+enum FormulaBuilder {
     Symbol(FormulaSymbolBuilder),
     Variable(FormulaVariableBuilder),
 
@@ -1395,13 +1397,13 @@ impl FormulaBuilder {
         primary
     }
 
-    pub fn from_pest(pair: Pair<Rule>) -> FormulaBuilder {
+    fn from_pest(pair: Pair<Rule>) -> FormulaBuilder {
         assert_eq!(pair.as_rule(), Rule::formula);
 
         Self::prec_climb(&mut pair.into_inner(), 0)
     }
 
-    pub fn build(
+    fn build(
         &self,
         local_index: &LocalIndex,
         directory: &BuilderDirectory,
@@ -1417,7 +1419,7 @@ impl FormulaBuilder {
         }
     }
 
-    pub fn finish(&self) -> FormulaBlock {
+    fn finish(&self) -> FormulaBlock {
         match self {
             Self::Symbol(builder) => todo!(),
             Self::Variable(builder) => builder.finish(),
@@ -1439,5 +1441,36 @@ impl FormulaBuilder {
             Self::Prefix(builder) => builder.type_signature(directory),
             Self::Infix(builder) => builder.type_signature(directory),
         }
+    }
+}
+
+pub struct DisplayFormulaBuilder {
+    display: MathBuilder,
+    contents: FormulaBuilder,
+}
+
+impl DisplayFormulaBuilder {
+    pub fn from_pest(pair: Pair<Rule>) -> DisplayFormulaBuilder {
+        let display = MathBuilder::from_pest_formula(pair.clone());
+        let contents = FormulaBuilder::from_pest(pair);
+
+        DisplayFormulaBuilder { display, contents }
+    }
+
+    pub fn build(
+        &self,
+        local_index: &LocalIndex,
+        directory: &BuilderDirectory,
+        vars: &[VariableBuilder],
+        errors: &mut ParsingErrorContext,
+    ) {
+        self.contents.build(local_index, directory, vars, errors);
+    }
+
+    pub fn finish(&self) -> DisplayFormulaBlock {
+        let display = self.display.finish();
+        let contents = self.contents.finish();
+
+        DisplayFormulaBlock::new(display, contents)
     }
 }

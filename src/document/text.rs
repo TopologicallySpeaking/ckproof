@@ -296,7 +296,7 @@ impl MathBlock {
         MathBlock { elements }
     }
 
-    fn render(&self) -> String {
+    pub fn render(&self) -> String {
         Some("<mrow>".to_owned())
             .into_iter()
             .chain(self.elements.iter().map(MathElement::render))

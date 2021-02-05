@@ -27,7 +27,7 @@ use crate::rendered::{
 use super::directory::{
     AxiomBlockRef, BlockDirectory, ProofBlockRef, SystemBlockRef, TheoremBlockRef,
 };
-use super::language::{FormulaBlock, VariableBlock};
+use super::language::{DisplayFormulaBlock, VariableBlock};
 use super::text::{Paragraph, Text};
 
 pub struct AxiomBlock {
@@ -39,8 +39,8 @@ pub struct AxiomBlock {
     description: Vec<Text>,
 
     vars: Vec<VariableBlock>,
-    premise: Vec<FormulaBlock>,
-    assertion: FormulaBlock,
+    premise: Vec<DisplayFormulaBlock>,
+    assertion: DisplayFormulaBlock,
 }
 
 impl AxiomBlock {
@@ -52,8 +52,8 @@ impl AxiomBlock {
         tagline: Paragraph,
         description: Vec<Text>,
         vars: Vec<VariableBlock>,
-        premise: Vec<FormulaBlock>,
-        assertion: FormulaBlock,
+        premise: Vec<DisplayFormulaBlock>,
+        assertion: DisplayFormulaBlock,
     ) -> AxiomBlock {
         AxiomBlock {
             id,
@@ -98,9 +98,9 @@ impl AxiomBlock {
         let premise = self
             .premise
             .iter()
-            .map(|formula| formula.render(directory, &self.vars))
+            .map(|formula| formula.render())
             .collect();
-        let assertion = self.assertion.render(directory, &self.vars);
+        let assertion = self.assertion.render();
 
         let system = &directory[self.system];
         let system_id = system.id().to_owned();
@@ -136,8 +136,8 @@ pub struct TheoremBlock {
     description: Vec<Text>,
 
     vars: Vec<VariableBlock>,
-    premise: Vec<FormulaBlock>,
-    assertion: FormulaBlock,
+    premise: Vec<DisplayFormulaBlock>,
+    assertion: DisplayFormulaBlock,
 }
 
 impl TheoremBlock {
@@ -149,8 +149,8 @@ impl TheoremBlock {
         tagline: Paragraph,
         description: Vec<Text>,
         vars: Vec<VariableBlock>,
-        premise: Vec<FormulaBlock>,
-        assertion: FormulaBlock,
+        premise: Vec<DisplayFormulaBlock>,
+        assertion: DisplayFormulaBlock,
     ) -> TheoremBlock {
         TheoremBlock {
             id,
@@ -195,9 +195,9 @@ impl TheoremBlock {
         let premise = self
             .premise
             .iter()
-            .map(|formula| formula.render(directory, &self.vars))
+            .map(|formula| formula.render())
             .collect();
-        let assertion = self.assertion.render(directory, &self.vars);
+        let assertion = self.assertion.render();
 
         let system = &directory[self.system];
         let system_id = system.id().to_owned();
@@ -234,7 +234,7 @@ pub enum ProofBlockJustification {
 impl ProofBlockJustification {
     fn checkable(
         &self,
-        formula: &FormulaBlock,
+        formula: &DisplayFormulaBlock,
         directory: &CheckableDirectory,
         local_directory: &LocalCheckableDirectory,
     ) -> Vec<ProofStep> {
@@ -288,12 +288,11 @@ impl ProofBlockJustification {
     }
 }
 
-#[derive(Debug)]
 pub struct ProofBlockStep {
     id: String,
     href: String,
     justification: ProofBlockJustification,
-    formula: FormulaBlock,
+    formula: DisplayFormulaBlock,
     end: String,
 }
 
@@ -302,7 +301,7 @@ impl ProofBlockStep {
         id: String,
         href: String,
         justification: ProofBlockJustification,
-        formula: FormulaBlock,
+        formula: DisplayFormulaBlock,
         end: String,
     ) -> ProofBlockStep {
         ProofBlockStep {
@@ -323,15 +322,10 @@ impl ProofBlockStep {
             .checkable(&self.formula, directory, local_directory)
     }
 
-    fn render(
-        &self,
-        directory: &BlockDirectory,
-        vars: &[VariableBlock],
-        tag: usize,
-    ) -> ProofRenderedStep {
+    fn render(&self, directory: &BlockDirectory, tag: usize) -> ProofRenderedStep {
         let id = self.id.clone();
         let justification = self.justification.render(directory);
-        let formula = self.formula.render(directory, vars);
+        let formula = self.formula.render();
         let end = self.end.clone();
 
         ProofRenderedStep::new(id, justification, formula, end, tag)
@@ -353,7 +347,6 @@ impl ProofBlockElement {
         self_ref: ProofBlockRef,
         steps: &[ProofBlockStep],
         directory: &BlockDirectory,
-        vars: &[VariableBlock],
         step_counter: &mut usize,
     ) -> ProofRenderedElement {
         match self {
@@ -363,8 +356,7 @@ impl ProofBlockElement {
 
             Self::Step => {
                 let step = &steps[*step_counter];
-                let ret =
-                    ProofRenderedElement::Step(step.render(directory, vars, *step_counter + 1));
+                let ret = ProofRenderedElement::Step(step.render(directory, *step_counter + 1));
 
                 *step_counter += 1;
                 ret
@@ -420,15 +412,7 @@ impl ProofBlock {
         let elements = self
             .elements
             .iter()
-            .map(|element| {
-                element.render(
-                    self.self_ref,
-                    &self.steps,
-                    directory,
-                    &theorem.vars,
-                    &mut step_counter,
-                )
-            })
+            .map(|element| element.render(self.self_ref, &self.steps, directory, &mut step_counter))
             .collect();
 
         ProofRendered::new(theorem_name, elements)
