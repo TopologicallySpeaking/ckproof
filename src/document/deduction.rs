@@ -16,7 +16,7 @@
 // License along with ckproof.  If not, see
 // <https://www.gnu.org/licenses/>.
 
-use crate::deduction::directory::{CheckableDirectory, LocalCheckableDirectory};
+use crate::deduction::directory::LocalCheckableDirectory;
 use crate::deduction::{Axiom, Proof, ProofJustification, ProofStep, Theorem};
 
 use crate::rendered::{
@@ -69,7 +69,7 @@ impl AxiomBlock {
         }
     }
 
-    pub fn checkable(&self, directory: &CheckableDirectory) -> Axiom {
+    pub fn checkable(&self) -> Axiom {
         let id = self.id.clone();
         let system = self.system.into();
 
@@ -79,9 +79,9 @@ impl AxiomBlock {
         let premise = self
             .premise
             .iter()
-            .map(|formula| formula.checkable(directory, &local_directory))
+            .map(DisplayFormulaBlock::checkable)
             .collect();
-        let assertion = self.assertion.checkable(directory, &local_directory);
+        let assertion = self.assertion.checkable();
 
         Axiom::new(id, system, local_directory, premise, assertion)
     }
@@ -166,7 +166,7 @@ impl TheoremBlock {
         }
     }
 
-    pub fn checkable(&self, directory: &CheckableDirectory) -> Theorem {
+    pub fn checkable(&self) -> Theorem {
         let id = self.id.clone();
         let system = self.system.into();
 
@@ -176,9 +176,9 @@ impl TheoremBlock {
         let premise = self
             .premise
             .iter()
-            .map(|formula| formula.checkable(directory, &local_directory))
+            .map(|formula| formula.checkable())
             .collect();
-        let assertion = self.assertion.checkable(directory, &local_directory);
+        let assertion = self.assertion.checkable();
 
         Theorem::new(id, system, local_directory, premise, assertion)
     }
@@ -229,19 +229,16 @@ pub enum ProofBlockJustification {
     Axiom(AxiomBlockRef),
     Theorem(TheoremBlockRef),
     Hypothesis(usize),
+
+    Definition,
 }
 
 impl ProofBlockJustification {
-    fn checkable(
-        &self,
-        formula: &DisplayFormulaBlock,
-        directory: &CheckableDirectory,
-        local_directory: &LocalCheckableDirectory,
-    ) -> Vec<ProofStep> {
+    fn checkable(&self, formula: &DisplayFormulaBlock) -> Vec<ProofStep> {
         match self {
             Self::Axiom(axiom_ref) => {
                 let justification = ProofJustification::Axiom((*axiom_ref).into());
-                let formula = formula.checkable(directory, local_directory);
+                let formula = formula.checkable();
                 let step = ProofStep::new(justification, formula);
 
                 vec![step]
@@ -249,7 +246,7 @@ impl ProofBlockJustification {
 
             Self::Theorem(theorem_ref) => {
                 let justification = ProofJustification::Theorem((*theorem_ref).into());
-                let formula = formula.checkable(directory, local_directory);
+                let formula = formula.checkable();
                 let step = ProofStep::new(justification, formula);
 
                 vec![step]
@@ -257,7 +254,15 @@ impl ProofBlockJustification {
 
             Self::Hypothesis(id) => {
                 let justification = ProofJustification::Hypothesis(*id);
-                let formula = formula.checkable(directory, local_directory);
+                let formula = formula.checkable();
+                let step = ProofStep::new(justification, formula);
+
+                vec![step]
+            }
+
+            Self::Definition => {
+                let justification = ProofJustification::Definition;
+                let formula = formula.checkable();
                 let step = ProofStep::new(justification, formula);
 
                 vec![step]
@@ -284,6 +289,8 @@ impl ProofBlockJustification {
             }
 
             Self::Hypothesis(id) => ProofRenderedJustification::Hypothesis(*id),
+
+            Self::Definition => ProofRenderedJustification::Definition,
         }
     }
 }
@@ -313,13 +320,8 @@ impl ProofBlockStep {
         }
     }
 
-    fn checkable(
-        &self,
-        directory: &CheckableDirectory,
-        local_directory: &LocalCheckableDirectory,
-    ) -> Vec<ProofStep> {
-        self.justification
-            .checkable(&self.formula, directory, local_directory)
+    fn checkable(&self) -> Vec<ProofStep> {
+        self.justification.checkable(&self.formula)
     }
 
     fn render(&self, directory: &BlockDirectory, tag: usize) -> ProofRenderedStep {
@@ -387,19 +389,11 @@ impl ProofBlock {
         }
     }
 
-    pub fn checkable(
-        &self,
-        block_directory: &BlockDirectory,
-        checkable_directory: &CheckableDirectory,
-    ) -> Proof {
-        let theorem = &block_directory[self.theorem_ref];
-        let vars = theorem.vars.iter().map(VariableBlock::checkable).collect();
-        let local_directory = LocalCheckableDirectory::new(vars);
-
+    pub fn checkable(&self) -> Proof {
         let steps = self
             .steps
             .iter()
-            .flat_map(|step| step.checkable(checkable_directory, &local_directory))
+            .flat_map(|step| step.checkable())
             .collect();
 
         Proof::new(self.theorem_ref.into(), steps)

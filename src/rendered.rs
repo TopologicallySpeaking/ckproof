@@ -130,6 +130,48 @@ impl SymbolRendered {
 }
 
 #[derive(Deserialize, Serialize, Debug)]
+pub struct DefinitionRendered {
+    id: String,
+    system_id: String,
+    name: String,
+    system_name: String,
+    tagline: String,
+    description: Vec<TextRendered>,
+    denoted: Option<Denoted>,
+    type_signature: String,
+    expanded: String,
+    example: String,
+}
+
+impl DefinitionRendered {
+    pub fn new(
+        id: String,
+        system_id: String,
+        name: String,
+        system_name: String,
+        tagline: String,
+        description: Vec<TextRendered>,
+        denoted: Option<Denoted>,
+        type_signature: String,
+        expanded: String,
+        example: String,
+    ) -> DefinitionRendered {
+        DefinitionRendered {
+            id,
+            system_id,
+            name,
+            system_name,
+            tagline,
+            description,
+            denoted,
+            type_signature,
+            expanded,
+            example,
+        }
+    }
+}
+
+#[derive(Deserialize, Serialize, Debug)]
 pub struct AxiomRendered {
     id: String,
     system_id: String,
@@ -205,6 +247,7 @@ impl TheoremRendered {
 pub enum ProofRenderedJustification {
     SystemChild(String, String),
     Hypothesis(usize),
+    Definition,
 }
 
 #[derive(Deserialize, Serialize, Debug)]
@@ -438,6 +481,7 @@ pub enum BlockRendered {
     System(SystemRendered),
     Type(TypeRendered),
     Symbol(SymbolRendered),
+    Definition(DefinitionRendered),
     Axiom(AxiomRendered),
     Theorem(TheoremRendered),
     Proof(ProofRendered),

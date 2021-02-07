@@ -70,8 +70,9 @@ primary_paren = { "(" ~ formula ~ ")" }
 
 read_operator = { read_operator_silent }
 read_operator_silent = _{
-  operator_plus | operator_minus | operator_asterisk | operator_slash
-  | operator_negation | operator_implies | operator_eq
+  operator_negation | operator_implies | operator_and
+  | operator_plus | operator_minus | operator_asterisk | operator_slash
+  | operator_eq
 }
 operator_plus = { "+" }
 operator_minus = { "-" }
@@ -79,6 +80,7 @@ operator_asterisk = { "*" }
 operator_slash = { "/" }
 operator_negation = { "!" }
 operator_implies = { "=>" }
+operator_and = { "&" }
 operator_eq = { "=" }
 
 display_operator = { display_operator_silent }
@@ -160,6 +162,8 @@ type_signature_inputs = {
 input_signature = _{ variable_input_signature | type_signature }
 variable_input_signature = { "'" ~ type_signature }
 
+var_declaration = { ident ~ ":" ~ type_signature }
+
 read = { read_style ~ read_operator }
 display = { display_style ~ display_operator_silent }
 read_style = _{ style_prefix | style_infix }
@@ -177,13 +181,19 @@ block_description = {
     ~ text_block*
   ~ "}"
 }
+block_inputs = {
+  "inputs" ~ "=" ~ "["
+    ~ var_declaration ~ ("," ~ var_declaration) ~ ","?
+  ~ "]"
+}
 block_type_signature = { "type" ~ "=" ~ type_signature }
+block_var_declaration = _{ "var" ~ var_declaration }
 block_read = { "read" ~ "=" ~ read }
 block_display = { "display" ~ "=" ~ display }
 
-var_declaration = { "var" ~ ident ~ ":" ~ type_signature }
 premise = { "premise" ~ "=" ~ "[" ~ (formula ~ ";")* ~ "]" }
 assertion = { "assertion" ~ "=" ~ formula ~ ";" }
+expanded = { "expanded" ~ "=" ~ formula ~ ";" }
 
 system_block = {
   "\\System" ~ ident ~ "{"
@@ -209,6 +219,16 @@ symbol_entry = _{
   | block_type_signature | block_read | block_display
 }
 
+definition_block = {
+  "\\Definition" ~ ident ~ ":" ~ ident ~ "{"
+    ~ definition_entry*
+  ~ "}"
+}
+definition_entry = _{
+  block_name | block_tagline | block_description
+  | block_inputs | block_read | block_display | expanded
+}
+
 axiom_block = {
   "\\Axiom" ~ ident ~ ":" ~ ident ~ "{"
     ~ axiom_entry*
@@ -216,7 +236,7 @@ axiom_block = {
 }
 axiom_entry = _{
   block_name | block_tagline | block_description
-  | var_declaration | premise | assertion
+  | block_var_declaration | premise | assertion
 }
 
 theorem_block = {
@@ -226,7 +246,7 @@ theorem_block = {
 }
 theorem_entry = _{
   block_name | block_tagline | block_description
-  | var_declaration | premise | assertion
+  | block_var_declaration | premise | assertion
 }
 
 proof_block = {
@@ -242,8 +262,12 @@ proof_step = {
 }
 proof_meta = { proof_meta_item ~ ("," ~ proof_meta_item)* ~ ","? }
 proof_meta_item = _{ proof_justification | integer | tag }
-proof_justification = { ident }
 proof_step_end = ${ ";" ~ math_punct }
+
+proof_justification = { macro_justification | ident }
+macro_justification = ${ "!" ~ macro_justification_kind }
+macro_justification_kind = _{ macro_justification_by_definition }
+macro_justification_by_definition = { "def" }
 
 table_head = { "<" ~ "head" ~ ">" ~ table_row* ~ "<" ~ "/" ~ "head" ~ ">" }
 table_body = { "<" ~ "body" ~ ">" ~ table_row* ~ "<" ~ "/" ~ "body" ~ ">" }
@@ -350,8 +374,9 @@ text_block = { mla | sublist | display_math | paragraph }
 
 document = { SOI ~ document_block* ~ EOI }
 document_block = _{
-  system_block | type_block | symbol_block | axiom_block | theorem_block
-  | proof_block | table_block | quote_block | heading_block | todo_block
+  system_block | type_block | symbol_block | definition_block
+  | axiom_block | theorem_block | proof_block
+  | table_block | quote_block | heading_block | todo_block
   | text_block
 }
 

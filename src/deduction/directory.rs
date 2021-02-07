@@ -20,14 +20,15 @@ use std::ops::Index;
 
 use super::errors::CheckerError;
 use super::{
-    Axiom, AxiomRef, Proof, Symbol, SymbolRef, System, Theorem, TheoremRef, Type, Variable,
-    VariableRef,
+    Axiom, AxiomRef, Definition, DefinitionRef, Proof, Symbol, SymbolRef, System, Theorem,
+    TheoremRef, Type, Variable, VariableRef,
 };
 
 pub struct CheckableDirectory {
     systems: Vec<System>,
     types: Vec<Type>,
     symbols: Vec<Symbol>,
+    definitions: Vec<Definition>,
 
     axioms: Vec<Axiom>,
     theorems: Vec<Theorem>,
@@ -35,31 +36,25 @@ pub struct CheckableDirectory {
 }
 
 impl CheckableDirectory {
-    pub fn new(systems: Vec<System>, types: Vec<Type>, symbols: Vec<Symbol>) -> CheckableDirectory {
+    pub fn new(
+        systems: Vec<System>,
+        types: Vec<Type>,
+        symbols: Vec<Symbol>,
+        definitions: Vec<Definition>,
+        axioms: Vec<Axiom>,
+        theorems: Vec<Theorem>,
+        proofs: Vec<Proof>,
+    ) -> CheckableDirectory {
         CheckableDirectory {
             systems,
             types,
             symbols,
+            definitions,
 
-            axioms: Vec::new(),
-            theorems: Vec::new(),
-            proofs: Vec::new(),
+            axioms,
+            theorems,
+            proofs,
         }
-    }
-
-    pub fn set_axioms(&mut self, axioms: Vec<Axiom>) {
-        assert!(self.axioms.is_empty());
-        self.axioms = axioms;
-    }
-
-    pub fn set_theorems(&mut self, theorems: Vec<Theorem>) {
-        assert!(self.theorems.is_empty());
-        self.theorems = theorems;
-    }
-
-    pub fn set_proofs(&mut self, proofs: Vec<Proof>) {
-        assert!(self.proofs.is_empty());
-        self.proofs = proofs;
     }
 
     pub fn check(&self) -> Vec<CheckerError> {
@@ -75,6 +70,14 @@ impl Index<&SymbolRef> for CheckableDirectory {
 
     fn index(&self, symbol_ref: &SymbolRef) -> &Self::Output {
         &self.symbols[symbol_ref.0]
+    }
+}
+
+impl Index<&DefinitionRef> for CheckableDirectory {
+    type Output = Definition;
+
+    fn index(&self, definition_ref: &DefinitionRef) -> &Self::Output {
+        &self.definitions[definition_ref.0]
     }
 }
 
@@ -102,8 +105,14 @@ impl LocalCheckableDirectory {
     pub fn new(variables: Vec<Variable>) -> LocalCheckableDirectory {
         LocalCheckableDirectory { variables }
     }
+
+    pub fn vars(&self) -> &[Variable] {
+        &self.variables
+    }
 }
 
+// TODO: Make all the Index traits in this file use the reference, not a reference to the
+// reference.
 impl Index<&VariableRef> for LocalCheckableDirectory {
     type Output = Variable;
 

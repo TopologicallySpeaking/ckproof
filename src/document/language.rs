@@ -20,15 +20,18 @@ use itertools::Itertools;
 
 use crate::map_ident;
 
-use crate::deduction::directory::{CheckableDirectory, LocalCheckableDirectory};
-use crate::deduction::{Formula, Symbol, System, Type, TypeSignature, Variable};
+use crate::deduction::directory::LocalCheckableDirectory;
+use crate::deduction::{Definition, Formula, Symbol, System, Type, TypeSignature, Variable};
 
-use crate::rendered::{Denoted, DenotedStyle, SymbolRendered, SystemRendered, TypeRendered};
+use crate::rendered::{
+    DefinitionRendered, Denoted, DenotedStyle, SymbolRendered, SystemRendered, TypeRendered,
+};
 
 use super::directory::{
-    BlockDirectory, SymbolBlockRef, SystemBlockRef, TypeBlockRef, VariableBlockRef,
+    BlockDirectory, DefinitionBlockRef, SymbolBlockRef, SystemBlockRef, TypeBlockRef,
+    VariableBlockRef,
 };
-use super::text::{MathBlock, Paragraph, Text};
+use super::text::{MathBlock, MathElement, Paragraph, Text};
 
 pub struct SystemBlock {
     id: String,
@@ -215,10 +218,38 @@ impl Display {
         Display { style, id }
     }
 
+    fn example<'a, I>(&self, mut inputs: I) -> MathBlock
+    where
+        I: ExactSizeIterator<Item = &'a str>,
+    {
+        match self.style {
+            DisplayStyle::Prefix => todo!(),
+            DisplayStyle::Infix => {
+                assert_eq!(inputs.len(), 2);
+                let first = map_ident(inputs.next().unwrap()).to_owned();
+                let second = map_ident(inputs.next().unwrap()).to_owned();
+
+                MathBlock::new(vec![
+                    MathElement::Variable(first.to_owned()),
+                    MathElement::Operator(map_ident(&self.id).to_owned()),
+                    MathElement::Variable(second.to_owned()),
+                ])
+            }
+
+            _ => todo!(),
+        }
+    }
+
     fn render(&self) -> Option<Denoted> {
         match self.style {
-            DisplayStyle::Prefix => Some(Denoted::new(DenotedStyle::Prefix, map_ident(&self.id))),
-            DisplayStyle::Infix => Some(Denoted::new(DenotedStyle::Infix, map_ident(&self.id))),
+            DisplayStyle::Prefix => Some(Denoted::new(
+                DenotedStyle::Prefix,
+                map_ident(&self.id).to_owned(),
+            )),
+            DisplayStyle::Infix => Some(Denoted::new(
+                DenotedStyle::Infix,
+                map_ident(&self.id).to_owned(),
+            )),
 
             _ => todo!(),
         }
@@ -307,6 +338,105 @@ impl SymbolBlock {
     }
 }
 
+pub struct DefinitionBlock {
+    id: String,
+    name: String,
+    href: String,
+    system: SystemBlockRef,
+    tagline: Paragraph,
+    description: Vec<Text>,
+
+    type_signature: TypeSignatureBlock,
+    inputs: Vec<VariableBlock>,
+    display: Display,
+    expanded: DisplayFormulaBlock,
+}
+
+impl DefinitionBlock {
+    pub fn new(
+        id: String,
+        name: String,
+        href: String,
+        system: SystemBlockRef,
+        tagline: Paragraph,
+        description: Vec<Text>,
+        type_signature: TypeSignatureBlock,
+        inputs: Vec<VariableBlock>,
+        display: Display,
+        expanded: DisplayFormulaBlock,
+    ) -> DefinitionBlock {
+        DefinitionBlock {
+            id,
+            name,
+            href,
+            system,
+            tagline,
+            description,
+
+            type_signature,
+            inputs,
+            display,
+            expanded,
+        }
+    }
+
+    pub fn checkable(&self) -> Definition {
+        let id = self.id.clone();
+        let system = self.system.into();
+
+        let vars = self.inputs.iter().map(VariableBlock::checkable).collect();
+        let local_directory = LocalCheckableDirectory::new(vars);
+
+        let type_signature = self.type_signature.checkable();
+        let expanded = self.expanded.checkable();
+
+        Definition::new(id, system, local_directory, type_signature, expanded)
+    }
+
+    pub fn render(&self, directory: &BlockDirectory) -> DefinitionRendered {
+        let id = self.id.clone();
+        let name = self.name.clone();
+        let tagline = self.tagline.render(directory);
+        let description = self
+            .description
+            .iter()
+            .map(|text| text.render(directory))
+            .collect();
+        let denoted = self.display.render();
+        let type_signature = self.type_signature.render(directory);
+        let expanded = self.expanded.render();
+        let example = self
+            .display
+            .example(self.inputs.iter().map(|var| var.id.as_ref()))
+            .render();
+
+        let system = &directory[self.system];
+        let system_id = system.id.clone();
+        let system_name = system.name.clone();
+
+        DefinitionRendered::new(
+            id,
+            system_id,
+            name,
+            system_name,
+            tagline,
+            description,
+            denoted,
+            type_signature,
+            expanded,
+            example,
+        )
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn href(&self) -> &str {
+        &self.href
+    }
+}
+
 pub struct VariableBlock {
     id: String,
     type_signature: TypeSignatureBlock,
@@ -329,36 +459,31 @@ impl VariableBlock {
 pub enum FormulaBlock {
     Symbol(SymbolBlockRef),
     Variable(VariableBlockRef),
+    Definition(DefinitionBlockRef),
 
     SymbolApplication(SymbolBlockRef, Vec<FormulaBlock>),
     VariableApplication(VariableBlockRef, Vec<FormulaBlock>),
+    DefinitionApplication(DefinitionBlockRef, Vec<FormulaBlock>),
 }
 
 impl FormulaBlock {
-    fn checkable(
-        &self,
-        directory: &CheckableDirectory,
-        local_directory: &LocalCheckableDirectory,
-    ) -> Formula {
+    fn checkable(&self) -> Formula {
         match self {
-            Self::Symbol(symbol_ref) => Formula::symbol(directory, (*symbol_ref).into()),
-            Self::Variable(variable_ref) => {
-                Formula::variable(local_directory, (*variable_ref).into())
-            }
+            Self::Symbol(symbol_ref) => Formula::Symbol((*symbol_ref).into()),
+            Self::Variable(variable_ref) => Formula::Variable((*variable_ref).into()),
+            Self::Definition(definition_ref) => Formula::Definition((*definition_ref).into()),
 
             Self::SymbolApplication(symbol_ref, inputs) => {
-                let inputs = inputs
-                    .iter()
-                    .map(|formula| formula.checkable(directory, local_directory))
-                    .collect();
-                Formula::symbol_application(directory, (*symbol_ref).into(), inputs)
+                let inputs = inputs.iter().map(|formula| formula.checkable()).collect();
+                Formula::SymbolApplication((*symbol_ref).into(), inputs)
             }
             Self::VariableApplication(variable_ref, inputs) => {
-                let inputs = inputs
-                    .iter()
-                    .map(|formula| formula.checkable(directory, local_directory))
-                    .collect();
-                Formula::variable_application(local_directory, (*variable_ref).into(), inputs)
+                let inputs = inputs.iter().map(|formula| formula.checkable()).collect();
+                Formula::VariableApplication((*variable_ref).into(), inputs)
+            }
+            Self::DefinitionApplication(definition_ref, inputs) => {
+                let inputs = inputs.iter().map(|formula| formula.checkable()).collect();
+                Formula::DefinitionApplication((*definition_ref).into(), inputs)
             }
         }
     }
@@ -374,12 +499,8 @@ impl DisplayFormulaBlock {
         DisplayFormulaBlock { display, contents }
     }
 
-    pub fn checkable(
-        &self,
-        directory: &CheckableDirectory,
-        local_directory: &LocalCheckableDirectory,
-    ) -> Formula {
-        self.contents.checkable(directory, local_directory)
+    pub fn checkable(&self) -> Formula {
+        self.contents.checkable()
     }
 
     pub fn render(&self) -> String {

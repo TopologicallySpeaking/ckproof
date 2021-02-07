@@ -837,8 +837,31 @@ impl SystemChildJustificationBuilder {
     }
 }
 
+enum MacroJustificationBuilder {
+    Definition,
+}
+
+impl MacroJustificationBuilder {
+    fn from_pest(pair: Pair<Rule>) -> MacroJustificationBuilder {
+        assert_eq!(pair.as_rule(), Rule::macro_justification);
+
+        match pair.into_inner().next().unwrap().as_rule() {
+            Rule::macro_justification_by_definition => Self::Definition,
+
+            _ => unreachable!(),
+        }
+    }
+
+    fn finish(&self) -> ProofBlockJustification {
+        match self {
+            Self::Definition => ProofBlockJustification::Definition,
+        }
+    }
+}
+
 enum ProofJustificationBuilder {
     SystemChild(SystemChildJustificationBuilder),
+    Macro(MacroJustificationBuilder),
     Hypothesis(usize),
 }
 
@@ -849,6 +872,7 @@ impl ProofJustificationBuilder {
 
         match pair.as_rule() {
             Rule::ident => Self::SystemChild(SystemChildJustificationBuilder::from_pest(pair)),
+            Rule::macro_justification => Self::Macro(MacroJustificationBuilder::from_pest(pair)),
 
             _ => unreachable!(),
         }
@@ -876,6 +900,8 @@ impl ProofJustificationBuilder {
                 builder.verify_structure(parent_system, serial, directory, errors, generate_error)
             }
 
+            Self::Macro(_) => {}
+
             Self::Hypothesis(id) => {
                 let premise_len = directory[theorem_ref].premise().len();
 
@@ -893,6 +919,8 @@ impl ProofJustificationBuilder {
     fn finish(&self) -> ProofBlockJustification {
         match self {
             Self::SystemChild(builder) => builder.finish(),
+
+            Self::Macro(macro_justification) => macro_justification.finish(),
 
             Self::Hypothesis(id) => ProofBlockJustification::Hypothesis(*id),
         }

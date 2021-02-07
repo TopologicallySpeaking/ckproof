@@ -16,23 +16,24 @@
 // License along with ckproof.  If not, see
 // <https://www.gnu.org/licenses/>.
 
-use std::cell::Cell;
+use std::cell::{Cell, UnsafeCell};
 use std::hash::{Hash, Hasher};
 
 use pest::iterators::{Pair, Pairs};
 
 use crate::document::language::{
-    Display, DisplayFormulaBlock, DisplayStyle, FormulaBlock, SymbolBlock, SystemBlock, TypeBlock,
-    TypeSignatureBlock, VariableBlock,
+    DefinitionBlock, Display, DisplayFormulaBlock, DisplayStyle, FormulaBlock, SymbolBlock,
+    SystemBlock, TypeBlock, TypeSignatureBlock, VariableBlock,
 };
 
 use super::directory::{
-    BibliographyBuilderRef, BuilderDirectory, LocalBibliographyBuilderIndex, LocalIndex,
-    ReadSignature, Readable, ReadableKind, SymbolBuilderRef, SystemBuilderRef, TypeBuilderRef,
-    VariableBuilderRef,
+    BibliographyBuilderRef, BuilderDirectory, DefinitionBuilderRef, LocalBibliographyBuilderIndex,
+    LocalIndex, ReadSignature, Readable, ReadableKind, SymbolBuilderRef, SystemBuilderRef,
+    TypeBuilderRef, VariableBuilderRef,
 };
 use super::errors::{
-    ParsingError, ParsingErrorContext, SymbolParsingError, SystemParsingError, TypeParsingError,
+    DefinitionParsingError, ParsingError, ParsingErrorContext, SymbolParsingError,
+    SystemParsingError, TypeParsingError,
 };
 use super::text::{MathBuilder, ParagraphBuilder, TextBuilder};
 use super::{BlockLocation, Rule};
@@ -668,6 +669,13 @@ impl ReadStyle {
             _ => unreachable!(),
         }
     }
+
+    fn to_display(&self) -> DisplayStyle {
+        match self {
+            ReadStyle::Prefix => DisplayStyle::Prefix,
+            ReadStyle::Infix => DisplayStyle::Infix,
+        }
+    }
 }
 
 // TODO: Add arithmetic operators, i.e. +-*/=
@@ -675,6 +683,7 @@ impl ReadStyle {
 enum ReadOperator {
     Negation,
     Implies,
+    And,
 }
 
 impl ReadOperator {
@@ -684,8 +693,17 @@ impl ReadOperator {
         match pair.into_inner().next().unwrap().as_rule() {
             Rule::operator_negation => Self::Negation,
             Rule::operator_implies => Self::Implies,
+            Rule::operator_and => Self::And,
 
             _ => unreachable!(),
+        }
+    }
+
+    fn to_display(&self) -> String {
+        match self {
+            Self::Negation => "\u{00AC}".to_owned(),
+            Self::Implies => "\u{21D2}".to_owned(),
+            Self::And => "\u{2227}".to_owned(),
         }
     }
 
@@ -693,13 +711,14 @@ impl ReadOperator {
         match self {
             Self::Negation => todo!(),
             Self::Implies => 0,
+            Self::And => 1,
         }
     }
 
     fn is_left_assoc(&self) -> bool {
         match self {
             Self::Negation => todo!(),
-            Self::Implies => true,
+            Self::Implies | Self::And => true,
         }
     }
 }
@@ -719,6 +738,13 @@ impl ReadBuilder {
         let operator = ReadOperator::from_pest(inner.next().unwrap());
 
         ReadBuilder { style, operator }
+    }
+
+    fn to_display(&self) -> Display {
+        let style = self.style.to_display();
+        let operator = self.operator.to_display();
+
+        Display::new(style, operator)
     }
 }
 
@@ -972,19 +998,7 @@ impl SymbolBuilderEntries {
             display.clone()
         } else {
             if let Some(read) = self.reads.get(0) {
-                match read {
-                    ReadBuilder {
-                        style: ReadStyle::Infix,
-                        operator: ReadOperator::Implies,
-                    } => Display::new(DisplayStyle::Infix, "\u{21D2}".to_owned()),
-
-                    ReadBuilder {
-                        style: ReadStyle::Prefix,
-                        operator: ReadOperator::Negation,
-                    } => Display::new(DisplayStyle::Prefix, "\u{00AC}".to_owned()),
-
-                    _ => todo!(),
-                }
+                read.to_display()
             } else {
                 todo!()
             }
@@ -1117,6 +1131,463 @@ impl SymbolBuilder {
 
     pub fn as_readable(&self) -> Readable {
         Readable::symbol(self.self_ref.unwrap(), self.entries.arity())
+    }
+}
+
+struct DefinitionBuilderEntries {
+    names: Vec<String>,
+    taglines: Vec<ParagraphBuilder>,
+    descriptions: Vec<Vec<TextBuilder>>,
+    inputs: Vec<Vec<VariableBuilder>>,
+    reads: Vec<ReadBuilder>,
+    displays: Vec<Display>,
+    expansions: Vec<DisplayFormulaBuilder>,
+
+    verified: Cell<bool>,
+    type_signature: UnsafeCell<Option<TypeSignatureBuilder>>,
+}
+
+impl DefinitionBuilderEntries {
+    pub fn from_pest(pairs: Pairs<Rule>) -> DefinitionBuilderEntries {
+        let mut names = Vec::with_capacity(1);
+        let mut taglines = Vec::with_capacity(1);
+        let mut descriptions = Vec::with_capacity(1);
+        let mut inputs = Vec::with_capacity(1);
+        let mut reads = Vec::with_capacity(1);
+        let mut displays = Vec::with_capacity(1);
+        let mut expansions = Vec::with_capacity(1);
+
+        for pair in pairs {
+            match pair.as_rule() {
+                Rule::block_name => {
+                    let string = pair.into_inner().next().unwrap();
+                    let string_contents = string.into_inner().next().unwrap();
+                    let name = string_contents.as_str().to_owned();
+
+                    names.push(name);
+                }
+
+                Rule::block_tagline => {
+                    let tagline = ParagraphBuilder::from_pest(pair.into_inner().next().unwrap());
+
+                    taglines.push(tagline);
+                }
+
+                Rule::block_description => {
+                    let description = pair.into_inner().map(TextBuilder::from_pest).collect();
+
+                    descriptions.push(description);
+                }
+
+                Rule::block_inputs => {
+                    let input = pair.into_inner().map(VariableBuilder::from_pest).collect();
+
+                    inputs.push(input);
+                }
+
+                Rule::block_read => {
+                    let read = ReadBuilder::from_pest(pair.into_inner().next().unwrap());
+
+                    reads.push(read);
+                }
+
+                Rule::block_display => {
+                    let display = Display::from_pest(pair.into_inner().next().unwrap());
+
+                    displays.push(display);
+                }
+
+                Rule::expanded => {
+                    let expanded =
+                        DisplayFormulaBuilder::from_pest(pair.into_inner().next().unwrap());
+
+                    expansions.push(expanded);
+                }
+
+                _ => unreachable!(),
+            }
+        }
+
+        DefinitionBuilderEntries {
+            names,
+            taglines,
+            descriptions,
+            inputs,
+            reads,
+            displays,
+            expansions,
+
+            verified: Cell::new(false),
+            type_signature: UnsafeCell::new(None),
+        }
+    }
+
+    fn verify_structure(
+        &self,
+        parent_system: &str,
+        definition_ref: DefinitionBuilderRef,
+        min_serial: BlockLocation,
+        directory: &BuilderDirectory,
+        errors: &mut ParsingErrorContext,
+    ) {
+        assert!(!self.verified.get());
+        let mut found_error = false;
+
+        match self.names.len() {
+            0 => {
+                found_error = true;
+                errors.err(ParsingError::DefinitionError(
+                    definition_ref,
+                    DefinitionParsingError::MissingName,
+                ));
+            }
+
+            1 => {}
+
+            _ => {
+                found_error = true;
+                errors.err(ParsingError::DefinitionError(
+                    definition_ref,
+                    DefinitionParsingError::DuplicateName,
+                ));
+            }
+        }
+
+        match self.taglines.len() {
+            0 => {
+                found_error = true;
+                errors.err(ParsingError::DefinitionError(
+                    definition_ref,
+                    DefinitionParsingError::MissingTagline,
+                ));
+            }
+
+            1 => self.taglines[0].verify_structure(directory, errors, |e| {
+                ParsingError::DefinitionError(
+                    definition_ref,
+                    DefinitionParsingError::TaglineParsingError(e),
+                )
+            }),
+
+            _ => {
+                found_error = true;
+                errors.err(ParsingError::DefinitionError(
+                    definition_ref,
+                    DefinitionParsingError::DuplicateTagline,
+                ));
+            }
+        }
+
+        match self.descriptions.len() {
+            0 => {}
+            1 => {
+                for paragraph in &self.descriptions[0] {
+                    paragraph.verify_structure(directory, errors, |e| {
+                        ParsingError::DefinitionError(
+                            definition_ref,
+                            DefinitionParsingError::DescriptionParsingError(e),
+                        )
+                    })
+                }
+            }
+
+            _ => {
+                found_error = true;
+                errors.err(ParsingError::DefinitionError(
+                    definition_ref,
+                    DefinitionParsingError::DuplicateDescription,
+                ));
+            }
+        }
+
+        match self.inputs.len() {
+            0 => {}
+            1 => {
+                for var in &self.inputs[0] {
+                    var.verify_structure(parent_system, min_serial, directory, errors);
+                }
+            }
+
+            _ => {
+                found_error = true;
+                errors.err(ParsingError::DefinitionError(
+                    definition_ref,
+                    DefinitionParsingError::DuplicateInputs,
+                ));
+            }
+        }
+
+        if self.reads.len() > 1 {
+            found_error = true;
+            errors.err(ParsingError::DefinitionError(
+                definition_ref,
+                DefinitionParsingError::DuplicateReads,
+            ));
+        }
+
+        if self.displays.len() > 1 {
+            found_error = true;
+            errors.err(ParsingError::DefinitionError(
+                definition_ref,
+                DefinitionParsingError::DuplicateDisplays,
+            ));
+        }
+
+        self.verified.set(!found_error);
+    }
+
+    fn build_formulas(
+        &self,
+        self_ref: DefinitionBuilderRef,
+        parent_system: &str,
+        directory: &BuilderDirectory,
+        errors: &mut ParsingErrorContext,
+    ) {
+        assert!(self.verified.get());
+        assert!(unsafe {
+            // SAFETY: The only place we get a mutable reference to this is later in this function.
+            // So, there are no mutable references because the only place that can happen hasn't
+            // happened yet.
+            self.type_signature.get().as_ref().unwrap().is_none()
+        });
+
+        let local_index = {
+            let mut tmp = directory.get_local(parent_system);
+            tmp.add_vars(&self.inputs(), errors, |var_ref, e| {
+                ParsingError::DefinitionError(
+                    self_ref,
+                    DefinitionParsingError::VariableError(var_ref, e),
+                )
+            });
+            tmp
+        };
+
+        self.expanded()
+            .build(&local_index, directory, &self.inputs(), errors);
+
+        unsafe {
+            // SAFETY: This is the only place we write to this field, so we don't need to worry
+            // about multiple mutable references. Furthermore, the only time we pass around shared
+            // references is with Self::type_signature(). However, if type_signature() successfully
+            // returned the value, it would mean we have already called this function previously
+            // and the assertion at the beginning of this function would fail. This prevents
+            // aliasing.
+            let type_signature = self.type_signature.get().as_mut().unwrap();
+            *type_signature = Some(self.expanded().type_signature(directory, self.inputs()));
+        }
+    }
+
+    fn name(&self) -> &str {
+        assert!(self.verified.get());
+        &self.names[0]
+    }
+
+    fn tagline(&self) -> &ParagraphBuilder {
+        assert!(self.verified.get());
+        &self.taglines[0]
+    }
+
+    fn description(&self) -> &[TextBuilder] {
+        assert!(self.verified.get());
+        if self.descriptions.is_empty() {
+            &[]
+        } else {
+            &self.descriptions[0]
+        }
+    }
+
+    fn inputs(&self) -> &[VariableBuilder] {
+        assert!(self.verified.get());
+        &self.inputs[0]
+    }
+
+    fn arity(&self) -> usize {
+        assert!(self.verified.get());
+        self.inputs[0].len()
+    }
+
+    fn type_signature(&self) -> &TypeSignatureBuilder {
+        unsafe {
+            // SAFETY: The only time we mutable change this reference is in Self::build_formulas().
+            // If we call this function without running build_formulas() first, the unwrap panics.
+            // If we call build_formulas() twice, e.g. while this immutable borrow is still alive,
+            // it's designed to panic before the mutable borrow.
+            let type_signature = self.type_signature.get().as_ref().unwrap();
+            type_signature.as_ref().unwrap()
+        }
+    }
+
+    fn read(&self) -> Option<ReadBuilder> {
+        assert!(self.verified.get());
+        self.reads.get(0).copied()
+    }
+
+    fn display(&self) -> Display {
+        assert!(self.verified.get());
+
+        if let Some(display) = self.displays.get(0) {
+            display.clone()
+        } else {
+            if let Some(read) = self.reads.get(0) {
+                read.to_display()
+            } else {
+                todo!()
+            }
+        }
+    }
+
+    fn expanded(&self) -> &DisplayFormulaBuilder {
+        &self.expansions[0]
+    }
+}
+
+pub struct DefinitionBuilder {
+    id: String,
+    system_id: String,
+    href: String,
+    serial: BlockLocation,
+
+    entries: DefinitionBuilderEntries,
+
+    self_ref: Option<DefinitionBuilderRef>,
+    system_ref: Cell<Option<SystemBuilderRef>>,
+}
+
+impl DefinitionBuilder {
+    pub fn from_pest(pair: Pair<Rule>, serial: BlockLocation, href: &str) -> DefinitionBuilder {
+        assert_eq!(pair.as_rule(), Rule::definition_block);
+
+        let mut inner = pair.into_inner();
+        let id = inner.next().unwrap().as_str().to_owned();
+        let system_id = inner.next().unwrap().as_str().to_owned();
+        let href = format!("{}#{}_{}", href, system_id, id);
+
+        let entries = DefinitionBuilderEntries::from_pest(inner);
+
+        DefinitionBuilder {
+            id,
+            system_id,
+            href,
+            serial,
+
+            entries,
+
+            self_ref: None,
+            system_ref: Cell::new(None),
+        }
+    }
+
+    pub fn set_self_ref(&mut self, self_ref: DefinitionBuilderRef) {
+        assert!(self.self_ref.is_none());
+        self.self_ref = Some(self_ref);
+    }
+
+    pub fn verify_structure(&self, directory: &BuilderDirectory, errors: &mut ParsingErrorContext) {
+        assert!(self.system_ref.get().is_none());
+        let self_ref = self.self_ref.unwrap();
+
+        self.system_ref
+            .set(directory.search_system(&self.system_id));
+        // TODO: This check is already done when adding system children to the index. Remove it.
+        if self.system_ref.get().is_none() {
+            errors.err(ParsingError::DefinitionError(
+                self_ref,
+                DefinitionParsingError::ParentNotFound,
+            ));
+        }
+
+        self.entries
+            .verify_structure(&self.system_id, self_ref, self.serial, directory, errors);
+    }
+
+    pub fn bib_refs(&self) -> Box<dyn Iterator<Item = BibliographyBuilderRef> + '_> {
+        let tagline = self.entries.tagline().bib_refs();
+        let description = self
+            .entries
+            .description()
+            .iter()
+            .flat_map(TextBuilder::bib_refs);
+
+        Box::new(tagline.chain(description))
+    }
+
+    pub fn set_local_bib_refs(&self, index: &LocalBibliographyBuilderIndex) {
+        self.entries.tagline().set_local_bib_refs(index);
+
+        for text in self.entries.description() {
+            text.set_local_bib_refs(index);
+        }
+    }
+
+    pub fn build_formulas(&self, directory: &BuilderDirectory, errors: &mut ParsingErrorContext) {
+        self.entries
+            .build_formulas(self.self_ref.unwrap(), &self.system_id, directory, errors);
+    }
+
+    pub fn finish(&self) -> DefinitionBlock {
+        let id = self.id.clone();
+        let name = self.entries.name().to_owned();
+        let href = self.href.clone();
+        let system = self.system_ref.get().unwrap().finish();
+        let tagline = self.entries.tagline().finish();
+        let description = self
+            .entries
+            .description()
+            .iter()
+            .map(TextBuilder::finish)
+            .collect();
+
+        let type_signature = self.entries.type_signature().finish();
+        let inputs = self
+            .entries
+            .inputs()
+            .iter()
+            .map(VariableBuilder::finish)
+            .collect();
+        let display = self.entries.display();
+        let expanded = self.entries.expanded().finish();
+
+        DefinitionBlock::new(
+            id,
+            name,
+            href,
+            system,
+            tagline,
+            description,
+            type_signature,
+            inputs,
+            display,
+            expanded,
+        )
+    }
+
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    pub fn system_id(&self) -> &str {
+        &self.system_id
+    }
+
+    pub fn type_signature(&self) -> &TypeSignatureBuilder {
+        self.entries.type_signature()
+    }
+
+    pub fn read_signature(&self) -> Option<ReadSignature> {
+        self.entries.read().map(|read| {
+            ReadSignature::new(
+                read,
+                self.entries
+                    .inputs()
+                    .iter()
+                    .map(|var| var.type_signature.clone())
+                    .collect(),
+            )
+        })
+    }
+
+    pub fn as_readable(&self) -> Readable {
+        Readable::definition(self.self_ref.unwrap(), self.entries.arity())
     }
 }
 
@@ -1264,6 +1735,8 @@ impl FormulaPrefixBuilder {
             ReadableKind::Symbol(symbol_ref) => {
                 FormulaBlock::SymbolApplication(symbol_ref.finish(), vec![inner])
             }
+
+            ReadableKind::Definition(_) => todo!(),
         }
     }
 
@@ -1271,6 +1744,7 @@ impl FormulaPrefixBuilder {
         let readable = self.operator_ref.get().unwrap();
         match readable.kind() {
             ReadableKind::Symbol(symbol_ref) => directory[symbol_ref].type_signature().applied(),
+            ReadableKind::Definition(_) => todo!(),
         }
     }
 }
@@ -1334,6 +1808,10 @@ impl FormulaInfixBuilder {
             ReadableKind::Symbol(symbol_ref) => {
                 FormulaBlock::SymbolApplication(symbol_ref.finish(), vec![lhs, rhs])
             }
+
+            ReadableKind::Definition(definition_ref) => {
+                FormulaBlock::DefinitionApplication(definition_ref.finish(), vec![lhs, rhs])
+            }
         }
     }
 
@@ -1341,6 +1819,10 @@ impl FormulaInfixBuilder {
         let readable = self.operator_ref.get().unwrap();
         match readable.kind() {
             ReadableKind::Symbol(symbol_ref) => directory[symbol_ref].type_signature().applied(),
+
+            ReadableKind::Definition(definition_ref) => {
+                directory[definition_ref].type_signature().applied()
+            }
         }
     }
 }
@@ -1465,6 +1947,14 @@ impl DisplayFormulaBuilder {
         errors: &mut ParsingErrorContext,
     ) {
         self.contents.build(local_index, directory, vars, errors);
+    }
+
+    pub fn type_signature(
+        &self,
+        directory: &BuilderDirectory,
+        vars: &[VariableBuilder],
+    ) -> TypeSignatureBuilder {
+        self.contents.type_signature(directory, vars)
     }
 
     pub fn finish(&self) -> DisplayFormulaBlock {

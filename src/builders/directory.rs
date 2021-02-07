@@ -23,9 +23,9 @@ use pest::iterators::Pair;
 
 use crate::document::directory::{
     AxiomBlockRef, Bibliography, BibliographyRef, Block, BlockDirectory, BlockReference,
-    HeadingBlockRef, LocalBibliography, LocalBibliographyRef, ProofBlockRef, ProofBlockStepRef,
-    QuoteBlockRef, SymbolBlockRef, SystemBlockRef, TableBlockRef, TextBlockRef, TheoremBlockRef,
-    TodoBlockRef, TypeBlockRef, VariableBlockRef,
+    DefinitionBlockRef, HeadingBlockRef, LocalBibliography, LocalBibliographyRef, ProofBlockRef,
+    ProofBlockStepRef, QuoteBlockRef, SymbolBlockRef, SystemBlockRef, TableBlockRef, TextBlockRef,
+    TheoremBlockRef, TodoBlockRef, TypeBlockRef, VariableBlockRef,
 };
 use crate::document::text::Mla;
 
@@ -35,7 +35,8 @@ use super::errors::{
     SystemParsingError, VariableParsingError,
 };
 use super::language::{
-    ReadBuilder, SymbolBuilder, SystemBuilder, TypeBuilder, TypeSignatureBuilder, VariableBuilder,
+    DefinitionBuilder, ReadBuilder, SymbolBuilder, SystemBuilder, TypeBuilder,
+    TypeSignatureBuilder, VariableBuilder,
 };
 use super::text::{
     HeadingBuilder, MlaBuilderEntries, QuoteBuilder, TableBuilder, TextBlockBuilder, TodoBuilder,
@@ -66,6 +67,15 @@ pub struct SymbolBuilderRef(usize);
 impl SymbolBuilderRef {
     pub fn finish(&self) -> SymbolBlockRef {
         SymbolBlockRef::new(self.0)
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct DefinitionBuilderRef(usize);
+
+impl DefinitionBuilderRef {
+    pub fn finish(&self) -> DefinitionBlockRef {
+        DefinitionBlockRef::new(self.0)
     }
 }
 
@@ -188,6 +198,7 @@ impl LocalBibliographyBuilderRef {
 #[derive(Clone, Copy, Debug)]
 pub enum ReadableKind {
     Symbol(SymbolBuilderRef),
+    Definition(DefinitionBuilderRef),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -200,6 +211,13 @@ impl Readable {
     pub fn symbol(symbol_ref: SymbolBuilderRef, arity: usize) -> Readable {
         Readable {
             kind: ReadableKind::Symbol(symbol_ref),
+            arity,
+        }
+    }
+
+    pub fn definition(definition_ref: DefinitionBuilderRef, arity: usize) -> Readable {
+        Readable {
+            kind: ReadableKind::Definition(definition_ref),
             arity,
         }
     }
@@ -225,6 +243,7 @@ impl ReadSignature {
 pub enum SystemBuilderChild {
     Type(TypeBuilderRef),
     Symbol(SymbolBuilderRef),
+    Definition(DefinitionBuilderRef),
     Axiom(AxiomBuilderRef),
     Theorem(TheoremBuilderRef),
 }
@@ -262,6 +281,7 @@ impl SystemBuilderChild {
         match self {
             Self::Type(type_ref) => type_ref.finish().into(),
             Self::Symbol(symbol_ref) => symbol_ref.finish().into(),
+            Self::Definition(definition_ref) => definition_ref.finish().into(),
             Self::Axiom(axiom_ref) => axiom_ref.finish().into(),
             Self::Theorem(theorem_ref) => theorem_ref.finish().into(),
         }
@@ -273,6 +293,7 @@ pub enum BlockBuilder {
     System(SystemBuilderRef),
     Type(TypeBuilderRef),
     Symbol(SymbolBuilderRef),
+    Definition(DefinitionBuilderRef),
     Axiom(AxiomBuilderRef),
     Theorem(TheoremBuilderRef),
     Proof(ProofBuilderRef),
@@ -301,6 +322,9 @@ impl BlockBuilder {
             Rule::symbol_block => {
                 Self::Symbol(directory.add_symbol(SymbolBuilder::from_pest(pair, serial, href)))
             }
+            Rule::definition_block => Self::Definition(
+                directory.add_definition(DefinitionBuilder::from_pest(pair, serial, href)),
+            ),
             Rule::axiom_block => {
                 Self::Axiom(directory.add_axiom(AxiomBuilder::from_pest(pair, serial, href)))
             }
@@ -332,6 +356,7 @@ impl BlockBuilder {
             Self::Type(type_ref) => directory[*type_ref].bib_refs(),
             Self::Symbol(symbol_ref) => directory[*symbol_ref].bib_refs(),
             Self::Axiom(axiom_ref) => directory[*axiom_ref].bib_refs(),
+            Self::Definition(definition_ref) => directory[*definition_ref].bib_refs(),
             Self::Theorem(theorem_ref) => directory[*theorem_ref].bib_refs(),
             Self::Proof(proof_ref) => directory[*proof_ref].bib_refs(),
 
@@ -353,6 +378,9 @@ impl BlockBuilder {
             Self::Type(type_ref) => directory[*type_ref].set_local_bib_refs(index),
             Self::Symbol(symbol_ref) => directory[*symbol_ref].set_local_bib_refs(index),
             Self::Axiom(axiom_ref) => directory[*axiom_ref].set_local_bib_refs(index),
+            Self::Definition(definition_ref) => {
+                directory[*definition_ref].set_local_bib_refs(index)
+            }
             Self::Theorem(theorem_ref) => directory[*theorem_ref].set_local_bib_refs(index),
             Self::Proof(proof_ref) => directory[*proof_ref].set_local_bib_refs(index),
 
@@ -370,6 +398,7 @@ impl BlockBuilder {
             Self::Type(type_ref) => type_ref.finish().into(),
             Self::Symbol(symbol_ref) => symbol_ref.finish().into(),
             Self::Axiom(axiom_ref) => axiom_ref.finish().into(),
+            Self::Definition(definition_ref) => definition_ref.finish().into(),
             Self::Theorem(theorem_ref) => theorem_ref.finish().into(),
             Self::Proof(proof_ref) => proof_ref.finish().into(),
 
@@ -582,6 +611,7 @@ pub struct BuilderDirectory {
     systems: Vec<SystemBuilder>,
     types: Vec<TypeBuilder>,
     symbols: Vec<SymbolBuilder>,
+    definitions: Vec<DefinitionBuilder>,
     axioms: Vec<AxiomBuilder>,
     theorems: Vec<TheoremBuilder>,
     proofs: Vec<ProofBuilder>,
@@ -602,6 +632,7 @@ impl BuilderDirectory {
             systems: Vec::new(),
             types: Vec::new(),
             symbols: Vec::new(),
+            definitions: Vec::new(),
             axioms: Vec::new(),
             theorems: Vec::new(),
             proofs: Vec::new(),
@@ -645,6 +676,16 @@ impl BuilderDirectory {
 
         self.symbols.push(symbol);
         symbol_ref
+    }
+
+    pub fn add_definition(&mut self, mut definition: DefinitionBuilder) -> DefinitionBuilderRef {
+        assert!(self.index.is_none());
+
+        let definition_ref = DefinitionBuilderRef(self.definitions.len());
+        definition.set_self_ref(definition_ref);
+
+        self.definitions.push(definition);
+        definition_ref
     }
 
     pub fn add_axiom(&mut self, mut axiom: AxiomBuilder) -> AxiomBuilderRef {
@@ -773,6 +814,18 @@ impl BuilderDirectory {
             );
         }
 
+        for (i, definition) in self.definitions.iter().enumerate() {
+            let id = definition.id();
+            let system_id = definition.system_id();
+
+            index.add_system_child(
+                system_id,
+                id,
+                SystemBuilderChild::Definition(DefinitionBuilderRef(i)),
+                errors,
+            );
+        }
+
         for (i, axiom) in self.axioms.iter().enumerate() {
             let id = axiom.id();
             let system_id = axiom.system_id();
@@ -817,6 +870,10 @@ impl BuilderDirectory {
             symbol.verify_structure(&self, errors);
         }
 
+        for definition in &self.definitions {
+            definition.verify_structure(&self, errors);
+        }
+
         for axiom in &self.axioms {
             axiom.verify_structure(&self, errors);
         }
@@ -851,10 +908,24 @@ impl BuilderDirectory {
     }
 
     pub fn build_operators(&mut self, errors: &mut ParsingErrorContext) {
-        for symbol in self.symbols.iter() {
+        for symbol in &self.symbols {
             if let Some(read_signature) = symbol.read_signature() {
-                let system_id = &symbol.system_id();
+                let system_id = symbol.system_id();
                 let readable = symbol.as_readable();
+
+                self.index.as_mut().unwrap().add_operator(
+                    system_id,
+                    read_signature,
+                    readable,
+                    errors,
+                );
+            }
+        }
+
+        for definition in &self.definitions {
+            if let Some(read_signature) = definition.read_signature() {
+                let system_id = definition.system_id();
+                let readable = definition.as_readable();
 
                 self.index.as_mut().unwrap().add_operator(
                     system_id,
@@ -867,6 +938,10 @@ impl BuilderDirectory {
     }
 
     pub fn build_formulas(&self, errors: &mut ParsingErrorContext) {
+        for definition in &self.definitions {
+            definition.build_formulas(self, errors);
+        }
+
         for axiom in &self.axioms {
             axiom.build_formulas(self, errors);
         }
@@ -884,6 +959,11 @@ impl BuilderDirectory {
         let systems = self.systems.iter().map(SystemBuilder::finish).collect();
         let types = self.types.iter().map(TypeBuilder::finish).collect();
         let symbols = self.symbols.iter().map(SymbolBuilder::finish).collect();
+        let definitions = self
+            .definitions
+            .iter()
+            .map(DefinitionBuilder::finish)
+            .collect();
         let axioms = self.axioms.iter().map(AxiomBuilder::finish).collect();
         let theorems = self.theorems.iter().map(TheoremBuilder::finish).collect();
         let proofs = self.proofs.iter().map(ProofBuilder::finish).collect();
@@ -900,6 +980,7 @@ impl BuilderDirectory {
             systems,
             types,
             symbols,
+            definitions,
             axioms,
             theorems,
             proofs,
@@ -955,6 +1036,14 @@ impl Index<SymbolBuilderRef> for BuilderDirectory {
 
     fn index(&self, symbol_ref: SymbolBuilderRef) -> &Self::Output {
         &self.symbols[symbol_ref.0]
+    }
+}
+
+impl Index<DefinitionBuilderRef> for BuilderDirectory {
+    type Output = DefinitionBuilder;
+
+    fn index(&self, definition_ref: DefinitionBuilderRef) -> &Self::Output {
+        &self.definitions[definition_ref.0]
     }
 }
 

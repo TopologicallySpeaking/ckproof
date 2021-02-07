@@ -23,7 +23,7 @@ use crate::deduction::directory::CheckableDirectory;
 use crate::rendered::{BlockRendered, MlaRendered};
 
 use super::deduction::{AxiomBlock, ProofBlock, TheoremBlock};
-use super::language::{SymbolBlock, SystemBlock, TypeBlock};
+use super::language::{DefinitionBlock, SymbolBlock, SystemBlock, TypeBlock};
 use super::text::{HeadingBlock, Mla, QuoteBlock, TableBlock, TextBlock, TodoBlock};
 
 #[derive(Clone, Copy, Debug)]
@@ -58,6 +58,19 @@ pub struct SymbolBlockRef(usize);
 impl SymbolBlockRef {
     pub fn new(i: usize) -> SymbolBlockRef {
         SymbolBlockRef(i)
+    }
+
+    pub fn get(&self) -> usize {
+        self.0
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct DefinitionBlockRef(usize);
+
+impl DefinitionBlockRef {
+    pub fn new(i: usize) -> DefinitionBlockRef {
+        DefinitionBlockRef(i)
     }
 
     pub fn get(&self) -> usize {
@@ -195,6 +208,7 @@ pub enum BlockReference {
 
     Type(TypeBlockRef),
     Symbol(SymbolBlockRef),
+    Definition(DefinitionBlockRef),
     Axiom(AxiomBlockRef),
     Theorem(TheoremBlockRef),
 
@@ -231,6 +245,16 @@ impl BlockReference {
                     "<a href=\"{}\" target=\"_blank\" rel=\"noopener noreferrer\">{}</a>",
                     symbol.href(),
                     symbol.name()
+                )
+            }
+
+            Self::Definition(definition_ref) => {
+                let definition = &directory[*definition_ref];
+
+                format!(
+                    "<a href=\"{}\" target=\"_blank\" rel=\"noopener noreferrer\">{}</a>",
+                    definition.href(),
+                    definition.name()
                 )
             }
 
@@ -297,6 +321,12 @@ impl From<SymbolBlockRef> for BlockReference {
     }
 }
 
+impl From<DefinitionBlockRef> for BlockReference {
+    fn from(definition_ref: DefinitionBlockRef) -> BlockReference {
+        BlockReference::Definition(definition_ref)
+    }
+}
+
 impl From<AxiomBlockRef> for BlockReference {
     fn from(axiom_ref: AxiomBlockRef) -> BlockReference {
         BlockReference::Axiom(axiom_ref)
@@ -320,6 +350,7 @@ pub enum Block {
     System(SystemBlockRef),
     Type(TypeBlockRef),
     Symbol(SymbolBlockRef),
+    Definition(DefinitionBlockRef),
     Axiom(AxiomBlockRef),
     Theorem(TheoremBlockRef),
     Proof(ProofBlockRef),
@@ -347,6 +378,11 @@ impl Block {
             Self::Symbol(symbol_ref) => {
                 let symbol = directory[*symbol_ref].render(directory);
                 BlockRendered::Symbol(symbol)
+            }
+
+            Self::Definition(definition_ref) => {
+                let definition = directory[*definition_ref].render(directory);
+                BlockRendered::Definition(definition)
             }
 
             Self::Axiom(axiom_ref) => {
@@ -410,6 +446,12 @@ impl From<SymbolBlockRef> for Block {
     }
 }
 
+impl From<DefinitionBlockRef> for Block {
+    fn from(definition_ref: DefinitionBlockRef) -> Block {
+        Block::Definition(definition_ref)
+    }
+}
+
 impl From<AxiomBlockRef> for Block {
     fn from(axiom_ref: AxiomBlockRef) -> Block {
         Block::Axiom(axiom_ref)
@@ -462,6 +504,7 @@ pub struct BlockDirectory {
     systems: Vec<SystemBlock>,
     types: Vec<TypeBlock>,
     symbols: Vec<SymbolBlock>,
+    definitions: Vec<DefinitionBlock>,
     axioms: Vec<AxiomBlock>,
     theorems: Vec<TheoremBlock>,
     proofs: Vec<ProofBlock>,
@@ -480,6 +523,7 @@ impl BlockDirectory {
         systems: Vec<SystemBlock>,
         types: Vec<TypeBlock>,
         symbols: Vec<SymbolBlock>,
+        definitions: Vec<DefinitionBlock>,
         axioms: Vec<AxiomBlock>,
         theorems: Vec<TheoremBlock>,
         proofs: Vec<ProofBlock>,
@@ -494,6 +538,7 @@ impl BlockDirectory {
             systems,
             types,
             symbols,
+            definitions,
             axioms,
             theorems,
             proofs,
@@ -512,31 +557,28 @@ impl BlockDirectory {
         let systems = self.systems.iter().map(SystemBlock::checkable).collect();
         let types = self.types.iter().map(TypeBlock::checkable).collect();
         let symbols = self.symbols.iter().map(SymbolBlock::checkable).collect();
-
-        let mut directory = CheckableDirectory::new(systems, types, symbols);
-
-        let axioms = self
-            .axioms
+        let definitions = self
+            .definitions
             .iter()
-            .map(|axiom| axiom.checkable(&directory))
+            .map(|definition| definition.checkable())
             .collect();
-        directory.set_axioms(axioms);
-
+        let axioms = self.axioms.iter().map(|axiom| axiom.checkable()).collect();
         let theorems = self
             .theorems
             .iter()
-            .map(|theorem| theorem.checkable(&directory))
+            .map(|theorem| theorem.checkable())
             .collect();
-        directory.set_theorems(theorems);
+        let proofs = self.proofs.iter().map(|proof| proof.checkable()).collect();
 
-        let proofs = self
-            .proofs
-            .iter()
-            .map(|proof| proof.checkable(&self, &directory))
-            .collect();
-        directory.set_proofs(proofs);
-
-        directory
+        CheckableDirectory::new(
+            systems,
+            types,
+            symbols,
+            definitions,
+            axioms,
+            theorems,
+            proofs,
+        )
     }
 
     pub fn todos(&self) -> &[TodoBlock] {
@@ -565,6 +607,14 @@ impl Index<SymbolBlockRef> for BlockDirectory {
 
     fn index(&self, symbol_ref: SymbolBlockRef) -> &Self::Output {
         &self.symbols[symbol_ref.0]
+    }
+}
+
+impl Index<DefinitionBlockRef> for BlockDirectory {
+    type Output = DefinitionBlock;
+
+    fn index(&self, definition_ref: DefinitionBlockRef) -> &Self::Output {
+        &self.definitions[definition_ref.0]
     }
 }
 

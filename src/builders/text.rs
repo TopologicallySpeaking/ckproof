@@ -54,6 +54,7 @@ fn map_operator(operator: Rule) -> String {
 
         Rule::operator_negation => "\u{00AC}".to_owned(),
         Rule::operator_implies => "\u{21D2}".to_owned(),
+        Rule::operator_and => "\u{2227}".to_owned(),
 
         Rule::operator_bang => "!".to_owned(),
 
@@ -607,7 +608,7 @@ impl SublistBuilderItem {
         let mut inner = pair.into_inner();
         let var = inner.next().unwrap();
         let var_inner = var.into_inner().next().unwrap();
-        let var_id = map_ident(var_inner.as_str());
+        let var_id = map_ident(var_inner.as_str()).to_owned();
         let replacement = MathBuilder::from_pest(inner.next().unwrap());
 
         SublistBuilderItem {
@@ -664,8 +665,10 @@ impl MathBuilderElement {
             Rule::display_operator => {
                 Self::Operator(map_operator(pair.into_inner().next().unwrap().as_rule()))
             }
-            Rule::ident => Self::Symbol(map_ident(pair.as_str())),
-            Rule::var => Self::Variable(map_ident(pair.into_inner().next().unwrap().as_str())),
+            Rule::ident => Self::Symbol(map_ident(pair.as_str()).to_owned()),
+            Rule::var => {
+                Self::Variable(map_ident(pair.into_inner().next().unwrap().as_str()).to_owned())
+            }
             Rule::integer => Self::Number(pair.as_str().to_owned()),
 
             _ => unreachable!(),
@@ -679,10 +682,12 @@ impl MathBuilderElement {
             )),
 
             Rule::read_operator => {
-                Self::Operator(map_operator(pair.into_inner().next().unwrap().as_rule()))
+                Self::Operator(map_operator(pair.into_inner().next().unwrap().as_rule()).to_owned())
             }
-            Rule::ident => Self::Symbol(map_ident(pair.as_str())),
-            Rule::var => Self::Variable(map_ident(pair.into_inner().next().unwrap().as_str())),
+            Rule::ident => Self::Symbol(map_ident(pair.as_str()).to_owned()),
+            Rule::var => {
+                Self::Variable(map_ident(pair.into_inner().next().unwrap().as_str()).to_owned())
+            }
 
             _ => unreachable!("{:#?}", pair),
         }

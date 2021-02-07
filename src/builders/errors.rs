@@ -22,10 +22,10 @@ use url::ParseError as UrlError;
 
 use super::deduction::ProofBuilderElementRef;
 use super::directory::{
-    AxiomBuilderRef, BibliographyBuilderRef, ProofBuilderRef, ProofBuilderStepRef, QuoteBuilderRef,
-    Readable, ReadableKind, SymbolBuilderRef, SystemBuilderChild, SystemBuilderRef,
-    TableBuilderRef, TextBlockBuilderRef, TheoremBuilderRef, TodoBuilderRef, TypeBuilderRef,
-    VariableBuilderRef,
+    AxiomBuilderRef, BibliographyBuilderRef, DefinitionBuilderRef, ProofBuilderRef,
+    ProofBuilderStepRef, QuoteBuilderRef, Readable, ReadableKind, SymbolBuilderRef,
+    SystemBuilderChild, SystemBuilderRef, TableBuilderRef, TextBlockBuilderRef, TheoremBuilderRef,
+    TodoBuilderRef, TypeBuilderRef, VariableBuilderRef,
 };
 use super::text::{
     MlaContainerRef, ParagraphBuilderElementRef, TableBuilderCellRef, TodoBuilderElementRef,
@@ -144,6 +144,26 @@ pub enum SymbolParsingError {
 }
 
 #[derive(Debug)]
+pub enum DefinitionParsingError {
+    ParentNotFound,
+    IdAlreadyTaken(SystemBuilderChild),
+    ReadSignatureAlreadyTaken(Readable),
+
+    MissingName,
+    MissingTagline,
+    DuplicateName,
+    DuplicateTagline,
+    DuplicateDescription,
+    DuplicateInputs,
+    DuplicateReads,
+    DuplicateDisplays,
+    TaglineParsingError(ParagraphParsingError),
+    DescriptionParsingError(TextParsingError),
+
+    VariableError(VariableBuilderRef, VariableParsingError),
+}
+
+#[derive(Debug)]
 pub enum VariableParsingError {
     IdAlreadyTaken(VariableBuilderRef),
 }
@@ -241,6 +261,7 @@ pub enum ParsingError {
     SystemError(SystemBuilderRef, SystemParsingError),
     TypeError(TypeBuilderRef, TypeParsingError),
     SymbolError(SymbolBuilderRef, SymbolParsingError),
+    DefinitionError(DefinitionBuilderRef, DefinitionParsingError),
     AxiomError(AxiomBuilderRef, AxiomParsingError),
     TheoremError(TheoremBuilderRef, TheoremParsingError),
     ProofError(ProofBuilderRef, ProofParsingError),
@@ -262,6 +283,10 @@ impl ParsingError {
             SystemBuilderChild::Symbol(symbol_ref) => {
                 ParsingError::SymbolError(symbol_ref, SymbolParsingError::ParentNotFound)
             }
+            SystemBuilderChild::Definition(definition_ref) => ParsingError::DefinitionError(
+                definition_ref,
+                DefinitionParsingError::ParentNotFound,
+            ),
             SystemBuilderChild::Axiom(axiom_ref) => {
                 ParsingError::AxiomError(axiom_ref, AxiomParsingError::ParentNotFound)
             }
@@ -282,6 +307,10 @@ impl ParsingError {
             SystemBuilderChild::Symbol(symbol_ref) => {
                 ParsingError::SymbolError(symbol_ref, SymbolParsingError::IdAlreadyTaken(old_ref))
             }
+            SystemBuilderChild::Definition(definition_ref) => ParsingError::DefinitionError(
+                definition_ref,
+                DefinitionParsingError::IdAlreadyTaken(old_ref),
+            ),
             SystemBuilderChild::Axiom(axiom_ref) => {
                 ParsingError::AxiomError(axiom_ref, AxiomParsingError::IdAlreadyTaken(old_ref))
             }
@@ -296,6 +325,11 @@ impl ParsingError {
             ReadableKind::Symbol(symbol_ref) => ParsingError::SymbolError(
                 symbol_ref,
                 SymbolParsingError::ReadSignatureAlreadyTaken(old_read),
+            ),
+
+            ReadableKind::Definition(definition_ref) => ParsingError::DefinitionError(
+                definition_ref,
+                DefinitionParsingError::ReadSignatureAlreadyTaken(old_read),
             ),
         }
     }
