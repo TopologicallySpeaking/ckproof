@@ -19,6 +19,8 @@
 // NOTE: This entire thing has become too messy to salvage. This was intentional, as when I started
 // I wasn't really sure what the expected behaviour was. That's why there's no documentation or
 // tests as well. But, it's now time to rewrite it correctly.
+// NOTE: It was worse than I thought. I need to completely rewrite how some things fundamentally
+// work, e.g. type signatures. :(
 
 use std::collections::HashMap;
 use std::iter::FromIterator;
@@ -124,50 +126,9 @@ impl Type {
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub struct TypeSignature {
-    inputs: Vec<TypeSignature>,
-    output: TypeRef,
-    variable: bool,
-}
-
-impl TypeSignature {
-    pub fn new(inputs: Vec<TypeSignature>, output: TypeRef, variable: bool) -> TypeSignature {
-        TypeSignature {
-            inputs,
-            output,
-            variable,
-        }
-    }
-
-    fn arity(&self) -> usize {
-        self.inputs.len()
-    }
-
-    fn compatible(&self, other: &Self) -> bool {
-        let inputs_compatible = if self.inputs.len() == other.inputs.len() {
-            self.inputs
-                .iter()
-                .zip(&other.inputs)
-                .all(|(self_input, other_input)| self_input.compatible(other_input))
-        } else {
-            false
-        };
-        let outputs_compatible = self.output == other.output;
-
-        // It is unacceptable for `self` to require a variable and for other to not be a variable.
-        // Anything else is allowed.
-        let variables_compatible = !self.variable || other.variable;
-
-        inputs_compatible && outputs_compatible && variables_compatible
-    }
-
-    fn applied(&self) -> TypeSignature {
-        TypeSignature {
-            inputs: vec![],
-            output: self.output,
-            variable: self.variable,
-        }
-    }
+pub enum TypeSignature {
+    Ground(TypeRef),
+    Compound(Box<TypeSignature>, Box<TypeSignature>),
 }
 
 pub struct Symbol {
@@ -178,8 +139,6 @@ pub struct Symbol {
 
 impl Symbol {
     pub fn new(id: String, system: SystemRef, type_signature: TypeSignature) -> Symbol {
-        assert!(!type_signature.variable);
-
         Symbol {
             id,
             system,
@@ -245,8 +204,6 @@ pub struct Variable {
 
 impl Variable {
     pub fn new(id: String, type_signature: TypeSignature) -> Variable {
-        assert!(type_signature.variable);
-
         Variable { id, type_signature }
     }
 }

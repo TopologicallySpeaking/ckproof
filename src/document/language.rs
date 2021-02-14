@@ -16,8 +16,6 @@
 // License along with ckproof.  If not, see
 // <https://www.gnu.org/licenses/>.
 
-use itertools::Itertools;
-
 use crate::map_ident;
 
 use crate::deduction::directory::LocalCheckableDirectory;
@@ -150,51 +148,55 @@ impl TypeBlock {
     }
 }
 
-pub struct TypeSignatureBlock {
-    inputs: Vec<TypeSignatureBlock>,
-    output: TypeBlockRef,
-    variable: bool,
+pub enum TypeSignatureBlock {
+    Ground(TypeBlockRef),
+    Compound(Box<TypeSignatureBlock>, Box<TypeSignatureBlock>),
 }
 
 impl TypeSignatureBlock {
-    pub fn new(
-        inputs: Vec<TypeSignatureBlock>,
-        output: TypeBlockRef,
-        variable: bool,
-    ) -> TypeSignatureBlock {
-        TypeSignatureBlock {
-            inputs,
-            output,
-            variable,
+    pub fn checkable(&self) -> TypeSignature {
+        match self {
+            Self::Ground(type_ref) => TypeSignature::Ground((*type_ref).into()),
+            Self::Compound(input, output) => {
+                TypeSignature::Compound(Box::new(input.checkable()), Box::new(output.checkable()))
+            }
         }
     }
 
-    fn checkable(&self) -> TypeSignature {
-        let inputs = self
-            .inputs
-            .iter()
-            .map(TypeSignatureBlock::checkable)
-            .collect();
-        let output = self.output.into();
-        let variable = self.variable;
-
-        TypeSignature::new(inputs, output, variable)
+    pub fn is_ground(&self) -> bool {
+        match self {
+            Self::Ground(_) => true,
+            Self::Compound(_, _) => false,
+        }
     }
 
-    fn render(&self, directory: &BlockDirectory) -> String {
-        let output_id = directory[self.output].id.clone();
+    pub fn is_compound(&self) -> bool {
+        match self {
+            Self::Ground(_) => false,
+            Self::Compound(_, _) => true,
+        }
+    }
 
-        if self.inputs.is_empty() {
-            output_id.to_owned()
-        } else {
-            let inputs: String = self
-                .inputs
-                .iter()
-                .map(|input| input.render(directory))
-                .intersperse(", ".to_owned())
-                .collect();
+    pub fn render(&self, directory: &BlockDirectory) -> String {
+        // TODO: Render without so many parentheses.
+        match self {
+            Self::Ground(type_ref) => directory[*type_ref].id.to_owned(),
 
-            format!("({}) \u{2192} {}", inputs, output_id)
+            Self::Compound(input, output) => {
+                if input.is_compound() {
+                    format!(
+                        "({}) \u{2192} {}",
+                        input.render(directory),
+                        output.render(directory)
+                    )
+                } else {
+                    format!(
+                        "{} \u{2192} {}",
+                        input.render(directory),
+                        output.render(directory)
+                    )
+                }
+            }
         }
     }
 }

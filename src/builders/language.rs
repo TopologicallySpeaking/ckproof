@@ -504,157 +504,173 @@ impl TypeBuilder {
     }
 }
 
-#[derive(Clone)]
-pub struct TypeSignatureBuilder {
-    inputs: Vec<TypeSignatureBuilder>,
-    output: String,
-    variable: bool,
+#[derive(PartialEq, Eq, Clone, Debug)]
+pub struct TypeSignatureGroundBuilder {
+    id: String,
 
-    output_ref: Cell<Option<TypeBuilderRef>>,
+    type_ref: Cell<Option<TypeBuilderRef>>,
 }
 
-impl TypeSignatureBuilder {
-    fn inputs_from_pest(pair: Pair<Rule>) -> Vec<TypeSignatureBuilder> {
-        assert_eq!(pair.as_rule(), Rule::type_signature_inputs);
+impl TypeSignatureGroundBuilder {
+    fn from_pest(pair: Pair<Rule>) -> TypeSignatureGroundBuilder {
+        assert_eq!(pair.as_rule(), Rule::ident);
 
-        pair.into_inner()
-            .map(|pair| match pair.as_rule() {
-                Rule::variable_input_signature => {
-                    Self::from_pest(pair.into_inner().next().unwrap(), true)
-                }
-                Rule::type_signature => Self::from_pest(pair, false),
+        let id = pair.as_str().to_owned();
 
-                _ => unreachable!(),
-            })
-            .collect()
-    }
+        TypeSignatureGroundBuilder {
+            id,
 
-    fn from_pest(pair: Pair<Rule>, variable: bool) -> TypeSignatureBuilder {
-        assert_eq!(pair.as_rule(), Rule::type_signature);
-
-        let mut inner = pair.into_inner();
-        let first_pair = inner.next().unwrap();
-        let (inputs, output) = match first_pair.as_rule() {
-            Rule::type_signature_inputs => (
-                Self::inputs_from_pest(first_pair),
-                inner.next().unwrap().as_str().to_owned(),
-            ),
-            Rule::ident => (vec![], first_pair.as_str().to_owned()),
-
-            _ => unreachable!(),
-        };
-
-        TypeSignatureBuilder {
-            inputs,
-            output,
-            variable,
-
-            output_ref: Cell::new(None),
+            type_ref: Cell::new(None),
         }
     }
 
     fn verify_structure(
         &self,
         parent_system: &str,
-        min_serial: BlockLocation,
+        max_serial: BlockLocation,
         directory: &BuilderDirectory,
         errors: &mut ParsingErrorContext,
     ) {
-        for input in &self.inputs {
-            input.verify_structure(parent_system, min_serial, directory, errors);
-        }
-
-        if let Some(child) = directory.search_system_child(parent_system, &self.output) {
-            let ty = if let Some(ty) = child.ty() {
-                ty
+        if let Some(child) = directory.search_system_child(parent_system, &self.id) {
+            if let Some(ty) = child.ty() {
+                if directory[ty].serial <= max_serial {
+                    self.type_ref.set(Some(ty))
+                } else {
+                    todo!()
+                }
             } else {
                 todo!()
             };
-
-            if directory[ty].serial() > min_serial {
-                todo!()
-            }
-
-            self.output_ref.set(Some(ty));
         } else {
             todo!()
         }
     }
 
     fn finish(&self) -> TypeSignatureBlock {
-        let inputs = self
-            .inputs
-            .iter()
-            .map(TypeSignatureBuilder::finish)
-            .collect();
-        let output = self.output_ref.get().unwrap().finish();
-        let variable = self.variable;
-
-        TypeSignatureBlock::new(inputs, output, variable)
-    }
-
-    fn applied(&self) -> TypeSignatureBuilder {
-        TypeSignatureBuilder {
-            inputs: vec![],
-            output: self.output.clone(),
-            variable: self.variable,
-
-            output_ref: Cell::new(self.output_ref.get()),
-        }
-    }
-
-    fn arity(&self) -> usize {
-        self.inputs.len()
-    }
-
-    fn eq_with_var(&self, other: &Self) -> bool {
-        if self.output_ref.get().unwrap() != other.output_ref.get().unwrap()
-            || self.variable != other.variable
-        {
-            return false;
-        }
-
-        self.inputs
-            .iter()
-            .zip(&other.inputs)
-            .all(|(s, o)| Self::eq_with_var(s, o))
-    }
-
-    fn hash_with_var<H: Hasher>(&self, state: &mut H) {
-        self.output_ref.get().unwrap().hash(state);
-        self.variable.hash(state);
-
-        for input in &self.inputs {
-            input.hash(state);
-        }
+        TypeSignatureBlock::Ground(self.type_ref.get().unwrap().finish())
     }
 }
 
-impl PartialEq for TypeSignatureBuilder {
-    fn eq(&self, other: &Self) -> bool {
-        if self.output_ref.get().unwrap() != other.output_ref.get().unwrap() {
-            return false;
-        }
-
-        self.inputs
-            .iter()
-            .zip(&other.inputs)
-            .all(|(s, o)| Self::eq_with_var(s, o))
-    }
-}
-impl Eq for TypeSignatureBuilder {}
-
-impl Hash for TypeSignatureBuilder {
+impl Hash for TypeSignatureGroundBuilder {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.output_ref.get().unwrap().hash(state);
+        self.id.hash(state);
+    }
+}
 
-        for input in &self.inputs {
-            input.hash_with_var(state);
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub enum TypeSignatureBuilder {
+    Ground(TypeSignatureGroundBuilder),
+    Compound(Box<TypeSignatureBuilder>, Box<TypeSignatureBuilder>),
+}
+
+impl TypeSignatureBuilder {
+    fn from_pest_item(pair: Pair<Rule>) -> TypeSignatureBuilder {
+        match pair.as_rule() {
+            Rule::ident => {
+                TypeSignatureBuilder::Ground(TypeSignatureGroundBuilder::from_pest(pair))
+            }
+
+            Rule::type_signature => TypeSignatureBuilder::from_pest(pair),
+
+            _ => unreachable!(),
+        }
+    }
+
+    fn from_pest(pair: Pair<Rule>) -> TypeSignatureBuilder {
+        let items: Vec<_> = pair
+            .into_inner()
+            .map(TypeSignatureBuilder::from_pest_item)
+            .collect();
+
+        items
+            .into_iter()
+            .rev()
+            .fold_first(|tail, prev| TypeSignatureBuilder::Compound(Box::new(prev), Box::new(tail)))
+            .unwrap()
+    }
+
+    fn add_inputs<I>(self, inputs: I) -> TypeSignatureBuilder
+    where
+        I: IntoIterator<Item = TypeSignatureBuilder>,
+    {
+        inputs.into_iter().fold(self, |tail, prev| {
+            TypeSignatureBuilder::Compound(Box::new(prev), Box::new(tail))
+        })
+    }
+
+    fn verify_structure(
+        &self,
+        parent_system: &str,
+        max_serial: BlockLocation,
+        directory: &BuilderDirectory,
+        errors: &mut ParsingErrorContext,
+    ) {
+        match self {
+            Self::Ground(ground) => {
+                ground.verify_structure(parent_system, max_serial, directory, errors)
+            }
+            Self::Compound(input, output) => {
+                input.verify_structure(parent_system, max_serial, directory, errors);
+                output.verify_structure(parent_system, max_serial, directory, errors);
+            }
+        }
+    }
+
+    fn finish(&self) -> TypeSignatureBlock {
+        match self {
+            Self::Ground(ground) => ground.finish(),
+            Self::Compound(input, output) => {
+                TypeSignatureBlock::Compound(Box::new(input.finish()), Box::new(output.finish()))
+            }
+        }
+    }
+
+    fn ground(&self) -> Option<&TypeSignatureGroundBuilder> {
+        match self {
+            Self::Ground(ground) => Some(ground),
+            Self::Compound(_, _) => None,
+        }
+    }
+
+    fn compound(&self) -> Option<(&TypeSignatureBuilder, &TypeSignatureBuilder)> {
+        match self {
+            Self::Ground(_) => None,
+            Self::Compound(input, output) => Some((input, output)),
+        }
+    }
+
+    fn inputs(&self) -> TypeSignatureBuilderInputs {
+        TypeSignatureBuilderInputs { curr: self }
+    }
+
+    fn applied(&self) -> &TypeSignatureBuilder {
+        match self {
+            Self::Ground(_) => panic!("Tried to apply an input to a ground type"),
+            Self::Compound(_, right) => right,
         }
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+struct TypeSignatureBuilderInputs<'a> {
+    curr: &'a TypeSignatureBuilder,
+}
+
+impl<'a> Iterator for TypeSignatureBuilderInputs<'a> {
+    type Item = &'a TypeSignatureBuilder;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.curr {
+            TypeSignatureBuilder::Ground(ground) => None,
+            TypeSignatureBuilder::Compound(input, output) => {
+                self.curr = output;
+
+                Some(input)
+            }
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 enum ReadStyle {
     Prefix,
     Infix,
@@ -679,7 +695,7 @@ impl ReadStyle {
 }
 
 // TODO: Add arithmetic operators, i.e. +-*/=
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 enum ReadOperator {
     Negation,
     Implies,
@@ -723,7 +739,7 @@ impl ReadOperator {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct ReadBuilder {
     style: ReadStyle,
     operator: ReadOperator,
@@ -764,6 +780,7 @@ struct SymbolBuilderEntries {
     reads: Vec<ReadBuilder>,
     displays: Vec<Display>,
 
+    arity: Cell<Option<usize>>,
     verified: Cell<bool>,
 }
 
@@ -800,7 +817,7 @@ impl SymbolBuilderEntries {
 
                 Rule::block_type_signature => {
                     let type_signature =
-                        TypeSignatureBuilder::from_pest(pair.into_inner().next().unwrap(), false);
+                        TypeSignatureBuilder::from_pest(pair.into_inner().next().unwrap());
 
                     type_signatures.push(type_signature);
                 }
@@ -829,6 +846,7 @@ impl SymbolBuilderEntries {
             reads,
             displays,
 
+            arity: Cell::new(None),
             verified: Cell::new(false),
         }
     }
@@ -950,6 +968,7 @@ impl SymbolBuilderEntries {
         }
 
         self.verified.set(!found_error);
+        self.arity.set(Some(self.type_signature().inputs().count()));
     }
 
     fn name(&self) -> &str {
@@ -976,14 +995,9 @@ impl SymbolBuilderEntries {
         &self.type_signatures[0]
     }
 
-    fn inputs(&self) -> &[TypeSignatureBuilder] {
-        assert!(self.verified.get());
-        &self.type_signatures[0].inputs
-    }
-
     fn arity(&self) -> usize {
         assert!(self.verified.get());
-        self.type_signatures[0].arity()
+        self.arity.get().unwrap()
     }
 
     fn read(&self) -> Option<ReadBuilder> {
@@ -1124,9 +1138,12 @@ impl SymbolBuilder {
     }
 
     pub fn read_signature(&self) -> Option<ReadSignature> {
-        self.entries
-            .read()
-            .map(|read| ReadSignature::new(read, self.entries.inputs().to_vec()))
+        self.entries.read().map(|read| {
+            ReadSignature::new(
+                read,
+                self.entries.type_signature().inputs().cloned().collect(),
+            )
+        })
     }
 
     pub fn as_readable(&self) -> Readable {
@@ -1365,6 +1382,8 @@ impl DefinitionBuilderEntries {
         self.expanded()
             .build(&local_index, directory, &self.inputs(), errors);
 
+        let input_types = self.inputs().iter().map(|var| var.type_signature.clone());
+
         unsafe {
             // SAFETY: This is the only place we write to this field, so we don't need to worry
             // about multiple mutable references. Furthermore, the only time we pass around shared
@@ -1373,7 +1392,12 @@ impl DefinitionBuilderEntries {
             // and the assertion at the beginning of this function would fail. This prevents
             // aliasing.
             let type_signature = self.type_signature.get().as_mut().unwrap();
-            *type_signature = Some(self.expanded().type_signature(directory, self.inputs()));
+            *type_signature = Some(
+                self.expanded()
+                    .type_signature(directory, self.inputs())
+                    .clone()
+                    .add_inputs(input_types.rev()),
+            );
         }
     }
 
@@ -1602,7 +1626,7 @@ impl VariableBuilder {
 
         let mut inner = pair.into_inner();
         let id = inner.next().unwrap().as_str().to_owned();
-        let type_signature = TypeSignatureBuilder::from_pest(inner.next().unwrap(), true);
+        let type_signature = TypeSignatureBuilder::from_pest(inner.next().unwrap());
 
         VariableBuilder { id, type_signature }
     }
@@ -1678,10 +1702,8 @@ impl FormulaVariableBuilder {
         FormulaBlock::Variable(self.var_ref.get().unwrap().finish())
     }
 
-    fn type_signature(&self, vars: &[VariableBuilder]) -> TypeSignatureBuilder {
-        vars[self.var_ref.get().unwrap().get()]
-            .type_signature
-            .clone()
+    fn type_signature<'a>(&'a self, vars: &'a [VariableBuilder]) -> &'a TypeSignatureBuilder {
+        &vars[self.var_ref.get().unwrap().get()].type_signature
     }
 }
 
@@ -1717,7 +1739,7 @@ impl FormulaPrefixBuilder {
                 style: ReadStyle::Prefix,
                 operator: self.operator,
             },
-            vec![inner_type],
+            vec![inner_type.clone()],
         );
 
         self.operator_ref
@@ -1740,7 +1762,7 @@ impl FormulaPrefixBuilder {
         }
     }
 
-    fn type_signature(&self, directory: &BuilderDirectory) -> TypeSignatureBuilder {
+    fn type_signature<'a>(&'a self, directory: &'a BuilderDirectory) -> &'a TypeSignatureBuilder {
         let readable = self.operator_ref.get().unwrap();
         match readable.kind() {
             ReadableKind::Symbol(symbol_ref) => directory[symbol_ref].type_signature().applied(),
@@ -1789,7 +1811,7 @@ impl FormulaInfixBuilder {
                 style: ReadStyle::Infix,
                 operator: self.operator,
             },
-            vec![lhs_type, rhs_type],
+            vec![lhs_type.clone(), rhs_type.clone()],
         );
 
         self.operator_ref
@@ -1815,14 +1837,17 @@ impl FormulaInfixBuilder {
         }
     }
 
-    fn type_signature(&self, directory: &BuilderDirectory) -> TypeSignatureBuilder {
+    fn type_signature<'a>(&'a self, directory: &'a BuilderDirectory) -> &'a TypeSignatureBuilder {
         let readable = self.operator_ref.get().unwrap();
         match readable.kind() {
-            ReadableKind::Symbol(symbol_ref) => directory[symbol_ref].type_signature().applied(),
-
-            ReadableKind::Definition(definition_ref) => {
-                directory[definition_ref].type_signature().applied()
+            ReadableKind::Symbol(symbol_ref) => {
+                directory[symbol_ref].type_signature().applied().applied()
             }
+
+            ReadableKind::Definition(definition_ref) => directory[definition_ref]
+                .type_signature()
+                .applied()
+                .applied(),
         }
     }
 }
@@ -1911,11 +1936,11 @@ impl FormulaBuilder {
         }
     }
 
-    fn type_signature(
-        &self,
-        directory: &BuilderDirectory,
-        vars: &[VariableBuilder],
-    ) -> TypeSignatureBuilder {
+    fn type_signature<'a>(
+        &'a self,
+        directory: &'a BuilderDirectory,
+        vars: &'a [VariableBuilder],
+    ) -> &'a TypeSignatureBuilder {
         match self {
             Self::Symbol(builder) => todo!(),
             Self::Variable(builder) => builder.type_signature(vars),
@@ -1949,11 +1974,11 @@ impl DisplayFormulaBuilder {
         self.contents.build(local_index, directory, vars, errors);
     }
 
-    pub fn type_signature(
-        &self,
-        directory: &BuilderDirectory,
-        vars: &[VariableBuilder],
-    ) -> TypeSignatureBuilder {
+    pub fn type_signature<'a>(
+        &'a self,
+        directory: &'a BuilderDirectory,
+        vars: &'a [VariableBuilder],
+    ) -> &'a TypeSignatureBuilder {
         self.contents.type_signature(directory, vars)
     }
 

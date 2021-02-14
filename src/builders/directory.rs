@@ -227,7 +227,7 @@ impl Readable {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct ReadSignature {
     read: ReadBuilder,
     inputs: Vec<TypeSignatureBuilder>,

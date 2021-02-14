@@ -154,13 +154,11 @@ heading_l3 = { "###" }
 heading_whitespace = { heading_whitespace_silent* }
 heading_whitespace_silent = _{ !"\n" ~ WHITE_SPACE }
 
-type_signature = { type_signature_inputs? ~ ident }
-type_signature_inputs = {
-  ("(" ~ input_signature ~ ("," ~ input_signature)* ~ ")" ~ "->")
+type_signature = { type_signature_item ~ ("->" ~ type_signature_item)* }
+type_signature_item = _{
+  ident | type_signature_nested
 }
-
-input_signature = _{ variable_input_signature | type_signature }
-variable_input_signature = { "'" ~ type_signature }
+type_signature_nested = _{ "(" ~ type_signature ~ ")" }
 
 var_declaration = { ident ~ ":" ~ type_signature }
 
