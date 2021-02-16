@@ -14,7 +14,6 @@
 // not, see <https://www.gnu.org/licenses/>.
 
 #![deny(clippy::all)]
-#![feature(iterator_fold_self)]
 
 pub mod builders;
 pub mod deduction;

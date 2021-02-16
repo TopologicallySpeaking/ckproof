@@ -579,11 +579,13 @@ impl TypeSignatureBuilder {
             .map(TypeSignatureBuilder::from_pest_item)
             .collect();
 
-        items
-            .into_iter()
-            .rev()
-            .fold_first(|tail, prev| TypeSignatureBuilder::Compound(Box::new(prev), Box::new(tail)))
-            .unwrap()
+        // TODO: Rewrite with fold_first when it is stablized.
+        let mut items = items.into_iter().rev();
+        let last_item = items.next().unwrap();
+
+        items.fold(last_item, |tail, prev| {
+            TypeSignatureBuilder::Compound(Box::new(prev), Box::new(tail))
+        })
     }
 
     fn add_inputs<I>(self, inputs: I) -> TypeSignatureBuilder
