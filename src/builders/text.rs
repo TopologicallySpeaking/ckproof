@@ -52,6 +52,7 @@ fn map_operator(operator: Rule) -> String {
         Rule::operator_negation => "\u{00AC}".to_owned(),
         Rule::operator_implies => "\u{21D2}".to_owned(),
         Rule::operator_and => "\u{2227}".to_owned(),
+        Rule::operator_or => "\u{2228}".to_owned(),
 
         Rule::operator_bang => "!".to_owned(),
 
