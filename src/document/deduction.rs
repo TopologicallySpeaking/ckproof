@@ -13,8 +13,10 @@
 // You should have received a copy of the GNU Affero General Public License along with ckproof. If
 // not, see <https://www.gnu.org/licenses/>.
 
-use crate::deduction::directory::LocalCheckableDirectory;
-use crate::deduction::{Axiom, Proof, ProofJustification, ProofStep, Theorem};
+use crate::deduction::directory::{
+    AxiomRef, HypothesisRef, LocalCheckableDirectory, SystemRef, TheoremRef,
+};
+use crate::deduction::system::{Axiom, Proof, ProofJustification, ProofStep, Theorem};
 
 use crate::rendered::{
     AxiomRendered, ProofRendered, ProofRenderedElement, ProofRenderedJustification,
@@ -68,7 +70,7 @@ impl AxiomBlock {
 
     pub fn checkable(&self) -> Axiom {
         let id = self.id.clone();
-        let system = self.system.into();
+        let system = SystemRef::new(self.system.get());
 
         let vars = self.vars.iter().map(VariableBlock::checkable).collect();
         let local_directory = LocalCheckableDirectory::new(vars);
@@ -165,7 +167,7 @@ impl TheoremBlock {
 
     pub fn checkable(&self) -> Theorem {
         let id = self.id.clone();
-        let system = self.system.into();
+        let system = SystemRef::new(self.system.get());
 
         let vars = self.vars.iter().map(VariableBlock::checkable).collect();
         let local_directory = LocalCheckableDirectory::new(vars);
@@ -234,7 +236,7 @@ impl ProofBlockJustification {
     fn checkable(&self, formula: &DisplayFormulaBlock) -> Vec<ProofStep> {
         match self {
             Self::Axiom(axiom_ref) => {
-                let justification = ProofJustification::Axiom((*axiom_ref).into());
+                let justification = ProofJustification::Axiom(AxiomRef::new(axiom_ref.get()));
                 let formula = formula.checkable();
                 let step = ProofStep::new(justification, formula);
 
@@ -242,7 +244,7 @@ impl ProofBlockJustification {
             }
 
             Self::Theorem(theorem_ref) => {
-                let justification = ProofJustification::Theorem((*theorem_ref).into());
+                let justification = ProofJustification::Theorem(TheoremRef::new(theorem_ref.get()));
                 let formula = formula.checkable();
                 let step = ProofStep::new(justification, formula);
 
@@ -250,7 +252,7 @@ impl ProofBlockJustification {
             }
 
             Self::Hypothesis(id) => {
-                let justification = ProofJustification::Hypothesis(*id);
+                let justification = ProofJustification::Hypothesis(HypothesisRef::new(*id - 1));
                 let formula = formula.checkable();
                 let step = ProofStep::new(justification, formula);
 
@@ -393,7 +395,7 @@ impl ProofBlock {
             .flat_map(|step| step.checkable())
             .collect();
 
-        Proof::new(self.theorem_ref.into(), steps)
+        Proof::new(TheoremRef::new(self.theorem_ref.get()), steps)
     }
 
     pub fn render(&self, directory: &BlockDirectory) -> ProofRendered {

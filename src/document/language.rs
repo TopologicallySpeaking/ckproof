@@ -15,8 +15,11 @@
 
 use crate::map_ident;
 
-use crate::deduction::directory::LocalCheckableDirectory;
-use crate::deduction::{Definition, Formula, Symbol, System, Type, TypeSignature, Variable};
+use crate::deduction::directory::{
+    DefinitionRef, LocalCheckableDirectory, SymbolRef, SystemRef, TypeRef, VariableRef,
+};
+use crate::deduction::language::{Definition, Formula, Symbol, Type, TypeSignature, Variable};
+use crate::deduction::system::System;
 
 use crate::rendered::{
     DefinitionRendered, Denoted, DenotedStyle, SymbolRendered, SystemRendered, TypeRendered,
@@ -112,7 +115,7 @@ impl TypeBlock {
     }
 
     pub fn checkable(&self) -> Type {
-        Type::new(self.id.clone(), self.system.into())
+        Type::new(self.id.clone(), SystemRef::new(self.system.get()))
     }
 
     pub fn render(&self, directory: &BlockDirectory) -> TypeRendered {
@@ -153,7 +156,7 @@ pub enum TypeSignatureBlock {
 impl TypeSignatureBlock {
     pub fn checkable(&self) -> TypeSignature {
         match self {
-            Self::Ground(type_ref) => TypeSignature::Ground((*type_ref).into()),
+            Self::Ground(type_ref) => TypeSignature::Ground(TypeRef::new(type_ref.get())),
             Self::Compound(input, output) => {
                 TypeSignature::Compound(Box::new(input.checkable()), Box::new(output.checkable()))
             }
@@ -294,7 +297,7 @@ impl SymbolBlock {
 
     pub fn checkable(&self) -> Symbol {
         let id = self.id.clone();
-        let system = self.system.into();
+        let system = SystemRef::new(self.system.get());
         let type_signature = self.type_signature.checkable();
 
         Symbol::new(id, system, type_signature)
@@ -381,15 +384,25 @@ impl DefinitionBlock {
 
     pub fn checkable(&self) -> Definition {
         let id = self.id.clone();
-        let system = self.system.into();
+        let system = SystemRef::new(self.system.get());
 
         let vars = self.inputs.iter().map(VariableBlock::checkable).collect();
         let local_directory = LocalCheckableDirectory::new(vars);
+        let inputs = (0..self.inputs.len())
+            .map(|i| VariableRef::new(i))
+            .collect();
 
         let type_signature = self.type_signature.checkable();
         let expanded = self.expanded.checkable();
 
-        Definition::new(id, system, local_directory, type_signature, expanded)
+        Definition::new(
+            id,
+            system,
+            local_directory,
+            inputs,
+            type_signature,
+            expanded,
+        )
     }
 
     pub fn render(&self, directory: &BlockDirectory) -> DefinitionRendered {
@@ -458,32 +471,25 @@ impl VariableBlock {
 pub enum FormulaBlock {
     Symbol(SymbolBlockRef),
     Variable(VariableBlockRef),
-    Definition(DefinitionBlockRef),
 
-    SymbolApplication(SymbolBlockRef, Vec<FormulaBlock>),
-    VariableApplication(VariableBlockRef, Vec<FormulaBlock>),
-    DefinitionApplication(DefinitionBlockRef, Vec<FormulaBlock>),
+    Application(Box<FormulaBlock>, Box<FormulaBlock>),
+
+    Definition(DefinitionBlockRef, Vec<FormulaBlock>),
 }
 
 impl FormulaBlock {
     fn checkable(&self) -> Formula {
         match self {
-            Self::Symbol(symbol_ref) => Formula::Symbol((*symbol_ref).into()),
-            Self::Variable(variable_ref) => Formula::Variable((*variable_ref).into()),
-            Self::Definition(definition_ref) => Formula::Definition((*definition_ref).into()),
+            Self::Symbol(symbol_ref) => Formula::Symbol(SymbolRef::new(symbol_ref.get())),
+            Self::Variable(variable_ref) => Formula::Variable(VariableRef::new(variable_ref.get())),
 
-            Self::SymbolApplication(symbol_ref, inputs) => {
-                let inputs = inputs.iter().map(|formula| formula.checkable()).collect();
-                Formula::SymbolApplication((*symbol_ref).into(), inputs)
+            Self::Application(function, input) => {
+                Formula::Application(Box::new(function.checkable()), Box::new(input.checkable()))
             }
-            Self::VariableApplication(variable_ref, inputs) => {
-                let inputs = inputs.iter().map(|formula| formula.checkable()).collect();
-                Formula::VariableApplication((*variable_ref).into(), inputs)
-            }
-            Self::DefinitionApplication(definition_ref, inputs) => {
-                let inputs = inputs.iter().map(|formula| formula.checkable()).collect();
-                Formula::DefinitionApplication((*definition_ref).into(), inputs)
-            }
+            Self::Definition(definition_ref, inputs) => Formula::Definition(
+                DefinitionRef::new(definition_ref.get()),
+                inputs.iter().map(FormulaBlock::checkable).collect(),
+            ),
         }
     }
 }

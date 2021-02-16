@@ -1751,9 +1751,10 @@ impl FormulaPrefixBuilder {
         let inner = self.inner.finish();
 
         match self.operator_ref.get().unwrap().kind() {
-            ReadableKind::Symbol(symbol_ref) => {
-                FormulaBlock::SymbolApplication(symbol_ref.finish(), vec![inner])
-            }
+            ReadableKind::Symbol(symbol_ref) => FormulaBlock::Application(
+                Box::new(FormulaBlock::Symbol(symbol_ref.finish())),
+                Box::new(inner),
+            ),
 
             ReadableKind::Definition(_) => todo!(),
         }
@@ -1824,12 +1825,16 @@ impl FormulaInfixBuilder {
         let rhs = self.rhs.finish();
 
         match self.operator_ref.get().unwrap().kind() {
-            ReadableKind::Symbol(symbol_ref) => {
-                FormulaBlock::SymbolApplication(symbol_ref.finish(), vec![lhs, rhs])
-            }
+            ReadableKind::Symbol(symbol_ref) => FormulaBlock::Application(
+                Box::new(FormulaBlock::Application(
+                    Box::new(FormulaBlock::Symbol(symbol_ref.finish())),
+                    Box::new(lhs),
+                )),
+                Box::new(rhs),
+            ),
 
             ReadableKind::Definition(definition_ref) => {
-                FormulaBlock::DefinitionApplication(definition_ref.finish(), vec![lhs, rhs])
+                FormulaBlock::Definition(definition_ref.finish(), vec![lhs, rhs])
             }
         }
     }

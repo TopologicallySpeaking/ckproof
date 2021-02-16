@@ -25,7 +25,7 @@ fn main() {
 
     let checkable = document.checkable();
     let checking_errors = checkable.check();
-    if !checking_errors.is_empty() {
+    if checking_errors.error_found() {
         todo!("{:#?}", checking_errors)
     }
 
