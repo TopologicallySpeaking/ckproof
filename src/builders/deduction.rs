@@ -25,7 +25,7 @@ use crate::document::deduction::{
 use super::directory::{
     AxiomBuilderRef, BibliographyBuilderRef, BuilderDirectory, LocalBibliographyBuilderIndex,
     LocalIndex, ProofBuilderRef, ProofBuilderStepRef, SystemBuilderChild, SystemBuilderRef,
-    TagIndex, TheoremBuilderRef,
+    TagIndex, TheoremBuilderRef, VariableBuilderRef,
 };
 use super::errors::{
     AxiomParsingError, ParsingError, ParsingErrorContext, ProofElementParsingError,
@@ -183,8 +183,13 @@ impl AxiomBuilderEntries {
             }
         }
 
-        for var in &self.vars {
-            var.verify_structure(parent_system, min_serial, directory, errors);
+        for (i, var) in self.vars.iter().enumerate() {
+            var.verify_structure(parent_system, min_serial, directory, errors, |e| {
+                ParsingError::AxiomError(
+                    self_ref,
+                    AxiomParsingError::VariableError(VariableBuilderRef(i), e),
+                )
+            });
         }
 
         self.verified.set(!found_error);
@@ -538,8 +543,13 @@ impl TheoremBuilderEntries {
             }
         }
 
-        for var in &self.vars {
-            var.verify_structure(parent_system, min_serial, directory, errors);
+        for (i, var) in self.vars.iter().enumerate() {
+            var.verify_structure(parent_system, min_serial, directory, errors, |e| {
+                ParsingError::TheoremError(
+                    self_ref,
+                    TheoremParsingError::VariableError(VariableBuilderRef(i), e),
+                )
+            });
         }
 
         self.verified.set(!found_error);

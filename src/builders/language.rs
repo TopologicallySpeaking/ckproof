@@ -30,7 +30,8 @@ use super::directory::{
 };
 use super::errors::{
     DefinitionParsingError, FormulaParsingError, ParsingError, ParsingErrorContext,
-    SymbolParsingError, SystemParsingError, TypeParsingError,
+    SymbolParsingError, SystemParsingError, TypeParsingError, TypeSignatureParsingError,
+    VariableParsingError,
 };
 use super::text::{MathBuilder, ParagraphBuilder, TextBuilder};
 use super::{BlockLocation, Rule};
@@ -521,25 +522,34 @@ impl TypeSignatureGroundBuilder {
         }
     }
 
-    fn verify_structure(
+    fn verify_structure<F>(
         &self,
         parent_system: &str,
         max_serial: BlockLocation,
         directory: &BuilderDirectory,
         errors: &mut ParsingErrorContext,
-    ) {
+        generate_error: F,
+    ) where
+        F: Fn(TypeSignatureParsingError) -> ParsingError,
+    {
         if let Some(child) = directory.search_system_child(parent_system, &self.id) {
             if let Some(ty) = child.ty() {
-                if directory[ty].serial() <= max_serial {
+                if directory[ty].serial() < max_serial {
                     self.type_ref.set(Some(ty))
                 } else {
-                    todo!()
+                    errors.err(generate_error(TypeSignatureParsingError::ForwardReference(
+                        ty,
+                    )))
                 }
             } else {
-                todo!()
+                errors.err(generate_error(
+                    TypeSignatureParsingError::SystemChildWrongKind(child),
+                ));
             };
         } else {
-            todo!()
+            errors.err(generate_error(TypeSignatureParsingError::TypeIdNotFound(
+                self.id.clone(),
+            )));
         }
     }
 
@@ -597,20 +607,39 @@ impl TypeSignatureBuilder {
         })
     }
 
-    fn verify_structure(
+    fn verify_structure<F>(
         &self,
         parent_system: &str,
         max_serial: BlockLocation,
         directory: &BuilderDirectory,
         errors: &mut ParsingErrorContext,
-    ) {
+        generate_error: F,
+    ) where
+        F: Fn(TypeSignatureParsingError) -> ParsingError + Copy,
+    {
         match self {
-            Self::Ground(ground) => {
-                ground.verify_structure(parent_system, max_serial, directory, errors)
-            }
+            Self::Ground(ground) => ground.verify_structure(
+                parent_system,
+                max_serial,
+                directory,
+                errors,
+                generate_error,
+            ),
             Self::Compound(input, output) => {
-                input.verify_structure(parent_system, max_serial, directory, errors);
-                output.verify_structure(parent_system, max_serial, directory, errors);
+                input.verify_structure(
+                    parent_system,
+                    max_serial,
+                    directory,
+                    errors,
+                    generate_error,
+                );
+                output.verify_structure(
+                    parent_system,
+                    max_serial,
+                    directory,
+                    errors,
+                    generate_error,
+                );
             }
         }
     }
@@ -929,6 +958,9 @@ impl SymbolBuilderEntries {
                 min_serial,
                 directory,
                 errors,
+                |e| {
+                    ParsingError::SymbolError(symbol_ref, SymbolParsingError::TypeSignatureError(e))
+                },
             ),
 
             _ => {
@@ -1309,8 +1341,13 @@ impl DefinitionBuilderEntries {
         match self.inputs.len() {
             0 => {}
             1 => {
-                for var in &self.inputs[0] {
-                    var.verify_structure(parent_system, min_serial, directory, errors);
+                for (i, var) in self.inputs[0].iter().enumerate() {
+                    var.verify_structure(parent_system, min_serial, directory, errors, |e| {
+                        ParsingError::DefinitionError(
+                            definition_ref,
+                            DefinitionParsingError::VariableError(VariableBuilderRef(i), e),
+                        )
+                    });
                 }
             }
 
@@ -1622,15 +1659,20 @@ impl VariableBuilder {
         VariableBuilder { id, type_signature }
     }
 
-    pub fn verify_structure(
+    pub fn verify_structure<F>(
         &self,
         parent_system: &str,
         min_serial: BlockLocation,
         directory: &BuilderDirectory,
         errors: &mut ParsingErrorContext,
-    ) {
+        generate_error: F,
+    ) where
+        F: Fn(VariableParsingError) -> ParsingError,
+    {
         self.type_signature
-            .verify_structure(parent_system, min_serial, directory, errors);
+            .verify_structure(parent_system, min_serial, directory, errors, |e| {
+                generate_error(VariableParsingError::TypeSignatureError(e))
+            });
     }
 
     pub fn finish(&self) -> VariableBlock {

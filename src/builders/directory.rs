@@ -77,9 +77,10 @@ impl DefinitionBuilderRef {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub struct VariableBuilderRef(usize);
+pub struct VariableBuilderRef(pub(super) usize);
 
 impl VariableBuilderRef {
+    // TODO: Remove.
     pub fn get(&self) -> usize {
         self.0
     }

@@ -122,6 +122,13 @@ pub enum TypeParsingError {
 }
 
 #[derive(Debug)]
+pub enum TypeSignatureParsingError {
+    TypeIdNotFound(String),
+    SystemChildWrongKind(SystemBuilderChild),
+    ForwardReference(TypeBuilderRef),
+}
+
+#[derive(Debug)]
 pub enum SymbolParsingError {
     ParentNotFound,
     IdAlreadyTaken(SystemBuilderChild),
@@ -138,6 +145,8 @@ pub enum SymbolParsingError {
     DuplicateDisplays,
     TaglineParsingError(ParagraphParsingError),
     DescriptionParsingError(TextParsingError),
+
+    TypeSignatureError(TypeSignatureParsingError),
 }
 
 #[derive(Debug)]
@@ -164,6 +173,7 @@ pub enum DefinitionParsingError {
 #[derive(Debug)]
 pub enum VariableParsingError {
     IdAlreadyTaken(VariableBuilderRef),
+    TypeSignatureError(TypeSignatureParsingError),
 }
 
 #[derive(Debug)]
