@@ -530,7 +530,7 @@ impl TypeSignatureGroundBuilder {
     ) {
         if let Some(child) = directory.search_system_child(parent_system, &self.id) {
             if let Some(ty) = child.ty() {
-                if directory[ty].serial <= max_serial {
+                if directory[ty].serial() <= max_serial {
                     self.type_ref.set(Some(ty))
                 } else {
                     todo!()
@@ -624,20 +624,6 @@ impl TypeSignatureBuilder {
         }
     }
 
-    fn ground(&self) -> Option<&TypeSignatureGroundBuilder> {
-        match self {
-            Self::Ground(ground) => Some(ground),
-            Self::Compound(_, _) => None,
-        }
-    }
-
-    fn compound(&self) -> Option<(&TypeSignatureBuilder, &TypeSignatureBuilder)> {
-        match self {
-            Self::Ground(_) => None,
-            Self::Compound(input, output) => Some((input, output)),
-        }
-    }
-
     fn inputs(&self) -> TypeSignatureBuilderInputs {
         TypeSignatureBuilderInputs { curr: self }
     }
@@ -659,7 +645,7 @@ impl<'a> Iterator for TypeSignatureBuilderInputs<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.curr {
-            TypeSignatureBuilder::Ground(ground) => None,
+            TypeSignatureBuilder::Ground(_) => None,
             TypeSignatureBuilder::Compound(input, output) => {
                 self.curr = output;
 
