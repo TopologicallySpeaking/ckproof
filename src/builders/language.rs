@@ -29,8 +29,8 @@ use super::directory::{
     TypeBuilderRef, VariableBuilderRef,
 };
 use super::errors::{
-    DefinitionParsingError, ParsingError, ParsingErrorContext, SymbolParsingError,
-    SystemParsingError, TypeParsingError,
+    DefinitionParsingError, FormulaParsingError, ParsingError, ParsingErrorContext,
+    SymbolParsingError, SystemParsingError, TypeParsingError,
 };
 use super::text::{MathBuilder, ParagraphBuilder, TextBuilder};
 use super::{BlockLocation, Rule};
@@ -1369,7 +1369,9 @@ impl DefinitionBuilderEntries {
         };
 
         self.expanded()
-            .build(&local_index, directory, &self.inputs(), errors);
+            .build(&local_index, directory, &self.inputs(), errors, |e| {
+                ParsingError::DefinitionError(self_ref, DefinitionParsingError::FormulaError(e))
+            });
 
         let input_types = self.inputs().iter().map(|var| var.type_signature.clone());
 
@@ -1677,13 +1679,22 @@ impl FormulaVariableBuilder {
         }
     }
 
-    fn build(&self, local_index: &LocalIndex, errors: &mut ParsingErrorContext) {
+    fn build<F>(
+        &self,
+        local_index: &LocalIndex,
+        errors: &mut ParsingErrorContext,
+        generate_error: F,
+    ) where
+        F: Fn(FormulaParsingError) -> ParsingError,
+    {
         assert!(self.var_ref.get().is_none());
 
         self.var_ref.set(local_index.search_variable(&self.id));
 
         if self.var_ref.get().is_none() {
-            todo!()
+            errors.err(generate_error(FormulaParsingError::VariableIdNotFound(
+                self.id.clone(),
+            )));
         }
     }
 
@@ -1713,14 +1724,18 @@ impl FormulaPrefixBuilder {
         }
     }
 
-    fn build(
+    fn build<F>(
         &self,
         local_index: &LocalIndex,
         directory: &BuilderDirectory,
         vars: &[VariableBuilder],
         errors: &mut ParsingErrorContext,
-    ) {
-        self.inner.build(local_index, directory, vars, errors);
+        generate_error: F,
+    ) where
+        F: Fn(FormulaParsingError) -> ParsingError + Copy,
+    {
+        self.inner
+            .build(local_index, directory, vars, errors, generate_error);
 
         let inner_type = self.inner.type_signature(directory, vars);
         let read_signature = ReadSignature::new(
@@ -1735,7 +1750,9 @@ impl FormulaPrefixBuilder {
             .set(local_index.search_operator(&read_signature));
 
         if self.operator_ref.get().is_none() {
-            todo!()
+            errors.err(generate_error(FormulaParsingError::OperatorNotFound(
+                read_signature,
+            )));
         }
     }
 
@@ -1784,15 +1801,20 @@ impl FormulaInfixBuilder {
         }
     }
 
-    fn build(
+    fn build<F>(
         &self,
         local_index: &LocalIndex,
         directory: &BuilderDirectory,
         vars: &[VariableBuilder],
         errors: &mut ParsingErrorContext,
-    ) {
-        self.lhs.build(local_index, directory, vars, errors);
-        self.rhs.build(local_index, directory, vars, errors);
+        generate_error: F,
+    ) where
+        F: Fn(FormulaParsingError) -> ParsingError + Copy,
+    {
+        self.lhs
+            .build(local_index, directory, vars, errors, generate_error);
+        self.rhs
+            .build(local_index, directory, vars, errors, generate_error);
 
         let lhs_type = self.lhs.type_signature(directory, vars);
         let rhs_type = self.rhs.type_signature(directory, vars);
@@ -1808,7 +1830,9 @@ impl FormulaInfixBuilder {
             .set(local_index.search_operator(&read_signature));
 
         if self.operator_ref.get().is_none() {
-            todo!()
+            errors.err(generate_error(FormulaParsingError::OperatorNotFound(
+                read_signature,
+            )));
         }
     }
 
@@ -1904,19 +1928,26 @@ impl FormulaBuilder {
         Self::prec_climb(&mut pair.into_inner(), 0)
     }
 
-    fn build(
+    fn build<F>(
         &self,
         local_index: &LocalIndex,
         directory: &BuilderDirectory,
         vars: &[VariableBuilder],
         errors: &mut ParsingErrorContext,
-    ) {
+        generate_error: F,
+    ) where
+        F: Fn(FormulaParsingError) -> ParsingError + Copy,
+    {
         match self {
             Self::Symbol(builder) => todo!(),
-            Self::Variable(builder) => builder.build(local_index, errors),
+            Self::Variable(builder) => builder.build(local_index, errors, generate_error),
 
-            Self::Prefix(builder) => builder.build(local_index, directory, vars, errors),
-            Self::Infix(builder) => builder.build(local_index, directory, vars, errors),
+            Self::Prefix(builder) => {
+                builder.build(local_index, directory, vars, errors, generate_error)
+            }
+            Self::Infix(builder) => {
+                builder.build(local_index, directory, vars, errors, generate_error)
+            }
         }
     }
 
@@ -1958,14 +1989,18 @@ impl DisplayFormulaBuilder {
         DisplayFormulaBuilder { display, contents }
     }
 
-    pub fn build(
+    pub fn build<F>(
         &self,
         local_index: &LocalIndex,
         directory: &BuilderDirectory,
         vars: &[VariableBuilder],
         errors: &mut ParsingErrorContext,
-    ) {
-        self.contents.build(local_index, directory, vars, errors);
+        generate_error: F,
+    ) where
+        F: Fn(FormulaParsingError) -> ParsingError + Copy,
+    {
+        self.contents
+            .build(local_index, directory, vars, errors, generate_error);
     }
 
     pub fn type_signature<'a>(

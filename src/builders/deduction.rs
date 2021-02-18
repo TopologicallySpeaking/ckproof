@@ -208,12 +208,16 @@ impl AxiomBuilderEntries {
         };
 
         if !self.premises.is_empty() {
-            for formula in &self.premises[0] {
-                formula.build(&local_index, directory, &self.vars, errors);
+            for (i, formula) in self.premises[0].iter().enumerate() {
+                formula.build(&local_index, directory, &self.vars, errors, |e| {
+                    ParsingError::AxiomError(self_ref, AxiomParsingError::PremiseError(i, e))
+                });
             }
         }
 
-        self.assertions[0].build(&local_index, directory, &self.vars, errors);
+        self.assertions[0].build(&local_index, directory, &self.vars, errors, |e| {
+            ParsingError::AxiomError(self_ref, AxiomParsingError::AssertionError(e))
+        });
     }
 
     fn name(&self) -> &str {
@@ -559,12 +563,16 @@ impl TheoremBuilderEntries {
         };
 
         if !self.premises.is_empty() {
-            for formula in &self.premises[0] {
-                formula.build(&local_index, directory, &self.vars, errors);
+            for (i, formula) in self.premises[0].iter().enumerate() {
+                formula.build(&local_index, directory, &self.vars, errors, |e| {
+                    ParsingError::TheoremError(self_ref, TheoremParsingError::PremiseError(i, e))
+                });
             }
         }
 
-        self.assertions[0].build(&local_index, directory, &self.vars, errors);
+        self.assertions[0].build(&local_index, directory, &self.vars, errors, |e| {
+            ParsingError::TheoremError(self_ref, TheoremParsingError::AssertionError(e))
+        });
     }
 
     fn name(&self) -> &str {
@@ -1089,14 +1097,23 @@ impl ProofBuilderStep {
         );
     }
 
-    fn build_formulas(
+    fn build_formulas<F>(
         &self,
         local_index: &LocalIndex,
         directory: &BuilderDirectory,
         vars: &[VariableBuilder],
         errors: &mut ParsingErrorContext,
-    ) {
-        self.formula.build(local_index, directory, vars, errors);
+        generate_error: F,
+    ) where
+        F: Fn(ProofBuilderStepRef, ProofStepParsingError) -> ParsingError,
+    {
+        self.formula
+            .build(local_index, directory, vars, errors, |e| {
+                generate_error(
+                    self.meta.self_ref.unwrap(),
+                    ProofStepParsingError::FormulaError(e),
+                )
+            });
     }
 
     fn finish(&self) -> ProofBlockStep {
@@ -1316,7 +1333,12 @@ impl ProofBuilder {
         };
 
         for step in &self.steps {
-            step.build_formulas(&local_index, directory, vars, errors);
+            step.build_formulas(&local_index, directory, vars, errors, |step_ref, e| {
+                ParsingError::ProofError(
+                    self.self_ref.unwrap(),
+                    ProofParsingError::StepError(step_ref, e),
+                )
+            });
         }
     }
 

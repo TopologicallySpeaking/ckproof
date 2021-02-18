@@ -20,7 +20,7 @@ use url::ParseError as UrlError;
 use super::deduction::ProofBuilderElementRef;
 use super::directory::{
     AxiomBuilderRef, BibliographyBuilderRef, DefinitionBuilderRef, ProofBuilderRef,
-    ProofBuilderStepRef, QuoteBuilderRef, Readable, ReadableKind, SymbolBuilderRef,
+    ProofBuilderStepRef, QuoteBuilderRef, ReadSignature, Readable, ReadableKind, SymbolBuilderRef,
     SystemBuilderChild, SystemBuilderRef, TableBuilderRef, TextBlockBuilderRef, TheoremBuilderRef,
     TodoBuilderRef, TypeBuilderRef, VariableBuilderRef,
 };
@@ -158,11 +158,18 @@ pub enum DefinitionParsingError {
     DescriptionParsingError(TextParsingError),
 
     VariableError(VariableBuilderRef, VariableParsingError),
+    FormulaError(FormulaParsingError),
 }
 
 #[derive(Debug)]
 pub enum VariableParsingError {
     IdAlreadyTaken(VariableBuilderRef),
+}
+
+#[derive(Debug)]
+pub enum FormulaParsingError {
+    VariableIdNotFound(String),
+    OperatorNotFound(ReadSignature),
 }
 
 #[derive(Debug)]
@@ -179,6 +186,8 @@ pub enum AxiomParsingError {
     DescriptionParsingError(TextParsingError),
 
     VariableError(VariableBuilderRef, VariableParsingError),
+    PremiseError(usize, FormulaParsingError),
+    AssertionError(FormulaParsingError),
 }
 
 #[derive(Debug)]
@@ -195,6 +204,8 @@ pub enum TheoremParsingError {
     DescriptionParsingError(TextParsingError),
 
     VariableError(VariableBuilderRef, VariableParsingError),
+    PremiseError(usize, FormulaParsingError),
+    AssertionError(FormulaParsingError),
 }
 
 #[derive(Debug)]
@@ -209,6 +220,8 @@ pub enum ProofStepParsingError {
     TheoremJustificationUsedBeforeProof,
     TheoremJustificationCircularProof,
     TheoremJustificationUnproven,
+
+    FormulaError(FormulaParsingError),
 }
 
 #[derive(Debug)]
