@@ -713,6 +713,7 @@ impl ReadStyle {
 enum ReadOperator {
     Negation,
     Implies,
+    Equivalent,
     And,
     Or,
 }
@@ -724,6 +725,7 @@ impl ReadOperator {
         match pair.into_inner().next().unwrap().as_rule() {
             Rule::operator_negation => Self::Negation,
             Rule::operator_implies => Self::Implies,
+            Rule::operator_equiv => Self::Equivalent,
             Rule::operator_and => Self::And,
             Rule::operator_or => Self::Or,
 
@@ -735,6 +737,7 @@ impl ReadOperator {
         match self {
             Self::Negation => "\u{00AC}".to_owned(),
             Self::Implies => "\u{21D2}".to_owned(),
+            Self::Equivalent => "\u{21D4}".to_owned(),
             Self::And => "\u{2227}".to_owned(),
             Self::Or => "\u{2228}".to_owned(),
         }
@@ -743,8 +746,11 @@ impl ReadOperator {
     fn prec(&self) -> usize {
         match self {
             Self::Negation => todo!(),
-            Self::Implies => 0,
+
+            Self::Equivalent | Self::Implies => 0,
+
             Self::And => 1,
+
             Self::Or => 2,
         }
     }
@@ -752,7 +758,7 @@ impl ReadOperator {
     fn is_left_assoc(&self) -> bool {
         match self {
             Self::Negation => todo!(),
-            Self::Implies | Self::And | Self::Or => true,
+            Self::Equivalent | Self::Implies | Self::And | Self::Or => true,
         }
     }
 }

@@ -67,7 +67,8 @@ primary_paren = { "(" ~ formula ~ ")" }
 
 read_operator = { read_operator_silent }
 read_operator_silent = _{
-  operator_negation | operator_implies | operator_and | operator_or
+  operator_negation |operator_equiv | operator_implies
+  | operator_and | operator_or
   | operator_plus | operator_minus | operator_asterisk | operator_slash
   | operator_eq
 }
@@ -76,6 +77,7 @@ operator_minus = { "-" }
 operator_asterisk = { "*" }
 operator_slash = { "/" }
 operator_negation = { "!" }
+operator_equiv = { "<=>" }
 operator_implies = { "=>" }
 operator_and = { "&" }
 operator_or = { "|" }
