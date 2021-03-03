@@ -541,17 +541,16 @@ impl AxiomBuilderEntries {
             tmp
         };
 
-        if !self.premises.is_empty() {
-            for (i, formula) in self.premises[0].iter().enumerate() {
-                formula.build(&local_index, directory, &self.vars, errors, |e| {
-                    ParsingError::AxiomError(self_ref, AxiomParsingError::PremiseError(i, e))
-                });
-            }
+        for (i, formula) in self.premise().iter().enumerate() {
+            formula.build(&local_index, directory, &self.vars, errors, |e| {
+                ParsingError::AxiomError(self_ref, AxiomParsingError::PremiseError(i, e))
+            });
         }
 
-        self.assertions[0].build(&local_index, directory, &self.vars, errors, |e| {
-            ParsingError::AxiomError(self_ref, AxiomParsingError::AssertionError(e))
-        });
+        self.assertion()
+            .build(&local_index, directory, &self.vars, errors, |e| {
+                ParsingError::AxiomError(self_ref, AxiomParsingError::AssertionError(e))
+            });
     }
 
     fn name(&self) -> &str {
@@ -924,19 +923,16 @@ impl TheoremBuilderEntries {
             tmp
         };
 
-        // TODO: This would be cleaner if we used self.premise().
-        if !self.premises.is_empty() {
-            for (i, formula) in self.premises[0].iter().enumerate() {
-                formula.build(&local_index, directory, &self.vars, errors, |e| {
-                    ParsingError::TheoremError(self_ref, TheoremParsingError::PremiseError(i, e))
-                });
-            }
+        for (i, formula) in self.premise().iter().enumerate() {
+            formula.build(&local_index, directory, &self.vars, errors, |e| {
+                ParsingError::TheoremError(self_ref, TheoremParsingError::PremiseError(i, e))
+            });
         }
 
-        // TODO: This would be cleaner if we used self.assertion().
-        self.assertions[0].build(&local_index, directory, &self.vars, errors, |e| {
-            ParsingError::TheoremError(self_ref, TheoremParsingError::AssertionError(e))
-        });
+        self.assertion()
+            .build(&local_index, directory, &self.vars, errors, |e| {
+                ParsingError::TheoremError(self_ref, TheoremParsingError::AssertionError(e))
+            });
 
         if let Some(flag_list) = self.flag_list() {
             flag_list.verify_formulas(
