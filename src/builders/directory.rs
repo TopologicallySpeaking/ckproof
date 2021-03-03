@@ -193,6 +193,73 @@ impl LocalBibliographyBuilderRef {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum DeductableBuilderRef {
+    Axiom(AxiomBuilderRef),
+    Theorem(TheoremBuilderRef),
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum FunctionBuilderRef {
+    Symbol(SymbolBuilderRef),
+    Definition(DefinitionBuilderRef),
+}
+
+impl FunctionBuilderRef {
+    pub fn set_reflexive(
+        self,
+        deductable_ref: DeductableBuilderRef,
+        directory: &BuilderDirectory,
+        errors: &mut ParsingErrorContext,
+    ) {
+        match self {
+            Self::Symbol(symbol_ref) => directory[symbol_ref].set_reflexive(deductable_ref, errors),
+            Self::Definition(definition_ref) => {
+                directory[definition_ref].set_reflexive(deductable_ref, errors)
+            }
+        }
+    }
+
+    pub fn set_symmetric(
+        self,
+        deductable_ref: DeductableBuilderRef,
+        directory: &BuilderDirectory,
+        errors: &mut ParsingErrorContext,
+    ) {
+        match self {
+            Self::Symbol(symbol_ref) => directory[symbol_ref].set_symmetric(deductable_ref, errors),
+            Self::Definition(definition_ref) => {
+                directory[definition_ref].set_symmetric(deductable_ref, errors)
+            }
+        }
+    }
+
+    pub fn set_transitive(
+        self,
+        deductable_ref: DeductableBuilderRef,
+        directory: &BuilderDirectory,
+        errors: &mut ParsingErrorContext,
+    ) {
+        match self {
+            Self::Symbol(symbol_ref) => {
+                directory[symbol_ref].set_transitive(deductable_ref, errors)
+            }
+            Self::Definition(definition_ref) => {
+                directory[definition_ref].set_transitive(deductable_ref, errors)
+            }
+        }
+    }
+}
+
+impl From<ReadableKind> for FunctionBuilderRef {
+    fn from(kind: ReadableKind) -> FunctionBuilderRef {
+        match kind {
+            ReadableKind::Symbol(symbol_ref) => Self::Symbol(symbol_ref),
+            ReadableKind::Definition(definition_ref) => Self::Definition(definition_ref),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub enum ReadableKind {
     Symbol(SymbolBuilderRef),

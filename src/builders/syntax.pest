@@ -160,6 +160,17 @@ type_signature_item = _{
 }
 type_signature_nested = _{ "(" ~ type_signature ~ ")" }
 
+flag_list = {
+  "["
+    ~ flag ~ ("," ~ flag)* ~ ","?
+  ~ "]"
+}
+flag = _{ flag_reflexive | flag_symmetric | flag_transitive }
+
+flag_reflexive = { "reflexive" }
+flag_symmetric = { "symmetric" }
+flag_transitive = { "transitive" }
+
 var_declaration = { ident ~ ":" ~ type_signature }
 
 read = { read_style ~ read_operator }
@@ -185,6 +196,7 @@ block_inputs = {
   ~ "]"
 }
 block_type_signature = { "type" ~ "=" ~ type_signature }
+block_flags = { "flags" ~ "=" ~ flag_list }
 block_var_declaration = _{ "var" ~ var_declaration }
 block_read = { "read" ~ "=" ~ read }
 block_display = { "display" ~ "=" ~ display }
@@ -234,7 +246,7 @@ axiom_block = {
 }
 axiom_entry = _{
   block_name | block_tagline | block_description
-  | block_var_declaration | premise | assertion
+  | block_flags | block_var_declaration | premise | assertion
 }
 
 theorem_block = {
@@ -244,7 +256,7 @@ theorem_block = {
 }
 theorem_entry = _{
   block_name | block_tagline | block_description
-  | block_var_declaration | premise | assertion
+  | block_flags | block_var_declaration | premise | assertion
 }
 
 proof_block = {

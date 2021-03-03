@@ -24,14 +24,14 @@ use crate::document::language::{
 };
 
 use super::directory::{
-    BibliographyBuilderRef, BuilderDirectory, DefinitionBuilderRef, LocalBibliographyBuilderIndex,
-    LocalIndex, ReadSignature, Readable, ReadableKind, SymbolBuilderRef, SystemBuilderRef,
-    TypeBuilderRef, VariableBuilderRef,
+    BibliographyBuilderRef, BuilderDirectory, DeductableBuilderRef, DefinitionBuilderRef,
+    FunctionBuilderRef, LocalBibliographyBuilderIndex, LocalIndex, ReadSignature, Readable,
+    ReadableKind, SymbolBuilderRef, SystemBuilderRef, TypeBuilderRef, VariableBuilderRef,
 };
 use super::errors::{
     DefinitionParsingError, FormulaParsingError, ParsingError, ParsingErrorContext,
-    SymbolParsingError, SystemParsingError, TypeParsingError, TypeSignatureParsingError,
-    VariableParsingError,
+    SymbolFlagsParsingError, SymbolParsingError, SystemParsingError, TypeParsingError,
+    TypeSignatureParsingError, VariableParsingError,
 };
 use super::text::{MathBuilder, ParagraphBuilder, TextBuilder};
 use super::{BlockLocation, Rule};
@@ -796,6 +796,73 @@ impl Display {
     }
 }
 
+struct SymbolBuilderFlags {
+    reflexive: Cell<Option<DeductableBuilderRef>>,
+    symmetric: Cell<Option<DeductableBuilderRef>>,
+    transitive: Cell<Option<DeductableBuilderRef>>,
+}
+
+impl SymbolBuilderFlags {
+    fn new() -> SymbolBuilderFlags {
+        SymbolBuilderFlags {
+            reflexive: Cell::new(None),
+            symmetric: Cell::new(None),
+            transitive: Cell::new(None),
+        }
+    }
+
+    fn set_reflexive<F>(
+        &self,
+        deductable_ref: DeductableBuilderRef,
+        errors: &mut ParsingErrorContext,
+        generate_error: F,
+    ) where
+        F: Fn(SymbolFlagsParsingError) -> ParsingError,
+    {
+        if self.reflexive.get().is_some() {
+            errors.err(generate_error(
+                SymbolFlagsParsingError::RedundantReflexivity(deductable_ref),
+            ));
+        } else {
+            self.reflexive.set(Some(deductable_ref));
+        }
+    }
+
+    fn set_symmetric<F>(
+        &self,
+        deductable_ref: DeductableBuilderRef,
+        errors: &mut ParsingErrorContext,
+        generate_error: F,
+    ) where
+        F: Fn(SymbolFlagsParsingError) -> ParsingError,
+    {
+        if self.symmetric.get().is_some() {
+            errors.err(generate_error(SymbolFlagsParsingError::RedundantSymmetry(
+                deductable_ref,
+            )));
+        } else {
+            self.symmetric.set(Some(deductable_ref));
+        }
+    }
+
+    fn set_transitive<F>(
+        &self,
+        deductable_ref: DeductableBuilderRef,
+        errors: &mut ParsingErrorContext,
+        generate_error: F,
+    ) where
+        F: Fn(SymbolFlagsParsingError) -> ParsingError,
+    {
+        if self.transitive.get().is_some() {
+            errors.err(generate_error(
+                SymbolFlagsParsingError::RedundantTransitivity(deductable_ref),
+            ));
+        } else {
+            self.transitive.set(Some(deductable_ref));
+        }
+    }
+}
+
 struct SymbolBuilderEntries {
     names: Vec<String>,
     taglines: Vec<ParagraphBuilder>,
@@ -1057,6 +1124,8 @@ pub struct SymbolBuilder {
 
     self_ref: Option<SymbolBuilderRef>,
     system_ref: Cell<Option<SystemBuilderRef>>,
+
+    flags: SymbolBuilderFlags,
 }
 
 impl SymbolBuilder {
@@ -1080,6 +1149,8 @@ impl SymbolBuilder {
 
             self_ref: None,
             system_ref: Cell::new(None),
+
+            flags: SymbolBuilderFlags::new(),
         }
     }
 
@@ -1122,6 +1193,45 @@ impl SymbolBuilder {
         for text in self.entries.description() {
             text.set_local_bib_refs(index)
         }
+    }
+
+    pub fn set_reflexive(
+        &self,
+        deductable_ref: DeductableBuilderRef,
+        errors: &mut ParsingErrorContext,
+    ) {
+        self.flags.set_reflexive(deductable_ref, errors, |e| {
+            ParsingError::SymbolError(
+                self.self_ref.unwrap(),
+                SymbolParsingError::SymbolFlagsError(e),
+            )
+        });
+    }
+
+    pub fn set_symmetric(
+        &self,
+        deductable_ref: DeductableBuilderRef,
+        errors: &mut ParsingErrorContext,
+    ) {
+        self.flags.set_symmetric(deductable_ref, errors, |e| {
+            ParsingError::SymbolError(
+                self.self_ref.unwrap(),
+                SymbolParsingError::SymbolFlagsError(e),
+            )
+        });
+    }
+
+    pub fn set_transitive(
+        &self,
+        deductable_ref: DeductableBuilderRef,
+        errors: &mut ParsingErrorContext,
+    ) {
+        self.flags.set_transitive(deductable_ref, errors, |e| {
+            ParsingError::SymbolError(
+                self.self_ref.unwrap(),
+                SymbolParsingError::SymbolFlagsError(e),
+            )
+        });
     }
 
     pub fn finish(&self) -> SymbolBlock {
@@ -1509,6 +1619,8 @@ pub struct DefinitionBuilder {
 
     self_ref: Option<DefinitionBuilderRef>,
     system_ref: Cell<Option<SystemBuilderRef>>,
+
+    flags: SymbolBuilderFlags,
 }
 
 impl DefinitionBuilder {
@@ -1532,6 +1644,8 @@ impl DefinitionBuilder {
 
             self_ref: None,
             system_ref: Cell::new(None),
+
+            flags: SymbolBuilderFlags::new(),
         }
     }
 
@@ -1580,6 +1694,45 @@ impl DefinitionBuilder {
     pub fn build_formulas(&self, directory: &BuilderDirectory, errors: &mut ParsingErrorContext) {
         self.entries
             .build_formulas(self.self_ref.unwrap(), &self.system_id, directory, errors);
+    }
+
+    pub fn set_reflexive(
+        &self,
+        deductable_ref: DeductableBuilderRef,
+        errors: &mut ParsingErrorContext,
+    ) {
+        self.flags.set_reflexive(deductable_ref, errors, |e| {
+            ParsingError::DefinitionError(
+                self.self_ref.unwrap(),
+                DefinitionParsingError::SymbolFlagsError(e),
+            )
+        });
+    }
+
+    pub fn set_symmetric(
+        &self,
+        deductable_ref: DeductableBuilderRef,
+        errors: &mut ParsingErrorContext,
+    ) {
+        self.flags.set_symmetric(deductable_ref, errors, |e| {
+            ParsingError::DefinitionError(
+                self.self_ref.unwrap(),
+                DefinitionParsingError::SymbolFlagsError(e),
+            )
+        });
+    }
+
+    pub fn set_transitive(
+        &self,
+        deductable_ref: DeductableBuilderRef,
+        errors: &mut ParsingErrorContext,
+    ) {
+        self.flags.set_transitive(deductable_ref, errors, |e| {
+            ParsingError::DefinitionError(
+                self.self_ref.unwrap(),
+                DefinitionParsingError::SymbolFlagsError(e),
+            )
+        });
     }
 
     pub fn finish(&self) -> DefinitionBlock {
@@ -1916,6 +2069,16 @@ impl FormulaInfixBuilder {
                 .applied(),
         }
     }
+
+    fn simple_binary(
+        &self,
+    ) -> Option<(FunctionBuilderRef, VariableBuilderRef, VariableBuilderRef)> {
+        let child_ref = self.operator_ref.get().unwrap().kind().into();
+        let left = self.lhs.variable()?;
+        let right = self.rhs.variable()?;
+
+        Some((child_ref, left, right))
+    }
 }
 
 enum FormulaBuilder {
@@ -2022,6 +2185,24 @@ impl FormulaBuilder {
             Self::Infix(builder) => builder.type_signature(directory),
         }
     }
+
+    fn variable(&self) -> Option<VariableBuilderRef> {
+        match self {
+            Self::Variable(builder) => Some(builder.var_ref.get().unwrap()),
+
+            _ => None,
+        }
+    }
+
+    fn simple_binary(
+        &self,
+    ) -> Option<(FunctionBuilderRef, VariableBuilderRef, VariableBuilderRef)> {
+        match self {
+            Self::Infix(builder) => builder.simple_binary(),
+
+            _ => todo!(),
+        }
+    }
 }
 
 pub struct DisplayFormulaBuilder {
@@ -2064,5 +2245,11 @@ impl DisplayFormulaBuilder {
         let contents = self.contents.finish();
 
         DisplayFormulaBlock::new(display, contents)
+    }
+
+    pub fn simple_binary(
+        &self,
+    ) -> Option<(FunctionBuilderRef, VariableBuilderRef, VariableBuilderRef)> {
+        self.contents.simple_binary()
     }
 }

@@ -17,12 +17,12 @@ use pest::error::Error as PestError;
 use std::io::Error as IoError;
 use url::ParseError as UrlError;
 
-use super::deduction::ProofBuilderElementRef;
+use super::deduction::{Flag, ProofBuilderElementRef};
 use super::directory::{
-    AxiomBuilderRef, BibliographyBuilderRef, DefinitionBuilderRef, ProofBuilderRef,
-    ProofBuilderStepRef, QuoteBuilderRef, ReadSignature, Readable, ReadableKind, SymbolBuilderRef,
-    SystemBuilderChild, SystemBuilderRef, TableBuilderRef, TextBlockBuilderRef, TheoremBuilderRef,
-    TodoBuilderRef, TypeBuilderRef, VariableBuilderRef,
+    AxiomBuilderRef, BibliographyBuilderRef, DeductableBuilderRef, DefinitionBuilderRef,
+    ProofBuilderRef, ProofBuilderStepRef, QuoteBuilderRef, ReadSignature, Readable, ReadableKind,
+    SymbolBuilderRef, SystemBuilderChild, SystemBuilderRef, TableBuilderRef, TextBlockBuilderRef,
+    TheoremBuilderRef, TodoBuilderRef, TypeBuilderRef, VariableBuilderRef,
 };
 use super::text::{
     MlaContainerRef, ParagraphBuilderElementRef, TableBuilderCellRef, TodoBuilderElementRef,
@@ -147,6 +147,8 @@ pub enum SymbolParsingError {
     DescriptionParsingError(TextParsingError),
 
     TypeSignatureError(TypeSignatureParsingError),
+
+    SymbolFlagsError(SymbolFlagsParsingError),
 }
 
 #[derive(Debug)]
@@ -168,6 +170,7 @@ pub enum DefinitionParsingError {
 
     VariableError(VariableBuilderRef, VariableParsingError),
     FormulaError(FormulaParsingError),
+    SymbolFlagsError(SymbolFlagsParsingError),
 }
 
 #[derive(Debug)]
@@ -180,6 +183,38 @@ pub enum VariableParsingError {
 pub enum FormulaParsingError {
     VariableIdNotFound(String),
     OperatorNotFound(ReadSignature),
+}
+
+#[derive(Debug)]
+pub enum SymbolFlagsParsingError {
+    RedundantReflexivity(DeductableBuilderRef),
+    RedundantSymmetry(DeductableBuilderRef),
+    RedundantTransitivity(DeductableBuilderRef),
+}
+
+#[derive(Debug)]
+pub enum FlagListParsingError {
+    DuplicateFlag(Flag),
+
+    ReflexivityPremiseNotEmpty,
+    ReflexivityAssertionNotBinary,
+    ReflexivityArgumentMismatch,
+
+    SymmetryPremiseWrongLength,
+    SymmetryPremiseNotBinary,
+    SymmetryAssertionNotBinary,
+    SymmetrySymbolMismatch,
+    SymmetryArgumentMismatch,
+
+    TransitivityWrongPremiseLength,
+    TransitivityFirstPremiseNotBinary,
+    TransitivitySecondPremiseNotBinary,
+    TransitivityPremiseSymbolNotEqual,
+    TransitivityPremiseArgumentMismatch,
+    TransitivityAssertionNotBinary,
+    TransitivityAssertionSymbolNotEqual,
+    TransitivityAssertionLeftMismatch,
+    TransitivityAssertionRightMismatch,
 }
 
 #[derive(Debug)]
@@ -210,8 +245,10 @@ pub enum TheoremParsingError {
     DuplicateName,
     DuplicateTagline,
     DuplicateDescription,
+    DuplicateFlagList,
     TaglineParsingError(ParagraphParsingError),
     DescriptionParsingError(TextParsingError),
+    FlagListError(FlagListParsingError),
 
     VariableError(VariableBuilderRef, VariableParsingError),
     PremiseError(usize, FormulaParsingError),

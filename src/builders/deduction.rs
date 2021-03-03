@@ -23,17 +23,343 @@ use crate::document::deduction::{
 };
 
 use super::directory::{
-    AxiomBuilderRef, BibliographyBuilderRef, BuilderDirectory, LocalBibliographyBuilderIndex,
-    LocalIndex, ProofBuilderRef, ProofBuilderStepRef, SystemBuilderChild, SystemBuilderRef,
-    TagIndex, TheoremBuilderRef, VariableBuilderRef,
+    AxiomBuilderRef, BibliographyBuilderRef, BuilderDirectory, DeductableBuilderRef,
+    LocalBibliographyBuilderIndex, LocalIndex, ProofBuilderRef, ProofBuilderStepRef,
+    SystemBuilderChild, SystemBuilderRef, TagIndex, TheoremBuilderRef, VariableBuilderRef,
 };
 use super::errors::{
-    AxiomParsingError, ParsingError, ParsingErrorContext, ProofElementParsingError,
-    ProofParsingError, ProofStepParsingError, TheoremParsingError,
+    AxiomParsingError, FlagListParsingError, ParsingError, ParsingErrorContext,
+    ProofElementParsingError, ProofParsingError, ProofStepParsingError, TheoremParsingError,
 };
 use super::language::{DisplayFormulaBuilder, VariableBuilder};
 use super::text::{ParagraphBuilder, TextBuilder};
 use super::{BlockLocation, Rule};
+
+#[derive(Debug)]
+pub enum Flag {
+    Reflexive,
+    Symmetric,
+    Transitive,
+}
+
+impl Flag {
+    fn from_pest(pair: Pair<Rule>) -> Flag {
+        match pair.as_rule() {
+            Rule::flag_reflexive => Flag::Reflexive,
+            Rule::flag_symmetric => Flag::Symmetric,
+            Rule::flag_transitive => Flag::Transitive,
+
+            _ => unreachable!(),
+        }
+    }
+}
+
+struct FlagList {
+    raw_list: Vec<Flag>,
+
+    reflexive: Cell<bool>,
+    symmetric: Cell<bool>,
+    transitive: Cell<bool>,
+
+    verified: Cell<bool>,
+}
+
+impl FlagList {
+    fn from_pest(pair: Pair<Rule>) -> FlagList {
+        assert_eq!(pair.as_rule(), Rule::flag_list);
+
+        let raw_list = pair.into_inner().map(Flag::from_pest).collect();
+
+        FlagList {
+            raw_list,
+
+            reflexive: Cell::new(false),
+            symmetric: Cell::new(false),
+            transitive: Cell::new(false),
+
+            verified: Cell::new(false),
+        }
+    }
+
+    fn verify_structure<F>(&self, errors: &mut ParsingErrorContext, generate_error: F)
+    where
+        F: Fn(FlagListParsingError) -> ParsingError,
+    {
+        let mut found_error = false;
+
+        for flag in &self.raw_list {
+            match flag {
+                Flag::Reflexive => {
+                    if self.reflexive.get() {
+                        found_error = true;
+                        errors.err(generate_error(FlagListParsingError::DuplicateFlag(
+                            Flag::Reflexive,
+                        )));
+                    } else {
+                        self.reflexive.set(true);
+                    }
+                }
+
+                Flag::Symmetric => {
+                    if self.symmetric.get() {
+                        found_error = true;
+                        errors.err(generate_error(FlagListParsingError::DuplicateFlag(
+                            Flag::Symmetric,
+                        )));
+                    } else {
+                        self.symmetric.set(true);
+                    }
+                }
+
+                Flag::Transitive => {
+                    if self.transitive.get() {
+                        found_error = true;
+                        errors.err(generate_error(FlagListParsingError::DuplicateFlag(
+                            Flag::Transitive,
+                        )));
+                    } else {
+                        self.transitive.set(true);
+                    }
+                }
+            }
+        }
+
+        self.verified.set(!found_error);
+    }
+
+    fn verify_reflexivity<F>(
+        self_ref: TheoremBuilderRef,
+        premise: &[DisplayFormulaBuilder],
+        assertion: &DisplayFormulaBuilder,
+        directory: &BuilderDirectory,
+        errors: &mut ParsingErrorContext,
+        generate_error: F,
+    ) where
+        F: Fn(FlagListParsingError) -> ParsingError,
+    {
+        if !premise.is_empty() {
+            errors.err(generate_error(
+                FlagListParsingError::ReflexivityPremiseNotEmpty,
+            ));
+            return;
+        }
+
+        let (assertion_function, assertion_left, assertion_right) =
+            if let Some((symbol, left, right)) = assertion.simple_binary() {
+                (symbol, left, right)
+            } else {
+                errors.err(generate_error(
+                    FlagListParsingError::ReflexivityAssertionNotBinary,
+                ));
+                return;
+            };
+
+        if assertion_left != assertion_right {
+            errors.err(generate_error(
+                FlagListParsingError::ReflexivityArgumentMismatch,
+            ));
+            return;
+        }
+
+        assertion_function.set_reflexive(
+            DeductableBuilderRef::Theorem(self_ref),
+            directory,
+            errors,
+        );
+    }
+
+    fn verify_symmetry<F>(
+        self_ref: TheoremBuilderRef,
+        premise: &[DisplayFormulaBuilder],
+        assertion: &DisplayFormulaBuilder,
+        directory: &BuilderDirectory,
+        errors: &mut ParsingErrorContext,
+        generate_error: F,
+    ) where
+        F: Fn(FlagListParsingError) -> ParsingError,
+    {
+        if premise.len() != 1 {
+            errors.err(generate_error(
+                FlagListParsingError::SymmetryPremiseWrongLength,
+            ));
+            return;
+        }
+
+        let (premise_function, premise_left, premise_right) =
+            if let Some((function, left, right)) = premise[0].simple_binary() {
+                (function, left, right)
+            } else {
+                errors.err(generate_error(
+                    FlagListParsingError::SymmetryPremiseNotBinary,
+                ));
+                return;
+            };
+
+        let (assertion_function, assertion_left, assertion_right) =
+            if let Some((function, left, right)) = assertion.simple_binary() {
+                (function, left, right)
+            } else {
+                errors.err(generate_error(
+                    FlagListParsingError::SymmetryAssertionNotBinary,
+                ));
+                return;
+            };
+
+        if premise_function != assertion_function {
+            errors.err(generate_error(FlagListParsingError::SymmetrySymbolMismatch));
+            return;
+        }
+
+        if premise_left != assertion_right || premise_right != assertion_left {
+            errors.err(generate_error(
+                FlagListParsingError::SymmetryArgumentMismatch,
+            ));
+            return;
+        }
+
+        assertion_function.set_symmetric(
+            DeductableBuilderRef::Theorem(self_ref),
+            directory,
+            errors,
+        );
+    }
+
+    fn verify_transitivity<F>(
+        self_ref: TheoremBuilderRef,
+        premise: &[DisplayFormulaBuilder],
+        assertion: &DisplayFormulaBuilder,
+        directory: &BuilderDirectory,
+        errors: &mut ParsingErrorContext,
+        generate_error: F,
+    ) where
+        F: Fn(FlagListParsingError) -> ParsingError,
+    {
+        if premise.len() != 2 {
+            errors.err(generate_error(
+                FlagListParsingError::TransitivityWrongPremiseLength,
+            ));
+            return;
+        }
+
+        let (first_premise_function, first_premise_left, first_premise_right) =
+            if let Some((function, left, right)) = premise[0].simple_binary() {
+                (function, left, right)
+            } else {
+                errors.err(generate_error(
+                    FlagListParsingError::TransitivityFirstPremiseNotBinary,
+                ));
+                return;
+            };
+
+        let (second_premise_function, second_premise_left, second_premise_right) =
+            if let Some((function, left, right)) = premise[1].simple_binary() {
+                (function, left, right)
+            } else {
+                errors.err(generate_error(
+                    FlagListParsingError::TransitivitySecondPremiseNotBinary,
+                ));
+                return;
+            };
+
+        if first_premise_function != second_premise_function {
+            errors.err(generate_error(
+                FlagListParsingError::TransitivityPremiseSymbolNotEqual,
+            ));
+            return;
+        }
+
+        if first_premise_right != second_premise_left {
+            errors.err(generate_error(
+                FlagListParsingError::TransitivityPremiseArgumentMismatch,
+            ));
+            return;
+        }
+
+        let (assertion_function, assertion_left, assertion_right) =
+            if let Some((function, left, right)) = assertion.simple_binary() {
+                (function, left, right)
+            } else {
+                errors.err(generate_error(
+                    FlagListParsingError::TransitivitySecondPremiseNotBinary,
+                ));
+                return;
+            };
+
+        if assertion_function != first_premise_function {
+            errors.err(generate_error(
+                FlagListParsingError::TransitivityAssertionSymbolNotEqual,
+            ));
+            return;
+        }
+
+        if assertion_left != first_premise_left {
+            errors.err(generate_error(
+                FlagListParsingError::TransitivityAssertionLeftMismatch,
+            ));
+            return;
+        }
+
+        if assertion_right != second_premise_right {
+            errors.err(generate_error(
+                FlagListParsingError::TransitivityAssertionRightMismatch,
+            ));
+            return;
+        }
+
+        assertion_function.set_transitive(
+            DeductableBuilderRef::Theorem(self_ref),
+            directory,
+            errors,
+        );
+    }
+
+    fn verify_formulas<F>(
+        &self,
+        self_ref: TheoremBuilderRef,
+        premise: &[DisplayFormulaBuilder],
+        assertion: &DisplayFormulaBuilder,
+        directory: &BuilderDirectory,
+        errors: &mut ParsingErrorContext,
+        generate_error: F,
+    ) where
+        F: Fn(FlagListParsingError) -> ParsingError + Copy,
+    {
+        assert!(self.verified.get());
+
+        if self.reflexive.get() {
+            Self::verify_reflexivity(
+                self_ref,
+                premise,
+                assertion,
+                directory,
+                errors,
+                generate_error,
+            );
+        }
+
+        if self.symmetric.get() {
+            Self::verify_symmetry(
+                self_ref,
+                premise,
+                assertion,
+                directory,
+                errors,
+                generate_error,
+            );
+        }
+
+        if self.transitive.get() {
+            Self::verify_transitivity(
+                self_ref,
+                premise,
+                assertion,
+                directory,
+                errors,
+                generate_error,
+            );
+        }
+    }
+}
 
 struct AxiomBuilderEntries {
     names: Vec<String>,
@@ -108,6 +434,9 @@ impl AxiomBuilderEntries {
         }
     }
 
+    // FIXME: Not everything here sets the found_error flag because doing so would anger the borrow
+    // checker. Figure out how to do it, and not just for axioms but also every other builder which
+    // uses this BuilderEntries pattern.
     fn verify_structure(
         &self,
         parent_system: &str,
@@ -400,6 +729,7 @@ struct TheoremBuilderEntries {
     taglines: Vec<ParagraphBuilder>,
     descriptions: Vec<Vec<TextBuilder>>,
 
+    flag_lists: Vec<FlagList>,
     vars: Vec<VariableBuilder>,
     premises: Vec<Vec<DisplayFormulaBuilder>>,
     assertions: Vec<DisplayFormulaBuilder>,
@@ -412,6 +742,7 @@ impl TheoremBuilderEntries {
         let mut names = Vec::with_capacity(1);
         let mut taglines = Vec::with_capacity(1);
         let mut descriptions = Vec::with_capacity(1);
+        let mut flag_lists = Vec::new();
         let mut vars = Vec::new();
         let mut premises = Vec::new();
         let mut assertions = Vec::new();
@@ -434,6 +765,11 @@ impl TheoremBuilderEntries {
                     let description = pair.into_inner().map(TextBuilder::from_pest).collect();
 
                     descriptions.push(description);
+                }
+                Rule::block_flags => {
+                    let flag_list = FlagList::from_pest(pair.into_inner().next().unwrap());
+
+                    flag_lists.push(flag_list);
                 }
                 Rule::var_declaration => vars.push(VariableBuilder::from_pest(pair)),
                 Rule::premise => {
@@ -460,6 +796,7 @@ impl TheoremBuilderEntries {
             taglines,
             descriptions,
 
+            flag_lists,
             vars,
             premises,
             assertions,
@@ -539,7 +876,22 @@ impl TheoremBuilderEntries {
                 errors.err(ParsingError::TheoremError(
                     self_ref,
                     TheoremParsingError::DuplicateDescription,
-                ))
+                ));
+            }
+        }
+
+        match self.flag_lists.len() {
+            0 => {}
+            1 => self.flag_lists[0].verify_structure(errors, |e| {
+                ParsingError::TheoremError(self_ref, TheoremParsingError::FlagListError(e))
+            }),
+
+            _ => {
+                found_error = true;
+                errors.err(ParsingError::TheoremError(
+                    self_ref,
+                    TheoremParsingError::DuplicateFlagList,
+                ));
             }
         }
 
@@ -572,6 +924,7 @@ impl TheoremBuilderEntries {
             tmp
         };
 
+        // TODO: This would be cleaner if we used self.premise().
         if !self.premises.is_empty() {
             for (i, formula) in self.premises[0].iter().enumerate() {
                 formula.build(&local_index, directory, &self.vars, errors, |e| {
@@ -580,9 +933,21 @@ impl TheoremBuilderEntries {
             }
         }
 
+        // TODO: This would be cleaner if we used self.assertion().
         self.assertions[0].build(&local_index, directory, &self.vars, errors, |e| {
             ParsingError::TheoremError(self_ref, TheoremParsingError::AssertionError(e))
         });
+
+        if let Some(flag_list) = self.flag_list() {
+            flag_list.verify_formulas(
+                self_ref,
+                &self.premise(),
+                &self.assertion(),
+                directory,
+                errors,
+                |e| ParsingError::TheoremError(self_ref, TheoremParsingError::FlagListError(e)),
+            );
+        }
     }
 
     fn name(&self) -> &str {
@@ -602,6 +967,11 @@ impl TheoremBuilderEntries {
         } else {
             &self.descriptions[0]
         }
+    }
+
+    fn flag_list(&self) -> Option<&FlagList> {
+        assert!(self.verified.get());
+        self.flag_lists.get(0)
     }
 
     fn vars(&self) -> &[VariableBuilder] {
