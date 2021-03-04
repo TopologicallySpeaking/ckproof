@@ -438,20 +438,14 @@ impl TypeBuilder {
         self.self_ref = Some(self_ref);
     }
 
-    pub fn verify_structure(&self, directory: &BuilderDirectory, errors: &mut ParsingErrorContext) {
+    pub fn set_system_ref(&self, system_ref: SystemBuilderRef) {
         assert!(self.system_ref.get().is_none());
-        let self_ref = self.self_ref.unwrap();
+        self.system_ref.set(Some(system_ref));
+    }
 
-        self.system_ref
-            .set(directory.search_system(&self.system_id));
-        if self.system_ref.get().is_none() {
-            errors.err(ParsingError::TypeError(
-                self_ref,
-                TypeParsingError::ParentNotFound,
-            ));
-        }
-
-        self.entries.verify_structure(self_ref, directory, errors);
+    pub fn verify_structure(&self, directory: &BuilderDirectory, errors: &mut ParsingErrorContext) {
+        self.entries
+            .verify_structure(self.self_ref.unwrap(), directory, errors);
     }
 
     pub fn bib_refs(&self) -> Box<dyn Iterator<Item = BibliographyBuilderRef> + '_> {
@@ -1159,21 +1153,19 @@ impl SymbolBuilder {
         self.self_ref = Some(self_ref);
     }
 
-    pub fn verify_structure(&self, directory: &BuilderDirectory, errors: &mut ParsingErrorContext) {
+    pub fn set_system_ref(&self, system_ref: SystemBuilderRef) {
         assert!(self.system_ref.get().is_none());
-        let self_ref = self.self_ref.unwrap();
+        self.system_ref.set(Some(system_ref));
+    }
 
-        self.system_ref
-            .set(directory.search_system(&self.system_id));
-        if self.system_ref.get().is_none() {
-            errors.err(ParsingError::SymbolError(
-                self_ref,
-                SymbolParsingError::ParentNotFound,
-            ));
-        }
-
-        self.entries
-            .verify_structure(&self.system_id, self_ref, self.serial, directory, errors);
+    pub fn verify_structure(&self, directory: &BuilderDirectory, errors: &mut ParsingErrorContext) {
+        self.entries.verify_structure(
+            &self.system_id,
+            self.self_ref.unwrap(),
+            self.serial,
+            directory,
+            errors,
+        );
     }
 
     pub fn bib_refs(&self) -> Box<dyn Iterator<Item = BibliographyBuilderRef> + '_> {
@@ -1654,22 +1646,19 @@ impl DefinitionBuilder {
         self.self_ref = Some(self_ref);
     }
 
-    pub fn verify_structure(&self, directory: &BuilderDirectory, errors: &mut ParsingErrorContext) {
+    pub fn set_system_ref(&self, system_ref: SystemBuilderRef) {
         assert!(self.system_ref.get().is_none());
-        let self_ref = self.self_ref.unwrap();
+        self.system_ref.set(Some(system_ref));
+    }
 
-        self.system_ref
-            .set(directory.search_system(&self.system_id));
-        // TODO: This check is already done when adding system children to the index. Remove it.
-        if self.system_ref.get().is_none() {
-            errors.err(ParsingError::DefinitionError(
-                self_ref,
-                DefinitionParsingError::ParentNotFound,
-            ));
-        }
-
-        self.entries
-            .verify_structure(&self.system_id, self_ref, self.serial, directory, errors);
+    pub fn verify_structure(&self, directory: &BuilderDirectory, errors: &mut ParsingErrorContext) {
+        self.entries.verify_structure(
+            &self.system_id,
+            self.self_ref.unwrap(),
+            self.serial,
+            directory,
+            errors,
+        );
     }
 
     pub fn bib_refs(&self) -> Box<dyn Iterator<Item = BibliographyBuilderRef> + '_> {

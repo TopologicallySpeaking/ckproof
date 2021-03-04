@@ -342,6 +342,18 @@ impl SystemBuilderChild {
         }
     }
 
+    fn set_system_ref(&self, system_ref: SystemBuilderRef, directory: &BuilderDirectory) {
+        match self {
+            Self::Type(type_ref) => directory[*type_ref].set_system_ref(system_ref),
+            Self::Symbol(symbol_ref) => directory[*symbol_ref].set_system_ref(system_ref),
+            Self::Definition(definition_ref) => {
+                directory[*definition_ref].set_system_ref(system_ref)
+            }
+            Self::Axiom(axiom_ref) => directory[*axiom_ref].set_system_ref(system_ref),
+            Self::Theorem(theorem_ref) => directory[*theorem_ref].set_system_ref(system_ref),
+        }
+    }
+
     pub fn finish(&self) -> BlockReference {
         match self {
             Self::Type(type_ref) => type_ref.finish().into(),
@@ -607,10 +619,14 @@ impl BuilderIndex {
         system_id: &str,
         child_id: &str,
         child_ref: SystemBuilderChild,
+        directory: &BuilderDirectory,
         errors: &mut ParsingErrorContext,
     ) {
         match self.systems.get_mut(system_id) {
-            Some(index) => index.add_child(child_id, child_ref, errors),
+            Some(index) => {
+                child_ref.set_system_ref(index.system_ref, directory);
+                index.add_child(child_id, child_ref, errors);
+            }
             None => errors.err(ParsingError::system_child_parent_not_found(child_ref)),
         }
     }
@@ -863,6 +879,7 @@ impl BuilderDirectory {
                 system_id,
                 id,
                 SystemBuilderChild::Type(TypeBuilderRef(i)),
+                self,
                 errors,
             );
         }
@@ -875,6 +892,7 @@ impl BuilderDirectory {
                 system_id,
                 id,
                 SystemBuilderChild::Symbol(SymbolBuilderRef(i)),
+                self,
                 errors,
             );
         }
@@ -887,6 +905,7 @@ impl BuilderDirectory {
                 system_id,
                 id,
                 SystemBuilderChild::Definition(DefinitionBuilderRef(i)),
+                self,
                 errors,
             );
         }
@@ -899,6 +918,7 @@ impl BuilderDirectory {
                 system_id,
                 id,
                 SystemBuilderChild::Axiom(AxiomBuilderRef(i)),
+                self,
                 errors,
             );
         }
@@ -911,6 +931,7 @@ impl BuilderDirectory {
                 system_id,
                 id,
                 SystemBuilderChild::Theorem(TheoremBuilderRef(i)),
+                self,
                 errors,
             );
         }
