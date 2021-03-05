@@ -1652,6 +1652,7 @@ impl ProofBuilder {
                 self_ref,
                 ProofParsingError::ParentNotFound,
             ));
+            return;
         }
 
         let mut tags = TagIndex::new();
