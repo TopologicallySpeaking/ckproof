@@ -123,6 +123,8 @@ pub enum SystemChildParsingError<'a> {
 pub enum ReadableParsingError<'a> {
     IdAlreadyTaken(ReadableBuilder<'a>),
     DuplicateReflexive(DeductableBuilder<'a>),
+    DuplicateSymmetric(DeductableBuilder<'a>),
+    DuplicateTransitive(DeductableBuilder<'a>),
     DuplicateFunction(ReadableBuilder<'a>, DeductableBuilder<'a>),
 }
 

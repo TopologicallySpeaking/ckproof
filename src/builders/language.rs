@@ -680,7 +680,6 @@ impl<'a> PropertyList<'a> {
         }
     }
 
-    // FIXME: Return proper error.
     fn set_symmetric(
         &self,
         readable_ref: ReadableBuilder<'a>,
@@ -690,12 +689,11 @@ impl<'a> PropertyList<'a> {
         if let Err(deductable_ref) = self.symmetric.set(deductable_ref) {
             errors.err(ParsingError::ReadableError(
                 readable_ref,
-                ReadableParsingError::DuplicateReflexive(deductable_ref),
+                ReadableParsingError::DuplicateSymmetric(deductable_ref),
             ));
         }
     }
 
-    // FIXME: Return proper error.
     fn set_transitive(
         &self,
         readable_ref: ReadableBuilder<'a>,
@@ -705,7 +703,7 @@ impl<'a> PropertyList<'a> {
         if let Err(deductable_ref) = self.transitive.set(deductable_ref) {
             errors.err(ParsingError::ReadableError(
                 readable_ref,
-                ReadableParsingError::DuplicateReflexive(deductable_ref),
+                ReadableParsingError::DuplicateTransitive(deductable_ref),
             ));
         }
     }
