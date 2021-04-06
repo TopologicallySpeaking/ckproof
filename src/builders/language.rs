@@ -13,7 +13,8 @@
 // You should have received a copy of the GNU Affero General Public License along with ckproof. If
 // not, see <https://www.gnu.org/licenses/>.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::lazy::OnceCell;
@@ -656,6 +657,8 @@ struct PropertyList<'a> {
     reflexive: OnceCell<DeductableBuilder<'a>>,
     symmetric: OnceCell<DeductableBuilder<'a>>,
     transitive: OnceCell<DeductableBuilder<'a>>,
+
+    function: RefCell<HashMap<ReadableBuilder<'a>, DeductableBuilder<'a>>>,
 }
 
 impl<'a> PropertyList<'a> {
@@ -677,6 +680,7 @@ impl<'a> PropertyList<'a> {
         }
     }
 
+    // FIXME: Return proper error.
     fn set_symmetric(
         &self,
         readable_ref: ReadableBuilder<'a>,
@@ -691,6 +695,7 @@ impl<'a> PropertyList<'a> {
         }
     }
 
+    // FIXME: Return proper error.
     fn set_transitive(
         &self,
         readable_ref: ReadableBuilder<'a>,
@@ -703,6 +708,44 @@ impl<'a> PropertyList<'a> {
                 ReadableParsingError::DuplicateReflexive(deductable_ref),
             ));
         }
+    }
+
+    fn set_function(
+        &self,
+        readable_ref: ReadableBuilder<'a>,
+        deductable_ref: DeductableBuilder<'a>,
+        relation: ReadableBuilder<'a>,
+        errors: &mut ParsingErrorContext<'a>,
+    ) {
+        let mut function = self.function.borrow_mut();
+        match function.entry(relation) {
+            Entry::Occupied(_) => {
+                errors.err(ParsingError::ReadableError(
+                    readable_ref,
+                    ReadableParsingError::DuplicateFunction(relation, deductable_ref),
+                ));
+            }
+
+            Entry::Vacant(slot) => {
+                slot.insert(deductable_ref);
+            }
+        }
+    }
+
+    fn is_reflexive(&self) -> bool {
+        self.reflexive.get().is_some()
+    }
+
+    fn is_symmetric(&self) -> bool {
+        self.symmetric.get().is_some()
+    }
+
+    fn is_transitive(&self) -> bool {
+        self.transitive.get().is_some()
+    }
+
+    fn is_preorder(&self) -> bool {
+        self.is_reflexive() && self.is_transitive()
     }
 }
 
@@ -1072,6 +1115,36 @@ impl<'a> SymbolBuilder<'a> {
             .set_transitive(ReadableBuilder::Symbol(self), deductable_ref, errors);
     }
 
+    pub fn set_function(
+        &'a self,
+        deductable_ref: DeductableBuilder<'a>,
+        relation: ReadableBuilder<'a>,
+        errors: &mut ParsingErrorContext<'a>,
+    ) {
+        self.properties.set_function(
+            ReadableBuilder::Symbol(self),
+            deductable_ref,
+            relation,
+            errors,
+        );
+    }
+
+    pub fn is_reflexive(&self) -> bool {
+        self.properties.is_reflexive()
+    }
+
+    pub fn is_symmetric(&self) -> bool {
+        self.properties.is_symmetric()
+    }
+
+    pub fn is_transitive(&self) -> bool {
+        self.properties.is_transitive()
+    }
+
+    pub fn is_preorder(&self) -> bool {
+        self.properties.is_preorder()
+    }
+
     // TODO: Remove.
     pub fn count(&self, count: usize) {
         self.count.set(count).unwrap();
@@ -1143,6 +1216,13 @@ impl<'a> PartialEq for SymbolBuilder<'a> {
     }
 }
 impl<'a> Eq for SymbolBuilder<'a> {}
+
+impl<'a> Hash for SymbolBuilder<'a> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.system_id.hash(state);
+        self.id.hash(state);
+    }
+}
 
 impl<'a> std::fmt::Debug for SymbolBuilder<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -1566,6 +1646,36 @@ impl<'a> DefinitionBuilder<'a> {
             .set_transitive(ReadableBuilder::Definition(self), deductable_ref, errors);
     }
 
+    pub fn set_function(
+        &'a self,
+        deductable_ref: DeductableBuilder<'a>,
+        relation: ReadableBuilder<'a>,
+        errors: &mut ParsingErrorContext<'a>,
+    ) {
+        self.properties.set_function(
+            ReadableBuilder::Definition(self),
+            deductable_ref,
+            relation,
+            errors,
+        );
+    }
+
+    pub fn is_reflexive(&self) -> bool {
+        self.properties.is_reflexive()
+    }
+
+    pub fn is_symmetric(&self) -> bool {
+        self.properties.is_symmetric()
+    }
+
+    pub fn is_transitive(&self) -> bool {
+        self.properties.is_transitive()
+    }
+
+    pub fn is_preorder(&self) -> bool {
+        self.properties.is_preorder()
+    }
+
     // TODO: Remove.
     pub fn count(&'a self, count: usize) {
         self.count.set(count).unwrap();
@@ -1659,13 +1769,20 @@ impl<'a> PartialEq for DefinitionBuilder<'a> {
 }
 impl<'a> Eq for DefinitionBuilder<'a> {}
 
+impl<'a> Hash for DefinitionBuilder<'a> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.system_id.hash(state);
+        self.id.hash(state);
+    }
+}
+
 impl<'a> std::fmt::Debug for DefinitionBuilder<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_tuple("Definition").field(&self.id).finish()
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum ReadableBuilder<'a> {
     Symbol(&'a SymbolBuilder<'a>),
     Definition(&'a DefinitionBuilder<'a>),
@@ -1730,6 +1847,34 @@ impl<'a> ReadableBuilder<'a> {
             Self::Definition(definition_ref) => {
                 definition_ref.set_transitive(deductable_ref, errors)
             }
+        }
+    }
+
+    pub fn set_function(
+        &self,
+        deductable_ref: DeductableBuilder<'a>,
+        relation: ReadableBuilder<'a>,
+        errors: &mut ParsingErrorContext<'a>,
+    ) {
+        match self {
+            Self::Symbol(symbol_ref) => symbol_ref.set_function(deductable_ref, relation, errors),
+            Self::Definition(definition_ref) => {
+                definition_ref.set_function(deductable_ref, relation, errors)
+            }
+        }
+    }
+
+    pub fn is_preorder(&self) -> bool {
+        match self {
+            Self::Symbol(symbol_ref) => symbol_ref.is_preorder(),
+            Self::Definition(definition_ref) => definition_ref.is_preorder(),
+        }
+    }
+
+    pub fn is_symmetric(&self) -> bool {
+        match self {
+            Self::Symbol(symbol_ref) => symbol_ref.is_symmetric(),
+            Self::Definition(definition_ref) => definition_ref.is_symmetric(),
         }
     }
 }
@@ -1965,6 +2110,18 @@ impl<'a> FormulaPrefixBuilder<'a> {
     fn type_signature(&'a self) -> &TypeSignatureBuilder {
         self.operator_ref.get().unwrap().type_signature().applied()
     }
+
+    fn application(
+        &'a self,
+    ) -> Option<(
+        ReadableBuilder,
+        Box<dyn ExactSizeIterator<Item = &FormulaBuilder> + '_>,
+    )> {
+        let readable = *self.operator_ref.get().unwrap();
+        let inputs = Box::new(std::iter::once(self.inner.as_ref()));
+
+        Some((readable, inputs))
+    }
 }
 
 #[derive(Debug)]
@@ -2059,12 +2216,27 @@ impl<'a> FormulaInfixBuilder<'a> {
         }
     }
 
-    fn simple_binary(&'a self) -> Option<(ReadableBuilder, &VariableBuilder, &VariableBuilder)> {
+    fn binary(&'a self) -> Option<(ReadableBuilder, &FormulaBuilder, &FormulaBuilder)> {
         let readable = *self.operator_ref.get().unwrap();
-        let left = self.lhs.variable()?;
-        let right = self.rhs.variable()?;
+        let left = &self.lhs;
+        let right = &self.rhs;
 
         Some((readable, left, right))
+    }
+
+    fn application(
+        &'a self,
+    ) -> Option<(
+        ReadableBuilder,
+        Box<dyn ExactSizeIterator<Item = &FormulaBuilder> + '_>,
+    )> {
+        let readable = *self.operator_ref.get().unwrap();
+        let inputs = Box::new(std::array::IntoIter::new([
+            self.lhs.as_ref(),
+            self.rhs.as_ref(),
+        ]));
+
+        Some((readable, inputs))
     }
 }
 
@@ -2166,7 +2338,7 @@ impl<'a> FormulaBuilder<'a> {
         }
     }
 
-    fn variable(&'a self) -> Option<&VariableBuilder> {
+    pub fn variable(&'a self) -> Option<&VariableBuilder> {
         match self {
             Self::Variable(formula) => Some(formula.var_ref.get().unwrap()),
 
@@ -2174,9 +2346,29 @@ impl<'a> FormulaBuilder<'a> {
         }
     }
 
-    fn simple_binary(&'a self) -> Option<(ReadableBuilder, &VariableBuilder, &VariableBuilder)> {
+    fn binary(&'a self) -> Option<(ReadableBuilder, &FormulaBuilder, &FormulaBuilder)> {
         match self {
-            Self::Infix(formula) => formula.simple_binary(),
+            Self::Infix(formula) => formula.binary(),
+
+            _ => todo!(),
+        }
+    }
+
+    fn simple_binary(&'a self) -> Option<(ReadableBuilder, &VariableBuilder, &VariableBuilder)> {
+        self.binary().and_then(|(readable_ref, left, right)| {
+            Some((readable_ref, left.variable()?, right.variable()?))
+        })
+    }
+
+    pub fn application(
+        &'a self,
+    ) -> Option<(
+        ReadableBuilder,
+        impl ExactSizeIterator<Item = &FormulaBuilder>,
+    )> {
+        match self {
+            Self::Prefix(formula) => formula.application(),
+            Self::Infix(formula) => formula.application(),
 
             _ => todo!(),
         }
@@ -2224,9 +2416,22 @@ impl<'a> DisplayFormulaBuilder<'a> {
         self.formula.type_signature()
     }
 
+    pub fn binary(&'a self) -> Option<(ReadableBuilder, &FormulaBuilder, &FormulaBuilder)> {
+        self.formula.binary()
+    }
+
     pub fn simple_binary(
         &'a self,
     ) -> Option<(ReadableBuilder, &VariableBuilder, &VariableBuilder)> {
         self.formula.simple_binary()
+    }
+
+    pub fn application(
+        &'a self,
+    ) -> Option<(
+        ReadableBuilder,
+        impl ExactSizeIterator<Item = &FormulaBuilder>,
+    )> {
+        self.formula.application()
     }
 }

@@ -19,8 +19,8 @@ use url::ParseError as UrlError;
 
 use super::bibliography::BibliographyBuilderEntry;
 use super::language::{
-    DefinitionBuilder, FormulaBuilder, ReadableBuilder, SymbolBuilder, TypeBuilder,
-    TypeSignatureBuilderGround, VariableBuilder,
+    DefinitionBuilder, DisplayFormulaBuilder, FormulaBuilder, ReadableBuilder, SymbolBuilder,
+    TypeBuilder, TypeSignatureBuilderGround, VariableBuilder,
 };
 use super::structure::{BookBuilder, ChapterBuilder};
 use super::system::{
@@ -47,6 +47,7 @@ pub enum ParagraphElementParsingError {
 
 #[derive(Debug)]
 pub enum ParagraphParsingError {
+    // TODO: Reference directory to the element instead of using its index.
     ElementError(usize, ParagraphElementParsingError),
 
     UnclosedUnicornVomit,
@@ -122,6 +123,7 @@ pub enum SystemChildParsingError<'a> {
 pub enum ReadableParsingError<'a> {
     IdAlreadyTaken(ReadableBuilder<'a>),
     DuplicateReflexive(DeductableBuilder<'a>),
+    DuplicateFunction(ReadableBuilder<'a>, DeductableBuilder<'a>),
 }
 
 #[derive(Debug)]
@@ -190,7 +192,7 @@ pub enum FormulaParsingError {
 }
 
 #[derive(Debug)]
-pub enum FlagListParsingError {
+pub enum FlagListParsingError<'a> {
     DuplicateFlag(Flag),
 
     ReflexivityPremiseNotEmpty,
@@ -212,6 +214,21 @@ pub enum FlagListParsingError {
     TransitivityAssertionSymbolNotEqual,
     TransitivityAssertionLeftMismatch,
     TransitivityAssertionRightMismatch,
+
+    FunctionPremiseEmpty,
+    FunctionPremiseNotBinary(&'a DisplayFormulaBuilder<'a>),
+    FunctionPremiseArityMismatch,
+    FunctionHypothesisNotBinary(&'a DisplayFormulaBuilder<'a>),
+    FunctionHypothesisRelationMismatch(&'a DisplayFormulaBuilder<'a>),
+    FunctionHypothesisLeftVarMismatch(&'a DisplayFormulaBuilder<'a>),
+    FunctionHypothesisRightVarMismatch(&'a DisplayFormulaBuilder<'a>),
+    FunctionAssertionNotBinary,
+    FunctionAssertionLeftNotApplication,
+    FunctionAssertionRightNotApplication,
+    FunctionAssertionSymbolMismatch,
+    FunctionAssertionArityMismatch,
+    FunctionAssertionInputNotVariable(&'a FormulaBuilder<'a>),
+    FunctionRelationNotPreorder,
 }
 
 #[derive(Debug)]
@@ -228,7 +245,7 @@ pub enum AxiomParsingError<'a> {
 
     TaglineParsingError(ParagraphParsingError),
     DescriptionParsingError(&'a TextBuilder<'a>, TextParsingError<'a>),
-    FlagListError(FlagListParsingError),
+    FlagListError(FlagListParsingError<'a>),
 
     VariableError(&'a VariableBuilder<'a>, VariableParsingError<'a>),
     FormulaError(&'a FormulaBuilder<'a>, FormulaParsingError),
@@ -248,7 +265,7 @@ pub enum TheoremParsingError<'a> {
 
     TaglineParsingError(ParagraphParsingError),
     DescriptionParsingError(&'a TextBuilder<'a>, TextParsingError<'a>),
-    FlagListError(FlagListParsingError),
+    FlagListError(FlagListParsingError<'a>),
 
     VariableError(&'a VariableBuilder<'a>, VariableParsingError<'a>),
     FormulaError(&'a FormulaBuilder<'a>, FormulaParsingError),

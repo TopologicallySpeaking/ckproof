@@ -165,11 +165,12 @@ flag_list = {
     ~ flag ~ ("," ~ flag)* ~ ","?
   ~ "]"
 }
-flag = _{ flag_reflexive | flag_symmetric | flag_transitive }
+flag = _{ flag_reflexive | flag_symmetric | flag_transitive | flag_function }
 
 flag_reflexive = { "reflexive" }
 flag_symmetric = { "symmetric" }
 flag_transitive = { "transitive" }
+flag_function = { "function" }
 
 var_declaration = { ident ~ ":" ~ type_signature }
 

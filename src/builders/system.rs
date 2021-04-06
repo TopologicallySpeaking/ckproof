@@ -390,6 +390,8 @@ pub enum Flag {
     Reflexive,
     Symmetric,
     Transitive,
+
+    Function,
 }
 
 impl Flag {
@@ -398,6 +400,8 @@ impl Flag {
             Rule::flag_reflexive => Flag::Reflexive,
             Rule::flag_symmetric => Flag::Symmetric,
             Rule::flag_transitive => Flag::Transitive,
+
+            Rule::flag_function => Flag::Function,
 
             _ => unreachable!(),
         }
@@ -410,6 +414,8 @@ struct FlagList {
     reflexive: Cell<bool>,
     symmetric: Cell<bool>,
     transitive: Cell<bool>,
+
+    function: Cell<bool>,
 
     verified: Cell<bool>,
 }
@@ -427,6 +433,8 @@ impl FlagList {
             symmetric: Cell::new(false),
             transitive: Cell::new(false),
 
+            function: Cell::new(false),
+
             verified: Cell::new(false),
         }
     }
@@ -437,7 +445,7 @@ impl FlagList {
         generate_error: F,
     ) -> bool
     where
-        F: Fn(FlagListParsingError) -> ParsingError<'a>,
+        F: Fn(FlagListParsingError<'a>) -> ParsingError<'a>,
     {
         assert!(!self.verified.get());
         let mut found_error = false;
@@ -476,6 +484,17 @@ impl FlagList {
                         self.transitive.set(true);
                     }
                 }
+
+                Flag::Function => {
+                    if self.function.get() {
+                        found_error = true;
+                        errors.err(generate_error(FlagListParsingError::DuplicateFlag(
+                            Flag::Function,
+                        )));
+                    } else {
+                        self.function.set(true);
+                    }
+                }
             }
         }
 
@@ -488,7 +507,7 @@ impl FlagList {
         errors: &mut ParsingErrorContext<'a>,
         generate_error: F,
     ) where
-        F: Fn(FlagListParsingError) -> ParsingError<'a>,
+        F: Fn(FlagListParsingError<'a>) -> ParsingError<'a>,
     {
         if !deductable_ref.premise().is_empty() {
             errors.err(generate_error(
@@ -519,7 +538,7 @@ impl FlagList {
         errors: &mut ParsingErrorContext<'a>,
         generate_error: F,
     ) where
-        F: Fn(FlagListParsingError) -> ParsingError<'a>,
+        F: Fn(FlagListParsingError<'a>) -> ParsingError<'a>,
     {
         let premise = deductable_ref.premise();
         if premise.len() != 1 {
@@ -568,7 +587,7 @@ impl FlagList {
         errors: &mut ParsingErrorContext<'a>,
         generate_error: F,
     ) where
-        F: Fn(FlagListParsingError) -> ParsingError<'a>,
+        F: Fn(FlagListParsingError<'a>) -> ParsingError<'a>,
     {
         let premise = deductable_ref.premise();
         if premise.len() != 2 {
@@ -646,13 +665,148 @@ impl FlagList {
         assertion_function.set_transitive(deductable_ref, errors);
     }
 
+    fn verify_function<'a, F>(
+        deductable_ref: DeductableBuilder<'a>,
+        errors: &mut ParsingErrorContext<'a>,
+        generate_error: F,
+    ) where
+        F: Fn(FlagListParsingError<'a>) -> ParsingError<'a> + Copy,
+    {
+        let premise = deductable_ref.premise();
+        if premise.is_empty() {
+            errors.err(generate_error(FlagListParsingError::FunctionPremiseEmpty));
+            return;
+        }
+
+        let (relation, assertion_left, assertion_right) =
+            if let Some(info) = deductable_ref.assertion().binary() {
+                info
+            } else {
+                errors.err(generate_error(
+                    FlagListParsingError::FunctionAssertionNotBinary,
+                ));
+                return;
+            };
+
+        if !relation.is_preorder() {
+            errors.err(generate_error(
+                FlagListParsingError::FunctionRelationNotPreorder,
+            ));
+            return;
+        }
+
+        let (assertion_left_function, assertion_left_inputs) =
+            if let Some(info) = assertion_left.application() {
+                info
+            } else {
+                errors.err(generate_error(
+                    FlagListParsingError::FunctionAssertionLeftNotApplication,
+                ));
+                return;
+            };
+
+        let (assertion_right_function, assertion_right_inputs) =
+            if let Some(info) = assertion_right.application() {
+                info
+            } else {
+                errors.err(generate_error(
+                    FlagListParsingError::FunctionAssertionRightNotApplication,
+                ));
+                return;
+            };
+
+        if assertion_left_function != assertion_right_function {
+            errors.err(generate_error(
+                FlagListParsingError::FunctionAssertionSymbolMismatch,
+            ));
+            return;
+        }
+
+        if assertion_left_inputs.len() != assertion_right_inputs.len() {
+            errors.err(generate_error(
+                FlagListParsingError::FunctionAssertionArityMismatch,
+            ));
+            return;
+        }
+
+        if premise.len() != assertion_left_inputs.len() {
+            errors.err(generate_error(
+                FlagListParsingError::FunctionPremiseArityMismatch,
+            ));
+            return;
+        }
+
+        let iter = premise
+            .iter()
+            .zip(assertion_left_inputs)
+            .zip(assertion_right_inputs);
+        for ((hypothesis, assertion_left_input), assertion_right_input) in iter {
+            let assertion_left_var = match assertion_left_input.variable() {
+                Some(var) => var,
+                None => {
+                    errors.err(generate_error(
+                        FlagListParsingError::FunctionAssertionInputNotVariable(
+                            assertion_left_input,
+                        ),
+                    ));
+                    return;
+                }
+            };
+
+            let assertion_right_var = match assertion_right_input.variable() {
+                Some(var) => var,
+                None => {
+                    errors.err(generate_error(
+                        FlagListParsingError::FunctionAssertionInputNotVariable(
+                            assertion_right_input,
+                        ),
+                    ));
+                    return;
+                }
+            };
+
+            let (hypothesis_relation, hypothesis_left, hypothesis_right) =
+                if let Some(info) = hypothesis.simple_binary() {
+                    info
+                } else {
+                    errors.err(generate_error(
+                        FlagListParsingError::FunctionHypothesisNotBinary(hypothesis),
+                    ));
+                    return;
+                };
+
+            if hypothesis_relation != relation {
+                errors.err(generate_error(
+                    FlagListParsingError::FunctionHypothesisRelationMismatch(hypothesis),
+                ));
+                return;
+            }
+
+            if hypothesis_left != assertion_left_var {
+                errors.err(generate_error(
+                    FlagListParsingError::FunctionHypothesisLeftVarMismatch(hypothesis),
+                ));
+                return;
+            }
+
+            if hypothesis_right != assertion_right_var {
+                errors.err(generate_error(
+                    FlagListParsingError::FunctionHypothesisRightVarMismatch(hypothesis),
+                ));
+                return;
+            }
+        }
+
+        assertion_left_function.set_function(deductable_ref, relation, errors);
+    }
+
     fn verify_formulas<'a, F>(
         &self,
         deductable_ref: DeductableBuilder<'a>,
         errors: &mut ParsingErrorContext<'a>,
         generate_error: F,
     ) where
-        F: Fn(FlagListParsingError) -> ParsingError<'a> + Copy,
+        F: Fn(FlagListParsingError<'a>) -> ParsingError<'a> + Copy,
     {
         assert!(self.verified.get());
 
@@ -666,6 +820,10 @@ impl FlagList {
 
         if self.transitive.get() {
             Self::verify_transitivity(deductable_ref, errors, generate_error);
+        }
+
+        if self.function.get() {
+            Self::verify_function(deductable_ref, errors, generate_error);
         }
     }
 }
