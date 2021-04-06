@@ -13,258 +13,42 @@
 // You should have received a copy of the GNU Affero General Public License along with ckproof. If
 // not, see <https://www.gnu.org/licenses/>.
 
-use std::cell::{Cell, UnsafeCell};
+use std::cell::Cell;
+use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
+use std::lazy::OnceCell;
 
 use pest::iterators::{Pair, Pairs};
 
+use crate::document::directory::{
+    DefinitionBlockRef, SymbolBlockRef, TypeBlockRef, VariableBlockRef,
+};
 use crate::document::language::{
     DefinitionBlock, Display, DisplayFormulaBlock, DisplayStyle, FormulaBlock, SymbolBlock,
-    SystemBlock, TypeBlock, TypeSignatureBlock, VariableBlock,
+    TypeBlock, TypeSignatureBlock, VariableBlock,
 };
 
-use super::directory::{
-    BibliographyBuilderRef, BuilderDirectory, DeductableBuilderRef, DefinitionBuilderRef,
-    FunctionBuilderRef, LocalBibliographyBuilderIndex, LocalIndex, ReadSignature, Readable,
-    ReadableKind, SymbolBuilderRef, SystemBuilderRef, TypeBuilderRef, VariableBuilderRef,
-};
+use super::bibliography::BibliographyBuilderEntry;
 use super::errors::{
     DefinitionParsingError, FormulaParsingError, ParsingError, ParsingErrorContext,
-    SymbolFlagsParsingError, SymbolParsingError, SystemParsingError, TypeParsingError,
-    TypeSignatureParsingError, VariableParsingError,
+    ReadableParsingError, SymbolParsingError, TypeParsingError, TypeSignatureParsingError,
+    VariableParsingError,
 };
+use super::index::{BuilderIndex, LocalBuilderIndex};
+use super::system::{DeductableBuilder, SystemBuilder};
 use super::text::{MathBuilder, ParagraphBuilder, TextBuilder};
-use super::{BlockLocation, Rule};
+use super::Rule;
 
-struct SystemBuilderEntries {
+struct TypeBuilderEntries<'a> {
     names: Vec<String>,
-    taglines: Vec<ParagraphBuilder>,
-    descriptions: Vec<Vec<TextBuilder>>,
+    taglines: Vec<ParagraphBuilder<'a>>,
+    descriptions: Vec<Vec<TextBuilder<'a>>>,
 
     verified: Cell<bool>,
 }
 
-impl SystemBuilderEntries {
-    fn from_pest(pairs: Pairs<Rule>) -> SystemBuilderEntries {
-        let mut names = Vec::with_capacity(1);
-        let mut taglines = Vec::with_capacity(1);
-        let mut descriptions = Vec::with_capacity(1);
-
-        for pair in pairs {
-            match pair.as_rule() {
-                Rule::block_name => {
-                    let string = pair.into_inner().next().unwrap();
-                    let string_contents = string.into_inner().next().unwrap();
-                    let name = string_contents.as_str().to_owned();
-
-                    names.push(name);
-                }
-                Rule::block_tagline => {
-                    let tagline = ParagraphBuilder::from_pest(pair.into_inner().next().unwrap());
-
-                    taglines.push(tagline);
-                }
-                Rule::block_description => {
-                    let description = pair.into_inner().map(TextBuilder::from_pest).collect();
-
-                    descriptions.push(description);
-                }
-
-                _ => unreachable!(),
-            }
-        }
-
-        SystemBuilderEntries {
-            names,
-            taglines,
-            descriptions,
-
-            verified: Cell::new(false),
-        }
-    }
-
-    fn verify_structure(
-        &self,
-        self_ref: SystemBuilderRef,
-        directory: &BuilderDirectory,
-        errors: &mut ParsingErrorContext,
-    ) {
-        assert!(!self.verified.get());
-        let mut found_error = false;
-
-        match self.names.len() {
-            0 => {
-                found_error = true;
-                errors.err(ParsingError::SystemError(
-                    self_ref,
-                    SystemParsingError::MissingName,
-                ));
-            }
-
-            1 => {}
-
-            _ => {
-                found_error = true;
-                errors.err(ParsingError::SystemError(
-                    self_ref,
-                    SystemParsingError::DuplicateName,
-                ));
-            }
-        }
-
-        match self.taglines.len() {
-            0 => {
-                found_error = true;
-                errors.err(ParsingError::SystemError(
-                    self_ref,
-                    SystemParsingError::MissingTagline,
-                ));
-            }
-
-            1 => self.taglines[0].verify_structure(directory, errors, |e| {
-                ParsingError::SystemError(self_ref, SystemParsingError::TaglineParsingError(e))
-            }),
-
-            _ => {
-                found_error = true;
-                errors.err(ParsingError::SystemError(
-                    self_ref,
-                    SystemParsingError::DuplicateTagline,
-                ))
-            }
-        }
-
-        match self.descriptions.len() {
-            0 => {}
-            1 => {
-                for paragraph in &self.descriptions[0] {
-                    paragraph.verify_structure(directory, errors, |e| {
-                        ParsingError::SystemError(
-                            self_ref,
-                            SystemParsingError::DescriptionParsingError(e),
-                        )
-                    });
-                }
-            }
-
-            _ => {
-                found_error = true;
-                errors.err(ParsingError::SystemError(
-                    self_ref,
-                    SystemParsingError::DuplicateDescription,
-                ));
-            }
-        }
-
-        self.verified.set(!found_error);
-    }
-
-    fn name(&self) -> &str {
-        assert!(self.verified.get());
-        &self.names[0]
-    }
-
-    fn tagline(&self) -> &ParagraphBuilder {
-        assert!(self.verified.get());
-        &self.taglines[0]
-    }
-
-    fn description(&self) -> &[TextBuilder] {
-        assert!(self.verified.get());
-        if self.descriptions.is_empty() {
-            &[]
-        } else {
-            &self.descriptions[0]
-        }
-    }
-}
-
-pub struct SystemBuilder {
-    id: String,
-    href: String,
-
-    entries: SystemBuilderEntries,
-
-    self_ref: Option<SystemBuilderRef>,
-}
-
-impl SystemBuilder {
-    pub fn from_pest(pair: Pair<Rule>, href: &str) -> SystemBuilder {
-        assert_eq!(pair.as_rule(), Rule::system_block);
-
-        let mut inner = pair.into_inner();
-        let id = inner.next().unwrap().as_str().to_owned();
-        let href = format!("{}#{}", href, id);
-        let entries = SystemBuilderEntries::from_pest(inner);
-
-        SystemBuilder {
-            id,
-            href,
-            entries,
-
-            self_ref: None,
-        }
-    }
-
-    pub fn set_self_ref(&mut self, self_ref: SystemBuilderRef) {
-        assert!(self.self_ref.is_none());
-        self.self_ref = Some(self_ref);
-    }
-
-    pub fn verify_structure(&self, directory: &BuilderDirectory, errors: &mut ParsingErrorContext) {
-        let self_ref = self.self_ref.unwrap();
-        self.entries.verify_structure(self_ref, directory, errors)
-    }
-
-    pub fn bib_refs(&self) -> Box<dyn Iterator<Item = BibliographyBuilderRef> + '_> {
-        let tagline_refs = self.entries.tagline().bib_refs();
-        let description_refs = self
-            .entries
-            .description()
-            .iter()
-            .flat_map(TextBuilder::bib_refs);
-
-        Box::new(tagline_refs.chain(description_refs))
-    }
-
-    pub fn set_local_bib_refs(&self, index: &LocalBibliographyBuilderIndex) {
-        self.entries.tagline().set_local_bib_refs(index);
-
-        for text in self.entries.description() {
-            text.set_local_bib_refs(index);
-        }
-    }
-
-    pub fn finish(&self) -> SystemBlock {
-        let id = self.id.clone();
-        let name = self.entries.name().to_owned();
-        let href = self.href.clone();
-        let tagline = self.entries.tagline().finish();
-        let description = self
-            .entries
-            .description()
-            .iter()
-            .map(TextBuilder::finish)
-            .collect();
-
-        SystemBlock::new(id, name, href, tagline, description)
-    }
-
-    pub fn id(&self) -> &str {
-        &self.id
-    }
-}
-
-struct TypeBuilderEntries {
-    names: Vec<String>,
-    taglines: Vec<ParagraphBuilder>,
-    descriptions: Vec<Vec<TextBuilder>>,
-
-    verified: Cell<bool>,
-}
-
-impl TypeBuilderEntries {
-    fn from_pest(pairs: Pairs<Rule>) -> TypeBuilderEntries {
+impl<'a> TypeBuilderEntries<'a> {
+    fn from_pest(pairs: Pairs<Rule>) -> Self {
         let mut names = Vec::with_capacity(1);
         let mut taglines = Vec::with_capacity(1);
         let mut descriptions = Vec::with_capacity(1);
@@ -303,10 +87,10 @@ impl TypeBuilderEntries {
     }
 
     fn verify_structure(
-        &self,
-        self_ref: TypeBuilderRef,
-        directory: &BuilderDirectory,
-        errors: &mut ParsingErrorContext,
+        &'a self,
+        type_ref: &'a TypeBuilder<'a>,
+        index: &BuilderIndex<'a>,
+        errors: &mut ParsingErrorContext<'a>,
     ) {
         assert!(!self.verified.get());
         let mut found_error = false;
@@ -315,7 +99,7 @@ impl TypeBuilderEntries {
             0 => {
                 found_error = true;
                 errors.err(ParsingError::TypeError(
-                    self_ref,
+                    type_ref,
                     TypeParsingError::MissingName,
                 ));
             }
@@ -325,7 +109,7 @@ impl TypeBuilderEntries {
             _ => {
                 found_error = true;
                 errors.err(ParsingError::TypeError(
-                    self_ref,
+                    type_ref,
                     TypeParsingError::DuplicateName,
                 ));
             }
@@ -335,19 +119,25 @@ impl TypeBuilderEntries {
             0 => {
                 found_error = true;
                 errors.err(ParsingError::TypeError(
-                    self_ref,
+                    type_ref,
                     TypeParsingError::MissingTagline,
                 ));
             }
 
-            1 => self.taglines[0].verify_structure(directory, errors, |e| {
-                ParsingError::TypeError(self_ref, TypeParsingError::TaglineParsingError(e))
-            }),
+            1 => {
+                let success = self.taglines[0].verify_structure(index, errors, |e| {
+                    ParsingError::TypeError(type_ref, TypeParsingError::TaglineParsingError(e))
+                });
+
+                if !success {
+                    found_error = true;
+                }
+            }
 
             _ => {
                 found_error = true;
                 errors.err(ParsingError::TypeError(
-                    self_ref,
+                    type_ref,
                     TypeParsingError::DuplicateTagline,
                 ));
             }
@@ -356,20 +146,24 @@ impl TypeBuilderEntries {
         match self.descriptions.len() {
             0 => {}
             1 => {
-                for paragraph in &self.descriptions[0] {
-                    paragraph.verify_structure(directory, errors, |e| {
+                for text in &self.descriptions[0] {
+                    let success = text.verify_structure(index, errors, |e| {
                         ParsingError::TypeError(
-                            self_ref,
-                            TypeParsingError::DescriptionParsingError(e),
+                            type_ref,
+                            TypeParsingError::DescriptionParsingError(text, e),
                         )
-                    })
+                    });
+
+                    if !success {
+                        found_error = true;
+                    }
                 }
             }
 
             _ => {
                 found_error = true;
                 errors.err(ParsingError::TypeError(
-                    self_ref,
+                    type_ref,
                     TypeParsingError::DuplicateDescription,
                 ));
             }
@@ -378,17 +172,31 @@ impl TypeBuilderEntries {
         self.verified.set(!found_error);
     }
 
+    fn bib_refs(&'a self) -> Box<dyn Iterator<Item = &BibliographyBuilderEntry> + '_> {
+        let tagline_refs = self.tagline().bib_refs();
+        let description_refs = self.description().iter().flat_map(TextBuilder::bib_refs);
+
+        Box::new(tagline_refs.chain(description_refs))
+    }
+
+    fn set_local_bib_refs(&'a self, index: &HashMap<&BibliographyBuilderEntry, usize>) {
+        self.tagline().set_local_bib_refs(index);
+        for text in self.description() {
+            text.set_local_bib_refs(index);
+        }
+    }
+
     fn name(&self) -> &str {
         assert!(self.verified.get());
         &self.names[0]
     }
 
-    fn tagline(&self) -> &ParagraphBuilder {
+    fn tagline(&'a self) -> &ParagraphBuilder {
         assert!(self.verified.get());
         &self.taglines[0]
     }
 
-    fn description(&self) -> &[TextBuilder] {
+    fn description(&'a self) -> &[TextBuilder] {
         assert!(self.verified.get());
         if self.descriptions.is_empty() {
             &[]
@@ -398,80 +206,85 @@ impl TypeBuilderEntries {
     }
 }
 
-pub struct TypeBuilder {
+pub struct TypeBuilder<'a> {
     id: String,
     system_id: String,
-    href: String,
-    serial: BlockLocation,
+    serial: usize,
 
-    entries: TypeBuilderEntries,
+    system_ref: OnceCell<&'a SystemBuilder<'a>>,
+    entries: TypeBuilderEntries<'a>,
 
-    self_ref: Option<TypeBuilderRef>,
-    system_ref: Cell<Option<SystemBuilderRef>>,
+    // TODO: Remove.
+    count: OnceCell<usize>,
+
+    // TODO: Remove.
+    href: OnceCell<String>,
 }
 
-impl TypeBuilder {
-    pub fn from_pest(pair: Pair<Rule>, serial: BlockLocation, href: &str) -> TypeBuilder {
+impl<'a> TypeBuilder<'a> {
+    pub fn from_pest(pair: Pair<Rule>, serial: usize) -> Self {
         assert_eq!(pair.as_rule(), Rule::type_block);
 
         let mut inner = pair.into_inner();
         let id = inner.next().unwrap().as_str().to_owned();
         let system_id = inner.next().unwrap().as_str().to_owned();
-        let href = format!("{}#{}", href, id);
         let entries = TypeBuilderEntries::from_pest(inner);
 
         TypeBuilder {
             id,
             system_id,
-            href,
             serial,
 
+            system_ref: OnceCell::new(),
             entries,
 
-            self_ref: None,
-            system_ref: Cell::new(None),
+            count: OnceCell::new(),
+            href: OnceCell::new(),
         }
     }
 
-    pub fn set_self_ref(&mut self, self_ref: TypeBuilderRef) {
-        assert!(self.self_ref.is_none());
-        self.self_ref = Some(self_ref);
+    pub fn set_system_ref(&self, system_ref: &'a SystemBuilder<'a>) {
+        self.system_ref.set(system_ref).unwrap();
     }
 
-    pub fn set_system_ref(&self, system_ref: SystemBuilderRef) {
-        assert!(self.system_ref.get().is_none());
-        self.system_ref.set(Some(system_ref));
+    pub fn verify_structure(
+        &'a self,
+        index: &BuilderIndex<'a>,
+        errors: &mut ParsingErrorContext<'a>,
+    ) {
+        self.entries.verify_structure(self, index, errors);
     }
 
-    pub fn verify_structure(&self, directory: &BuilderDirectory, errors: &mut ParsingErrorContext) {
-        self.entries
-            .verify_structure(self.self_ref.unwrap(), directory, errors);
+    pub fn bib_refs(&'a self) -> Box<dyn Iterator<Item = &BibliographyBuilderEntry> + '_> {
+        self.entries.bib_refs()
     }
 
-    pub fn bib_refs(&self) -> Box<dyn Iterator<Item = BibliographyBuilderRef> + '_> {
-        let tagline_refs = self.entries.tagline().bib_refs();
-        let description_refs = self
-            .entries
-            .description()
-            .iter()
-            .flat_map(TextBuilder::bib_refs);
-
-        Box::new(tagline_refs.chain(description_refs))
+    pub fn set_local_bib_refs(&'a self, index: &HashMap<&BibliographyBuilderEntry, usize>) {
+        self.entries.set_local_bib_refs(index);
     }
 
-    pub fn set_local_bib_refs(&self, index: &LocalBibliographyBuilderIndex) {
-        self.entries.tagline().set_local_bib_refs(index);
-
-        for text in self.entries.description() {
-            text.set_local_bib_refs(index)
-        }
+    // TODO: Remove.
+    pub fn count(&self, count: usize) {
+        self.count.set(count).unwrap();
     }
 
-    pub fn finish(&self) -> TypeBlock {
+    // TODO: Remove.
+    pub fn set_href(&self, book_id: &str, chapter_id: &str, page_id: &str) {
+        let href = format!("/{}/{}/{}#{}", book_id, chapter_id, page_id, &self.id);
+        self.href.set(href).unwrap();
+    }
+
+    // TODO: Remove.
+    pub fn get_ref(&self) -> TypeBlockRef {
+        TypeBlockRef::new(*self.count.get().unwrap())
+    }
+
+    // TODO: Remove.
+    pub fn finish(&'a self) -> TypeBlock {
         let id = self.id.clone();
         let name = self.entries.name().to_owned();
-        let href = self.href.clone();
-        let system = self.system_ref.get().unwrap().finish();
+        let href = self.href.get().unwrap().to_owned();
+        let system = self.system_ref.get().unwrap().get_ref();
         let tagline = self.entries.tagline().finish();
         let description = self
             .entries
@@ -491,167 +304,186 @@ impl TypeBuilder {
         &self.system_id
     }
 
-    pub fn serial(&self) -> BlockLocation {
+    pub fn serial(&self) -> usize {
         self.serial
     }
 }
 
-#[derive(PartialEq, Eq, Clone, Debug)]
-pub struct TypeSignatureGroundBuilder {
-    id: String,
-
-    type_ref: Cell<Option<TypeBuilderRef>>,
+impl<'a> std::fmt::Debug for TypeBuilder<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("Type").field(&self.id).finish()
+    }
 }
 
-impl TypeSignatureGroundBuilder {
-    fn from_pest(pair: Pair<Rule>) -> TypeSignatureGroundBuilder {
+#[derive(Clone, Debug)]
+pub struct TypeSignatureBuilderGround<'a> {
+    id: String,
+
+    type_ref: OnceCell<&'a TypeBuilder<'a>>,
+}
+
+impl<'a> TypeSignatureBuilderGround<'a> {
+    fn from_pest(pair: Pair<Rule>) -> Self {
         assert_eq!(pair.as_rule(), Rule::ident);
 
         let id = pair.as_str().to_owned();
 
-        TypeSignatureGroundBuilder {
+        TypeSignatureBuilderGround {
             id,
 
-            type_ref: Cell::new(None),
+            type_ref: OnceCell::new(),
         }
     }
 
     fn verify_structure<F>(
-        &self,
+        &'a self,
         parent_system: &str,
-        max_serial: BlockLocation,
-        directory: &BuilderDirectory,
-        errors: &mut ParsingErrorContext,
+        max_serial: usize,
+        index: &BuilderIndex<'a>,
+        errors: &mut ParsingErrorContext<'a>,
         generate_error: F,
-    ) where
-        F: Fn(TypeSignatureParsingError) -> ParsingError,
+    ) -> bool
+    where
+        F: Fn(TypeSignatureParsingError<'a>) -> ParsingError<'a>,
     {
-        if let Some(child) = directory.search_system_child(parent_system, &self.id) {
+        if let Some(child) = index.search_system_child(parent_system, &self.id) {
             if let Some(ty) = child.ty() {
-                if directory[ty].serial() < max_serial {
-                    self.type_ref.set(Some(ty))
+                if ty.serial() < max_serial {
+                    self.type_ref.set(ty).unwrap();
+
+                    true
                 } else {
                     errors.err(generate_error(TypeSignatureParsingError::ForwardReference(
-                        ty,
-                    )))
+                        self,
+                    )));
+
+                    false
                 }
             } else {
                 errors.err(generate_error(
-                    TypeSignatureParsingError::SystemChildWrongKind(child),
+                    TypeSignatureParsingError::SystemChildWrongKind(self),
                 ));
-            };
+
+                false
+            }
         } else {
             errors.err(generate_error(TypeSignatureParsingError::TypeIdNotFound(
-                self.id.clone(),
+                self,
             )));
-        }
-    }
 
-    fn finish(&self) -> TypeSignatureBlock {
-        TypeSignatureBlock::Ground(self.type_ref.get().unwrap().finish())
+            false
+        }
     }
 }
 
-impl Hash for TypeSignatureGroundBuilder {
+impl<'a> PartialEq for TypeSignatureBuilderGround<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        let self_ref = *self.type_ref.get().unwrap();
+        let other_ref = *other.type_ref.get().unwrap();
+
+        std::ptr::eq(self_ref, other_ref)
+    }
+}
+impl<'a> Eq for TypeSignatureBuilderGround<'a> {}
+
+impl<'a> Hash for TypeSignatureBuilderGround<'a> {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.id.hash(state);
+        let self_ref = *self.type_ref.get().unwrap();
+
+        (self_ref as *const TypeBuilder).hash(state);
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
-pub enum TypeSignatureBuilder {
-    Ground(TypeSignatureGroundBuilder),
-    Compound(Box<TypeSignatureBuilder>, Box<TypeSignatureBuilder>),
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum TypeSignatureBuilder<'a> {
+    Ground(TypeSignatureBuilderGround<'a>),
+    Compound(Box<TypeSignatureBuilder<'a>>, Box<TypeSignatureBuilder<'a>>),
 }
 
-impl TypeSignatureBuilder {
-    fn from_pest_item(pair: Pair<Rule>) -> TypeSignatureBuilder {
-        match pair.as_rule() {
-            Rule::ident => {
-                TypeSignatureBuilder::Ground(TypeSignatureGroundBuilder::from_pest(pair))
-            }
-
-            Rule::type_signature => TypeSignatureBuilder::from_pest(pair),
-
-            _ => unreachable!(),
-        }
-    }
-
-    fn from_pest(pair: Pair<Rule>) -> TypeSignatureBuilder {
+impl<'a> TypeSignatureBuilder<'a> {
+    fn from_pest(pair: Pair<Rule>) -> Self {
         let items: Vec<_> = pair
             .into_inner()
-            .map(TypeSignatureBuilder::from_pest_item)
+            .map(|pair| match pair.as_rule() {
+                Rule::ident => {
+                    TypeSignatureBuilder::Ground(TypeSignatureBuilderGround::from_pest(pair))
+                }
+                Rule::type_signature => TypeSignatureBuilder::from_pest(pair),
+
+                _ => unreachable!(),
+            })
             .collect();
 
-        // TODO: Rewrite with fold_first when it is stablized.
-        let mut items = items.into_iter().rev();
-        let last_item = items.next().unwrap();
-
-        items.fold(last_item, |tail, prev| {
-            TypeSignatureBuilder::Compound(Box::new(prev), Box::new(tail))
-        })
+        items
+            .into_iter()
+            .rev()
+            .reduce(|tail, prev| TypeSignatureBuilder::Compound(Box::new(prev), Box::new(tail)))
+            .unwrap()
     }
 
-    fn add_inputs<I>(self, inputs: I) -> TypeSignatureBuilder
+    fn extend<I>(self, new_inputs: I) -> Self
     where
-        I: IntoIterator<Item = TypeSignatureBuilder>,
+        I: DoubleEndedIterator<Item = TypeSignatureBuilder<'a>>,
     {
-        inputs.into_iter().fold(self, |tail, prev| {
+        new_inputs.rev().fold(self, |tail, prev| {
             TypeSignatureBuilder::Compound(Box::new(prev), Box::new(tail))
         })
     }
 
     fn verify_structure<F>(
-        &self,
+        &'a self,
         parent_system: &str,
-        max_serial: BlockLocation,
-        directory: &BuilderDirectory,
-        errors: &mut ParsingErrorContext,
+        max_serial: usize,
+        index: &BuilderIndex<'a>,
+        errors: &mut ParsingErrorContext<'a>,
         generate_error: F,
-    ) where
-        F: Fn(TypeSignatureParsingError) -> ParsingError + Copy,
+    ) -> bool
+    where
+        F: Fn(TypeSignatureParsingError<'a>) -> ParsingError<'a> + Copy,
     {
         match self {
-            Self::Ground(ground) => ground.verify_structure(
-                parent_system,
-                max_serial,
-                directory,
-                errors,
-                generate_error,
-            ),
+            Self::Ground(ground) => {
+                ground.verify_structure(parent_system, max_serial, index, errors, generate_error)
+            }
+
             Self::Compound(input, output) => {
-                input.verify_structure(
+                let input_success = input.verify_structure(
                     parent_system,
                     max_serial,
-                    directory,
+                    index,
                     errors,
                     generate_error,
                 );
-                output.verify_structure(
+                let output_success = output.verify_structure(
                     parent_system,
                     max_serial,
-                    directory,
+                    index,
                     errors,
                     generate_error,
                 );
+
+                input_success && output_success
             }
         }
     }
 
+    // TODO: Remove.
     fn finish(&self) -> TypeSignatureBlock {
         match self {
-            Self::Ground(ground) => ground.finish(),
+            Self::Ground(ground) => {
+                TypeSignatureBlock::Ground(ground.type_ref.get().unwrap().get_ref())
+            }
             Self::Compound(input, output) => {
                 TypeSignatureBlock::Compound(Box::new(input.finish()), Box::new(output.finish()))
             }
         }
     }
 
-    fn inputs(&self) -> TypeSignatureBuilderInputs {
+    fn inputs(&'a self) -> TypeSignatureBuilderInputs {
         TypeSignatureBuilderInputs { curr: self }
     }
 
-    fn applied(&self) -> &TypeSignatureBuilder {
+    fn applied(&'a self) -> &TypeSignatureBuilder {
         match self {
             Self::Ground(_) => panic!("Tried to apply an input to a ground type"),
             Self::Compound(_, right) => right,
@@ -660,11 +492,11 @@ impl TypeSignatureBuilder {
 }
 
 struct TypeSignatureBuilderInputs<'a> {
-    curr: &'a TypeSignatureBuilder,
+    curr: &'a TypeSignatureBuilder<'a>,
 }
 
 impl<'a> Iterator for TypeSignatureBuilderInputs<'a> {
-    type Item = &'a TypeSignatureBuilder;
+    type Item = &'a TypeSignatureBuilder<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.curr {
@@ -702,7 +534,6 @@ impl ReadStyle {
     }
 }
 
-// TODO: Add arithmetic operators, i.e. +-*/=
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 enum ReadOperator {
     Negation,
@@ -710,6 +541,11 @@ enum ReadOperator {
     Equivalent,
     And,
     Or,
+
+    Asterisk,
+    Slash,
+    Plus,
+    Minus,
 }
 
 impl ReadOperator {
@@ -723,42 +559,61 @@ impl ReadOperator {
             Rule::operator_and => Self::And,
             Rule::operator_or => Self::Or,
 
+            Rule::operator_asterisk => Self::Asterisk,
+            Rule::operator_slash => Self::Slash,
+            Rule::operator_plus => Self::Plus,
+            Rule::operator_minus => Self::Minus,
+
             _ => unreachable!(),
         }
     }
 
-    fn to_display(&self) -> String {
-        match self {
-            Self::Negation => "\u{00AC}".to_owned(),
-            Self::Implies => "\u{21D2}".to_owned(),
-            Self::Equivalent => "\u{21D4}".to_owned(),
-            Self::And => "\u{2227}".to_owned(),
-            Self::Or => "\u{2228}".to_owned(),
-        }
-    }
-
-    fn prec(&self) -> usize {
+    fn precedence(self) -> usize {
         match self {
             Self::Negation => todo!(),
 
             Self::Equivalent | Self::Implies => 0,
-
             Self::And => 1,
-
             Self::Or => 2,
+
+            Self::Asterisk | Self::Slash => 3,
+            Self::Plus | Self::Minus => 4,
         }
     }
 
-    fn is_left_assoc(&self) -> bool {
+    fn is_left_associative(self) -> bool {
         match self {
             Self::Negation => todo!(),
-            Self::Equivalent | Self::Implies | Self::And | Self::Or => true,
+
+            Self::Equivalent
+            | Self::Implies
+            | Self::And
+            | Self::Or
+            | Self::Asterisk
+            | Self::Slash
+            | Self::Plus
+            | Self::Minus => true,
+        }
+    }
+
+    fn to_display(&self) -> &str {
+        match self {
+            Self::Negation => "\u{00AC}",
+            Self::Implies => "\u{21D2}",
+            Self::Equivalent => "\u{21D4}",
+            Self::And => "\u{2227}",
+            Self::Or => "\u{2228}",
+
+            Self::Asterisk => "\u{22C5}",
+            Self::Slash => "/",
+            Self::Plus => "+",
+            Self::Minus => "-",
         }
     }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub struct ReadBuilder {
+struct ReadBuilder {
     style: ReadStyle,
     operator: ReadOperator,
 }
@@ -776,10 +631,16 @@ impl ReadBuilder {
 
     fn to_display(&self) -> Display {
         let style = self.style.to_display();
-        let operator = self.operator.to_display();
+        let operator = self.operator.to_display().to_owned();
 
         Display::new(style, operator)
     }
+}
+
+#[derive(PartialEq, Eq, Hash, Debug)]
+pub struct ReadSignature<'a> {
+    read: ReadBuilder,
+    inputs: Vec<&'a TypeSignatureBuilder<'a>>,
 }
 
 impl Display {
@@ -790,87 +651,74 @@ impl Display {
     }
 }
 
-struct SymbolBuilderFlags {
-    reflexive: Cell<Option<DeductableBuilderRef>>,
-    symmetric: Cell<Option<DeductableBuilderRef>>,
-    transitive: Cell<Option<DeductableBuilderRef>>,
+#[derive(Default)]
+struct PropertyList<'a> {
+    reflexive: OnceCell<DeductableBuilder<'a>>,
+    symmetric: OnceCell<DeductableBuilder<'a>>,
+    transitive: OnceCell<DeductableBuilder<'a>>,
 }
 
-impl SymbolBuilderFlags {
-    fn new() -> SymbolBuilderFlags {
-        SymbolBuilderFlags {
-            reflexive: Cell::new(None),
-            symmetric: Cell::new(None),
-            transitive: Cell::new(None),
-        }
+impl<'a> PropertyList<'a> {
+    fn new() -> Self {
+        PropertyList::default()
     }
 
-    fn set_reflexive<F>(
+    fn set_reflexive(
         &self,
-        deductable_ref: DeductableBuilderRef,
-        errors: &mut ParsingErrorContext,
-        generate_error: F,
-    ) where
-        F: Fn(SymbolFlagsParsingError) -> ParsingError,
-    {
-        if self.reflexive.get().is_some() {
-            errors.err(generate_error(
-                SymbolFlagsParsingError::RedundantReflexivity(deductable_ref),
+        readable_ref: ReadableBuilder<'a>,
+        deductable_ref: DeductableBuilder<'a>,
+        errors: &mut ParsingErrorContext<'a>,
+    ) {
+        if let Err(deductable_ref) = self.reflexive.set(deductable_ref) {
+            errors.err(ParsingError::ReadableError(
+                readable_ref,
+                ReadableParsingError::DuplicateReflexive(deductable_ref),
             ));
-        } else {
-            self.reflexive.set(Some(deductable_ref));
         }
     }
 
-    fn set_symmetric<F>(
+    fn set_symmetric(
         &self,
-        deductable_ref: DeductableBuilderRef,
-        errors: &mut ParsingErrorContext,
-        generate_error: F,
-    ) where
-        F: Fn(SymbolFlagsParsingError) -> ParsingError,
-    {
-        if self.symmetric.get().is_some() {
-            errors.err(generate_error(SymbolFlagsParsingError::RedundantSymmetry(
-                deductable_ref,
-            )));
-        } else {
-            self.symmetric.set(Some(deductable_ref));
-        }
-    }
-
-    fn set_transitive<F>(
-        &self,
-        deductable_ref: DeductableBuilderRef,
-        errors: &mut ParsingErrorContext,
-        generate_error: F,
-    ) where
-        F: Fn(SymbolFlagsParsingError) -> ParsingError,
-    {
-        if self.transitive.get().is_some() {
-            errors.err(generate_error(
-                SymbolFlagsParsingError::RedundantTransitivity(deductable_ref),
+        readable_ref: ReadableBuilder<'a>,
+        deductable_ref: DeductableBuilder<'a>,
+        errors: &mut ParsingErrorContext<'a>,
+    ) {
+        if let Err(deductable_ref) = self.symmetric.set(deductable_ref) {
+            errors.err(ParsingError::ReadableError(
+                readable_ref,
+                ReadableParsingError::DuplicateReflexive(deductable_ref),
             ));
-        } else {
-            self.transitive.set(Some(deductable_ref));
+        }
+    }
+
+    fn set_transitive(
+        &self,
+        readable_ref: ReadableBuilder<'a>,
+        deductable_ref: DeductableBuilder<'a>,
+        errors: &mut ParsingErrorContext<'a>,
+    ) {
+        if let Err(deductable_ref) = self.transitive.set(deductable_ref) {
+            errors.err(ParsingError::ReadableError(
+                readable_ref,
+                ReadableParsingError::DuplicateReflexive(deductable_ref),
+            ));
         }
     }
 }
 
-struct SymbolBuilderEntries {
+struct SymbolBuilderEntries<'a> {
     names: Vec<String>,
-    taglines: Vec<ParagraphBuilder>,
-    descriptions: Vec<Vec<TextBuilder>>,
-    type_signatures: Vec<TypeSignatureBuilder>,
+    taglines: Vec<ParagraphBuilder<'a>>,
+    descriptions: Vec<Vec<TextBuilder<'a>>>,
+    type_signatures: Vec<TypeSignatureBuilder<'a>>,
     reads: Vec<ReadBuilder>,
     displays: Vec<Display>,
 
-    arity: Cell<Option<usize>>,
     verified: Cell<bool>,
 }
 
-impl SymbolBuilderEntries {
-    fn from_pest(pairs: Pairs<Rule>) -> SymbolBuilderEntries {
+impl<'a> SymbolBuilderEntries<'a> {
+    fn from_pest(pairs: Pairs<Rule>) -> Self {
         let mut names = Vec::with_capacity(1);
         let mut taglines = Vec::with_capacity(1);
         let mut descriptions = Vec::with_capacity(1);
@@ -931,18 +779,15 @@ impl SymbolBuilderEntries {
             reads,
             displays,
 
-            arity: Cell::new(None),
             verified: Cell::new(false),
         }
     }
 
     fn verify_structure(
-        &self,
-        parent_system: &str,
-        symbol_ref: SymbolBuilderRef,
-        min_serial: BlockLocation,
-        directory: &BuilderDirectory,
-        errors: &mut ParsingErrorContext,
+        &'a self,
+        symbol_ref: &'a SymbolBuilder<'a>,
+        index: &BuilderIndex<'a>,
+        errors: &mut ParsingErrorContext<'a>,
     ) {
         assert!(!self.verified.get());
         let mut found_error = false;
@@ -976,9 +821,18 @@ impl SymbolBuilderEntries {
                 ));
             }
 
-            1 => self.taglines[0].verify_structure(directory, errors, |e| {
-                ParsingError::SymbolError(symbol_ref, SymbolParsingError::TaglineParsingError(e))
-            }),
+            1 => {
+                let success = self.taglines[0].verify_structure(index, errors, |e| {
+                    ParsingError::SymbolError(
+                        symbol_ref,
+                        SymbolParsingError::TaglineParsingError(e),
+                    )
+                });
+
+                if !success {
+                    found_error = true;
+                }
+            }
 
             _ => {
                 found_error = true;
@@ -992,13 +846,17 @@ impl SymbolBuilderEntries {
         match self.descriptions.len() {
             0 => {}
             1 => {
-                for paragraph in &self.descriptions[0] {
-                    paragraph.verify_structure(directory, errors, |e| {
+                for text in &self.descriptions[0] {
+                    let success = text.verify_structure(index, errors, |e| {
                         ParsingError::SymbolError(
                             symbol_ref,
-                            SymbolParsingError::DescriptionParsingError(e),
+                            SymbolParsingError::DescriptionParsingError(text, e),
                         )
                     });
+
+                    if !success {
+                        found_error = true;
+                    }
                 }
             }
 
@@ -1020,15 +878,24 @@ impl SymbolBuilderEntries {
                 ));
             }
 
-            1 => self.type_signatures[0].verify_structure(
-                parent_system,
-                min_serial,
-                directory,
-                errors,
-                |e| {
-                    ParsingError::SymbolError(symbol_ref, SymbolParsingError::TypeSignatureError(e))
-                },
-            ),
+            1 => {
+                let success = self.type_signatures[0].verify_structure(
+                    &symbol_ref.system_id,
+                    symbol_ref.serial,
+                    index,
+                    errors,
+                    |e| {
+                        ParsingError::SymbolError(
+                            symbol_ref,
+                            SymbolParsingError::TypeSignatureError(e),
+                        )
+                    },
+                );
+
+                if !success {
+                    found_error = true;
+                }
+            }
 
             _ => {
                 found_error = true;
@@ -1056,7 +923,20 @@ impl SymbolBuilderEntries {
         }
 
         self.verified.set(!found_error);
-        self.arity.set(Some(self.type_signature().inputs().count()));
+    }
+
+    fn bib_refs(&'a self) -> Box<dyn Iterator<Item = &BibliographyBuilderEntry> + '_> {
+        let tagline = self.tagline().bib_refs();
+        let description = self.description().iter().flat_map(TextBuilder::bib_refs);
+
+        Box::new(tagline.chain(description))
+    }
+
+    fn set_local_bib_refs(&'a self, index: &HashMap<&BibliographyBuilderEntry, usize>) {
+        self.tagline().set_local_bib_refs(index);
+        for text in self.description() {
+            text.set_local_bib_refs(index);
+        }
     }
 
     fn name(&self) -> &str {
@@ -1064,12 +944,12 @@ impl SymbolBuilderEntries {
         &self.names[0]
     }
 
-    fn tagline(&self) -> &ParagraphBuilder {
+    fn tagline(&'a self) -> &ParagraphBuilder {
         assert!(self.verified.get());
         &self.taglines[0]
     }
 
-    fn description(&self) -> &[TextBuilder] {
+    fn description(&'a self) -> &[TextBuilder] {
         assert!(self.verified.get());
         if self.descriptions.is_empty() {
             &[]
@@ -1078,14 +958,9 @@ impl SymbolBuilderEntries {
         }
     }
 
-    fn type_signature(&self) -> &TypeSignatureBuilder {
+    fn type_signature(&'a self) -> &TypeSignatureBuilder {
         assert!(self.verified.get());
         &self.type_signatures[0]
-    }
-
-    fn arity(&self) -> usize {
-        assert!(self.verified.get());
-        self.arity.get().unwrap()
     }
 
     fn read(&self) -> Option<ReadBuilder> {
@@ -1108,129 +983,117 @@ impl SymbolBuilderEntries {
     }
 }
 
-pub struct SymbolBuilder {
+pub struct SymbolBuilder<'a> {
     id: String,
     system_id: String,
-    href: String,
-    serial: BlockLocation,
+    serial: usize,
 
-    entries: SymbolBuilderEntries,
+    system_ref: OnceCell<&'a SystemBuilder<'a>>,
+    entries: SymbolBuilderEntries<'a>,
 
-    self_ref: Option<SymbolBuilderRef>,
-    system_ref: Cell<Option<SystemBuilderRef>>,
+    properties: PropertyList<'a>,
 
-    flags: SymbolBuilderFlags,
+    // TODO: Remove.
+    count: OnceCell<usize>,
+
+    // TODO: Remove.
+    href: OnceCell<String>,
 }
 
-impl SymbolBuilder {
-    pub fn from_pest(pair: Pair<Rule>, serial: BlockLocation, href: &str) -> SymbolBuilder {
+impl<'a> SymbolBuilder<'a> {
+    pub fn from_pest(pair: Pair<Rule>, serial: usize) -> Self {
         assert_eq!(pair.as_rule(), Rule::symbol_block);
 
         let mut inner = pair.into_inner();
         let id = inner.next().unwrap().as_str().to_owned();
         let system_id = inner.next().unwrap().as_str().to_owned();
-        let href = format!("{}#{}_{}", href, system_id, id);
 
         let entries = SymbolBuilderEntries::from_pest(inner);
 
         SymbolBuilder {
             id,
             system_id,
-            href,
             serial,
 
+            system_ref: OnceCell::new(),
             entries,
 
-            self_ref: None,
-            system_ref: Cell::new(None),
+            count: OnceCell::new(),
+            href: OnceCell::new(),
 
-            flags: SymbolBuilderFlags::new(),
+            properties: PropertyList::new(),
         }
     }
 
-    pub fn set_self_ref(&mut self, self_ref: SymbolBuilderRef) {
-        assert!(self.self_ref.is_none());
-        self.self_ref = Some(self_ref);
+    pub fn set_system_ref(&self, system_ref: &'a SystemBuilder<'a>) {
+        self.system_ref.set(system_ref).unwrap();
     }
 
-    pub fn set_system_ref(&self, system_ref: SystemBuilderRef) {
-        assert!(self.system_ref.get().is_none());
-        self.system_ref.set(Some(system_ref));
+    pub fn verify_structure(
+        &'a self,
+        index: &BuilderIndex<'a>,
+        errors: &mut ParsingErrorContext<'a>,
+    ) {
+        self.entries.verify_structure(self, index, errors);
     }
 
-    pub fn verify_structure(&self, directory: &BuilderDirectory, errors: &mut ParsingErrorContext) {
-        self.entries.verify_structure(
-            &self.system_id,
-            self.self_ref.unwrap(),
-            self.serial,
-            directory,
-            errors,
-        );
+    pub fn bib_refs(&'a self) -> Box<dyn Iterator<Item = &BibliographyBuilderEntry> + '_> {
+        self.entries.bib_refs()
     }
 
-    pub fn bib_refs(&self) -> Box<dyn Iterator<Item = BibliographyBuilderRef> + '_> {
-        let tagline = self.entries.tagline().bib_refs();
-        let description = self
-            .entries
-            .description()
-            .iter()
-            .flat_map(TextBuilder::bib_refs);
-
-        Box::new(tagline.chain(description))
-    }
-
-    pub fn set_local_bib_refs(&self, index: &LocalBibliographyBuilderIndex) {
-        self.entries.tagline().set_local_bib_refs(index);
-
-        for text in self.entries.description() {
-            text.set_local_bib_refs(index)
-        }
+    pub fn set_local_bib_refs(&'a self, index: &HashMap<&BibliographyBuilderEntry, usize>) {
+        self.entries.set_local_bib_refs(index);
     }
 
     pub fn set_reflexive(
-        &self,
-        deductable_ref: DeductableBuilderRef,
-        errors: &mut ParsingErrorContext,
+        &'a self,
+        deductable_ref: DeductableBuilder<'a>,
+        errors: &mut ParsingErrorContext<'a>,
     ) {
-        self.flags.set_reflexive(deductable_ref, errors, |e| {
-            ParsingError::SymbolError(
-                self.self_ref.unwrap(),
-                SymbolParsingError::SymbolFlagsError(e),
-            )
-        });
+        self.properties
+            .set_reflexive(ReadableBuilder::Symbol(self), deductable_ref, errors);
     }
 
     pub fn set_symmetric(
-        &self,
-        deductable_ref: DeductableBuilderRef,
-        errors: &mut ParsingErrorContext,
+        &'a self,
+        deductable_ref: DeductableBuilder<'a>,
+        errors: &mut ParsingErrorContext<'a>,
     ) {
-        self.flags.set_symmetric(deductable_ref, errors, |e| {
-            ParsingError::SymbolError(
-                self.self_ref.unwrap(),
-                SymbolParsingError::SymbolFlagsError(e),
-            )
-        });
+        self.properties
+            .set_symmetric(ReadableBuilder::Symbol(self), deductable_ref, errors);
     }
 
     pub fn set_transitive(
-        &self,
-        deductable_ref: DeductableBuilderRef,
-        errors: &mut ParsingErrorContext,
+        &'a self,
+        deductable_ref: DeductableBuilder<'a>,
+        errors: &mut ParsingErrorContext<'a>,
     ) {
-        self.flags.set_transitive(deductable_ref, errors, |e| {
-            ParsingError::SymbolError(
-                self.self_ref.unwrap(),
-                SymbolParsingError::SymbolFlagsError(e),
-            )
-        });
+        self.properties
+            .set_transitive(ReadableBuilder::Symbol(self), deductable_ref, errors);
     }
 
-    pub fn finish(&self) -> SymbolBlock {
+    // TODO: Remove.
+    pub fn count(&self, count: usize) {
+        self.count.set(count).unwrap();
+    }
+
+    // TODO: Remove.
+    pub fn get_ref(&self) -> SymbolBlockRef {
+        SymbolBlockRef::new(*self.count.get().unwrap())
+    }
+
+    // TODO: Remove.
+    pub fn set_href(&self, book_id: &str, chapter_id: &str, page_id: &str) {
+        let href = format!("/{}/{}/{}#{}", book_id, chapter_id, page_id, &self.id);
+        self.href.set(href).unwrap();
+    }
+
+    // TODO: Remove.
+    pub fn finish(&'a self) -> SymbolBlock {
         let id = self.id.clone();
         let name = self.entries.name().to_owned();
-        let href = self.href.clone();
-        let system = self.system_ref.get().unwrap().finish();
+        let href = self.href.get().unwrap().to_owned();
+        let system = self.system_ref.get().unwrap().get_ref();
         let tagline = self.entries.tagline().finish();
         let description = self
             .entries
@@ -1262,39 +1125,45 @@ impl SymbolBuilder {
         &self.system_id
     }
 
-    pub fn type_signature(&self) -> &TypeSignatureBuilder {
+    pub fn type_signature(&'a self) -> &TypeSignatureBuilder {
         self.entries.type_signature()
     }
 
-    pub fn read_signature(&self) -> Option<ReadSignature> {
-        self.entries.read().map(|read| {
-            ReadSignature::new(
-                read,
-                self.entries.type_signature().inputs().cloned().collect(),
-            )
+    pub fn read_signature(&'a self) -> Option<ReadSignature> {
+        self.entries.read().map(|read| ReadSignature {
+            read,
+            inputs: self.entries.type_signature().inputs().collect(),
         })
     }
+}
 
-    pub fn as_readable(&self) -> Readable {
-        Readable::symbol(self.self_ref.unwrap(), self.entries.arity())
+impl<'a> PartialEq for SymbolBuilder<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        std::ptr::eq(self, other)
+    }
+}
+impl<'a> Eq for SymbolBuilder<'a> {}
+
+impl<'a> std::fmt::Debug for SymbolBuilder<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("Symbol").field(&self.id).finish()
     }
 }
 
-struct DefinitionBuilderEntries {
+struct DefinitionBuilderEntries<'a> {
     names: Vec<String>,
-    taglines: Vec<ParagraphBuilder>,
-    descriptions: Vec<Vec<TextBuilder>>,
-    inputs: Vec<Vec<VariableBuilder>>,
+    taglines: Vec<ParagraphBuilder<'a>>,
+    descriptions: Vec<Vec<TextBuilder<'a>>>,
+    inputs: Vec<Vec<VariableBuilder<'a>>>,
     reads: Vec<ReadBuilder>,
     displays: Vec<Display>,
-    expansions: Vec<DisplayFormulaBuilder>,
+    expansions: Vec<DisplayFormulaBuilder<'a>>,
 
     verified: Cell<bool>,
-    type_signature: UnsafeCell<Option<TypeSignatureBuilder>>,
 }
 
-impl DefinitionBuilderEntries {
-    pub fn from_pest(pairs: Pairs<Rule>) -> DefinitionBuilderEntries {
+impl<'a> DefinitionBuilderEntries<'a> {
+    pub fn from_pest(pairs: Pairs<Rule>) -> Self {
         let mut names = Vec::with_capacity(1);
         let mut taglines = Vec::with_capacity(1);
         let mut descriptions = Vec::with_capacity(1);
@@ -1364,17 +1233,14 @@ impl DefinitionBuilderEntries {
             expansions,
 
             verified: Cell::new(false),
-            type_signature: UnsafeCell::new(None),
         }
     }
 
     fn verify_structure(
-        &self,
-        parent_system: &str,
-        definition_ref: DefinitionBuilderRef,
-        min_serial: BlockLocation,
-        directory: &BuilderDirectory,
-        errors: &mut ParsingErrorContext,
+        &'a self,
+        definition_ref: &'a DefinitionBuilder<'a>,
+        index: &BuilderIndex<'a>,
+        errors: &mut ParsingErrorContext<'a>,
     ) {
         assert!(!self.verified.get());
         let mut found_error = false;
@@ -1408,12 +1274,18 @@ impl DefinitionBuilderEntries {
                 ));
             }
 
-            1 => self.taglines[0].verify_structure(directory, errors, |e| {
-                ParsingError::DefinitionError(
-                    definition_ref,
-                    DefinitionParsingError::TaglineParsingError(e),
-                )
-            }),
+            1 => {
+                let success = self.taglines[0].verify_structure(index, errors, |e| {
+                    ParsingError::DefinitionError(
+                        definition_ref,
+                        DefinitionParsingError::TaglineParsingError(e),
+                    )
+                });
+
+                if !success {
+                    found_error = true;
+                }
+            }
 
             _ => {
                 found_error = true;
@@ -1427,13 +1299,17 @@ impl DefinitionBuilderEntries {
         match self.descriptions.len() {
             0 => {}
             1 => {
-                for paragraph in &self.descriptions[0] {
-                    paragraph.verify_structure(directory, errors, |e| {
+                for text in &self.descriptions[0] {
+                    let success = text.verify_structure(index, errors, |e| {
                         ParsingError::DefinitionError(
                             definition_ref,
-                            DefinitionParsingError::DescriptionParsingError(e),
+                            DefinitionParsingError::DescriptionParsingError(text, e),
                         )
-                    })
+                    });
+
+                    if !success {
+                        found_error = true;
+                    }
                 }
             }
 
@@ -1449,13 +1325,19 @@ impl DefinitionBuilderEntries {
         match self.inputs.len() {
             0 => {}
             1 => {
-                for (i, var) in self.inputs[0].iter().enumerate() {
-                    var.verify_structure(parent_system, min_serial, directory, errors, |e| {
-                        ParsingError::DefinitionError(
-                            definition_ref,
-                            DefinitionParsingError::VariableError(VariableBuilderRef(i), e),
-                        )
-                    });
+                for var in &self.inputs[0] {
+                    var.verify_structure(
+                        &definition_ref.system_id,
+                        definition_ref.serial,
+                        index,
+                        errors,
+                        |e| {
+                            ParsingError::DefinitionError(
+                                definition_ref,
+                                DefinitionParsingError::VariableError(var, e),
+                            )
+                        },
+                    );
                 }
             }
 
@@ -1487,54 +1369,51 @@ impl DefinitionBuilderEntries {
         self.verified.set(!found_error);
     }
 
+    fn bib_refs(&'a self) -> Box<dyn Iterator<Item = &BibliographyBuilderEntry> + '_> {
+        let tagline = self.tagline().bib_refs();
+        let description = self.description().iter().flat_map(TextBuilder::bib_refs);
+
+        Box::new(tagline.chain(description))
+    }
+
+    fn set_local_bib_refs(&'a self, index: &HashMap<&BibliographyBuilderEntry, usize>) {
+        self.tagline().set_local_bib_refs(index);
+
+        for text in self.description() {
+            text.set_local_bib_refs(index);
+        }
+    }
+
     fn build_formulas(
-        &self,
-        self_ref: DefinitionBuilderRef,
-        parent_system: &str,
-        directory: &BuilderDirectory,
-        errors: &mut ParsingErrorContext,
+        &'a self,
+        definition_ref: &'a DefinitionBuilder<'a>,
+        index: &BuilderIndex<'a>,
+        errors: &mut ParsingErrorContext<'a>,
     ) {
         assert!(self.verified.get());
-        assert!(unsafe {
-            // SAFETY: The only place we get a mutable reference to this is later in this function.
-            // So, there are no mutable references because the only place that can happen hasn't
-            // happened yet.
-            self.type_signature.get().as_ref().unwrap().is_none()
+
+        let local_index = index.get_local(definition_ref.system_id(), self.inputs());
+        let success = self.expanded().build(&local_index, errors, |formula, e| {
+            ParsingError::DefinitionError(
+                definition_ref,
+                DefinitionParsingError::FormulaError(formula, e),
+            )
         });
 
-        let local_index = {
-            let mut tmp = directory.get_local(parent_system);
-            tmp.add_vars(&self.inputs(), errors, |var_ref, e| {
-                ParsingError::DefinitionError(
-                    self_ref,
-                    DefinitionParsingError::VariableError(var_ref, e),
-                )
-            });
-            tmp
-        };
-
-        self.expanded()
-            .build(&local_index, directory, &self.inputs(), errors, |e| {
-                ParsingError::DefinitionError(self_ref, DefinitionParsingError::FormulaError(e))
-            });
-
-        let input_types = self.inputs().iter().map(|var| var.type_signature.clone());
-
-        unsafe {
-            // SAFETY: This is the only place we write to this field, so we don't need to worry
-            // about multiple mutable references. Furthermore, the only time we pass around shared
-            // references is with Self::type_signature(). However, if type_signature() successfully
-            // returned the value, it would mean we have already called this function previously
-            // and the assertion at the beginning of this function would fail. This prevents
-            // aliasing.
-            let type_signature = self.type_signature.get().as_mut().unwrap();
-            *type_signature = Some(
-                self.expanded()
-                    .type_signature(directory, self.inputs())
-                    .clone()
-                    .add_inputs(input_types.rev()),
-            );
+        if !success {
+            return;
         }
+
+        let input_signatures = self.inputs().iter().map(|var| var.type_signature().clone());
+        definition_ref
+            .type_signature
+            .set(
+                self.expanded()
+                    .type_signature()
+                    .clone()
+                    .extend(input_signatures),
+            )
+            .unwrap()
     }
 
     fn name(&self) -> &str {
@@ -1542,12 +1421,12 @@ impl DefinitionBuilderEntries {
         &self.names[0]
     }
 
-    fn tagline(&self) -> &ParagraphBuilder {
+    fn tagline(&'a self) -> &ParagraphBuilder {
         assert!(self.verified.get());
         &self.taglines[0]
     }
 
-    fn description(&self) -> &[TextBuilder] {
+    fn description(&'a self) -> &[TextBuilder] {
         assert!(self.verified.get());
         if self.descriptions.is_empty() {
             &[]
@@ -1556,25 +1435,9 @@ impl DefinitionBuilderEntries {
         }
     }
 
-    fn inputs(&self) -> &[VariableBuilder] {
+    fn inputs(&'a self) -> &[VariableBuilder] {
         assert!(self.verified.get());
         &self.inputs[0]
-    }
-
-    fn arity(&self) -> usize {
-        assert!(self.verified.get());
-        self.inputs[0].len()
-    }
-
-    fn type_signature(&self) -> &TypeSignatureBuilder {
-        unsafe {
-            // SAFETY: The only time we mutable change this reference is in Self::build_formulas().
-            // If we call this function without running build_formulas() first, the unwrap panics.
-            // If we call build_formulas() twice, e.g. while this immutable borrow is still alive,
-            // it's designed to panic before the mutable borrow.
-            let type_signature = self.type_signature.get().as_ref().unwrap();
-            type_signature.as_ref().unwrap()
-        }
     }
 
     fn read(&self) -> Option<ReadBuilder> {
@@ -1596,139 +1459,142 @@ impl DefinitionBuilderEntries {
         }
     }
 
-    fn expanded(&self) -> &DisplayFormulaBuilder {
+    fn expanded(&'a self) -> &DisplayFormulaBuilder {
+        assert!(self.verified.get());
         &self.expansions[0]
     }
 }
 
-pub struct DefinitionBuilder {
+pub struct DefinitionBuilder<'a> {
     id: String,
     system_id: String,
-    href: String,
-    serial: BlockLocation,
+    serial: usize,
 
-    entries: DefinitionBuilderEntries,
+    system_ref: OnceCell<&'a SystemBuilder<'a>>,
+    type_signature: OnceCell<TypeSignatureBuilder<'a>>,
 
-    self_ref: Option<DefinitionBuilderRef>,
-    system_ref: Cell<Option<SystemBuilderRef>>,
+    entries: DefinitionBuilderEntries<'a>,
 
-    flags: SymbolBuilderFlags,
+    properties: PropertyList<'a>,
+
+    // TODO: Remove.
+    count: OnceCell<usize>,
+
+    // TODO: Remove.
+    href: OnceCell<String>,
 }
 
-impl DefinitionBuilder {
-    pub fn from_pest(pair: Pair<Rule>, serial: BlockLocation, href: &str) -> DefinitionBuilder {
+impl<'a> DefinitionBuilder<'a> {
+    pub fn from_pest(pair: Pair<Rule>, serial: usize) -> Self {
         assert_eq!(pair.as_rule(), Rule::definition_block);
 
         let mut inner = pair.into_inner();
         let id = inner.next().unwrap().as_str().to_owned();
         let system_id = inner.next().unwrap().as_str().to_owned();
-        let href = format!("{}#{}_{}", href, system_id, id);
 
         let entries = DefinitionBuilderEntries::from_pest(inner);
 
         DefinitionBuilder {
             id,
             system_id,
-            href,
             serial,
+
+            system_ref: OnceCell::new(),
+            type_signature: OnceCell::new(),
 
             entries,
 
-            self_ref: None,
-            system_ref: Cell::new(None),
+            properties: PropertyList::new(),
 
-            flags: SymbolBuilderFlags::new(),
+            count: OnceCell::new(),
+            href: OnceCell::new(),
         }
     }
 
-    pub fn set_self_ref(&mut self, self_ref: DefinitionBuilderRef) {
-        assert!(self.self_ref.is_none());
-        self.self_ref = Some(self_ref);
+    pub fn set_system_ref(&self, system_ref: &'a SystemBuilder<'a>) {
+        self.system_ref.set(system_ref).unwrap();
     }
 
-    pub fn set_system_ref(&self, system_ref: SystemBuilderRef) {
-        assert!(self.system_ref.get().is_none());
-        self.system_ref.set(Some(system_ref));
+    pub fn verify_structure(
+        &'a self,
+        index: &BuilderIndex<'a>,
+        errors: &mut ParsingErrorContext<'a>,
+    ) {
+        self.entries.verify_structure(self, index, errors);
     }
 
-    pub fn verify_structure(&self, directory: &BuilderDirectory, errors: &mut ParsingErrorContext) {
-        self.entries.verify_structure(
-            &self.system_id,
-            self.self_ref.unwrap(),
-            self.serial,
-            directory,
-            errors,
-        );
+    pub fn bib_refs(&'a self) -> Box<dyn Iterator<Item = &BibliographyBuilderEntry> + '_> {
+        self.entries.bib_refs()
     }
 
-    pub fn bib_refs(&self) -> Box<dyn Iterator<Item = BibliographyBuilderRef> + '_> {
-        let tagline = self.entries.tagline().bib_refs();
-        let description = self
-            .entries
-            .description()
-            .iter()
-            .flat_map(TextBuilder::bib_refs);
-
-        Box::new(tagline.chain(description))
+    pub fn set_local_bib_refs(&'a self, index: &HashMap<&BibliographyBuilderEntry, usize>) {
+        self.entries.set_local_bib_refs(index);
     }
 
-    pub fn set_local_bib_refs(&self, index: &LocalBibliographyBuilderIndex) {
-        self.entries.tagline().set_local_bib_refs(index);
-
-        for text in self.entries.description() {
-            text.set_local_bib_refs(index);
-        }
-    }
-
-    pub fn build_formulas(&self, directory: &BuilderDirectory, errors: &mut ParsingErrorContext) {
-        self.entries
-            .build_formulas(self.self_ref.unwrap(), &self.system_id, directory, errors);
+    pub fn build_formulas(
+        &'a self,
+        index: &BuilderIndex<'a>,
+        errors: &mut ParsingErrorContext<'a>,
+    ) {
+        self.entries.build_formulas(self, index, errors);
     }
 
     pub fn set_reflexive(
-        &self,
-        deductable_ref: DeductableBuilderRef,
-        errors: &mut ParsingErrorContext,
+        &'a self,
+        deductable_ref: DeductableBuilder<'a>,
+        errors: &mut ParsingErrorContext<'a>,
     ) {
-        self.flags.set_reflexive(deductable_ref, errors, |e| {
-            ParsingError::DefinitionError(
-                self.self_ref.unwrap(),
-                DefinitionParsingError::SymbolFlagsError(e),
-            )
-        });
+        self.properties
+            .set_reflexive(ReadableBuilder::Definition(self), deductable_ref, errors);
     }
 
     pub fn set_symmetric(
-        &self,
-        deductable_ref: DeductableBuilderRef,
-        errors: &mut ParsingErrorContext,
+        &'a self,
+        deductable_ref: DeductableBuilder<'a>,
+        errors: &mut ParsingErrorContext<'a>,
     ) {
-        self.flags.set_symmetric(deductable_ref, errors, |e| {
-            ParsingError::DefinitionError(
-                self.self_ref.unwrap(),
-                DefinitionParsingError::SymbolFlagsError(e),
-            )
-        });
+        self.properties
+            .set_symmetric(ReadableBuilder::Definition(self), deductable_ref, errors);
     }
 
     pub fn set_transitive(
-        &self,
-        deductable_ref: DeductableBuilderRef,
-        errors: &mut ParsingErrorContext,
+        &'a self,
+        deductable_ref: DeductableBuilder<'a>,
+        errors: &mut ParsingErrorContext<'a>,
     ) {
-        self.flags.set_transitive(deductable_ref, errors, |e| {
-            ParsingError::DefinitionError(
-                self.self_ref.unwrap(),
-                DefinitionParsingError::SymbolFlagsError(e),
-            )
-        });
+        self.properties
+            .set_transitive(ReadableBuilder::Definition(self), deductable_ref, errors);
     }
 
-    pub fn finish(&self) -> DefinitionBlock {
+    // TODO: Remove.
+    pub fn count(&'a self, count: usize) {
+        self.count.set(count).unwrap();
+
+        for (i, input) in self.entries.inputs().iter().enumerate() {
+            input.count(i);
+        }
+    }
+
+    // TODO: Remove.
+    pub fn set_href(&self, book_id: &str, chapter_id: &str, page_id: &str) {
+        let href = format!(
+            "/{}/{}/{}#{}_{}",
+            book_id, chapter_id, page_id, &self.system_id, &self.id
+        );
+        self.href.set(href).unwrap();
+    }
+
+    // TODO: Remove.
+    pub fn get_ref(&self) -> DefinitionBlockRef {
+        DefinitionBlockRef::new(*self.count.get().unwrap())
+    }
+
+    // TODO: Remove.
+    pub fn finish(&'a self) -> DefinitionBlock {
         let id = self.id.clone();
         let name = self.entries.name().to_owned();
-        let href = self.href.clone();
-        let system = self.system_ref.get().unwrap().finish();
+        let href = self.href.get().unwrap().to_owned();
+        let system = self.system_ref.get().unwrap().get_ref();
         let tagline = self.entries.tagline().finish();
         let description = self
             .entries
@@ -1737,7 +1603,7 @@ impl DefinitionBuilder {
             .map(TextBuilder::finish)
             .collect();
 
-        let type_signature = self.entries.type_signature().finish();
+        let type_signature = self.type_signature.get().unwrap().finish();
         let inputs = self
             .entries
             .inputs()
@@ -1769,60 +1635,158 @@ impl DefinitionBuilder {
         &self.system_id
     }
 
-    pub fn type_signature(&self) -> &TypeSignatureBuilder {
-        self.entries.type_signature()
+    pub fn type_signature(&'a self) -> &TypeSignatureBuilder {
+        &self.type_signature.get().unwrap()
     }
 
-    pub fn read_signature(&self) -> Option<ReadSignature> {
-        self.entries.read().map(|read| {
-            ReadSignature::new(
-                read,
-                self.entries
-                    .inputs()
-                    .iter()
-                    .map(|var| var.type_signature.clone())
-                    .collect(),
-            )
+    pub fn read_signature(&'a self) -> Option<ReadSignature> {
+        self.entries.read().map(|read| ReadSignature {
+            read,
+            inputs: self
+                .entries
+                .inputs()
+                .iter()
+                .map(|var| var.type_signature())
+                .collect(),
         })
     }
+}
 
-    pub fn as_readable(&self) -> Readable {
-        Readable::definition(self.self_ref.unwrap(), self.entries.arity())
+impl<'a> PartialEq for DefinitionBuilder<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        std::ptr::eq(self, other)
+    }
+}
+impl<'a> Eq for DefinitionBuilder<'a> {}
+
+impl<'a> std::fmt::Debug for DefinitionBuilder<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("Definition").field(&self.id).finish()
     }
 }
 
-pub struct VariableBuilder {
-    id: String,
-    type_signature: TypeSignatureBuilder,
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ReadableBuilder<'a> {
+    Symbol(&'a SymbolBuilder<'a>),
+    Definition(&'a DefinitionBuilder<'a>),
 }
 
-impl VariableBuilder {
-    pub fn from_pest(pair: Pair<Rule>) -> VariableBuilder {
+impl<'a> ReadableBuilder<'a> {
+    // TODO: Remove.
+    pub fn id(&self) -> &str {
+        match self {
+            Self::Symbol(symbol_ref) => symbol_ref.id(),
+            Self::Definition(definition_ref) => definition_ref.id(),
+        }
+    }
+
+    pub fn system_id(&self) -> &str {
+        match self {
+            Self::Symbol(symbol_ref) => symbol_ref.system_id(),
+            Self::Definition(definition_ref) => definition_ref.system_id(),
+        }
+    }
+
+    fn type_signature(&'a self) -> &TypeSignatureBuilder {
+        match self {
+            Self::Symbol(symbol_ref) => symbol_ref.type_signature(),
+            Self::Definition(definition_ref) => definition_ref.type_signature(),
+        }
+    }
+
+    pub fn set_reflexive(
+        &self,
+        deductable_ref: DeductableBuilder<'a>,
+        errors: &mut ParsingErrorContext<'a>,
+    ) {
+        match self {
+            Self::Symbol(symbol_ref) => symbol_ref.set_reflexive(deductable_ref, errors),
+            Self::Definition(definition_ref) => {
+                definition_ref.set_reflexive(deductable_ref, errors)
+            }
+        }
+    }
+
+    pub fn set_symmetric(
+        &self,
+        deductable_ref: DeductableBuilder<'a>,
+        errors: &mut ParsingErrorContext<'a>,
+    ) {
+        match self {
+            Self::Symbol(symbol_ref) => symbol_ref.set_symmetric(deductable_ref, errors),
+            Self::Definition(definition_ref) => {
+                definition_ref.set_symmetric(deductable_ref, errors)
+            }
+        }
+    }
+
+    pub fn set_transitive(
+        &self,
+        deductable_ref: DeductableBuilder<'a>,
+        errors: &mut ParsingErrorContext<'a>,
+    ) {
+        match self {
+            Self::Symbol(symbol_ref) => symbol_ref.set_transitive(deductable_ref, errors),
+            Self::Definition(definition_ref) => {
+                definition_ref.set_transitive(deductable_ref, errors)
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct VariableBuilder<'a> {
+    id: String,
+    type_signature: TypeSignatureBuilder<'a>,
+
+    // TODO: Remove.
+    count: OnceCell<usize>,
+}
+
+impl<'a> VariableBuilder<'a> {
+    pub fn from_pest(pair: Pair<Rule>) -> Self {
         assert_eq!(pair.as_rule(), Rule::var_declaration);
 
         let mut inner = pair.into_inner();
         let id = inner.next().unwrap().as_str().to_owned();
         let type_signature = TypeSignatureBuilder::from_pest(inner.next().unwrap());
 
-        VariableBuilder { id, type_signature }
+        VariableBuilder {
+            id,
+            type_signature,
+
+            count: OnceCell::new(),
+        }
     }
 
     pub fn verify_structure<F>(
-        &self,
+        &'a self,
         parent_system: &str,
-        min_serial: BlockLocation,
-        directory: &BuilderDirectory,
-        errors: &mut ParsingErrorContext,
+        max_serial: usize,
+        index: &BuilderIndex<'a>,
+        errors: &mut ParsingErrorContext<'a>,
         generate_error: F,
-    ) where
-        F: Fn(VariableParsingError) -> ParsingError,
+    ) -> bool
+    where
+        F: Fn(VariableParsingError<'a>) -> ParsingError<'a>,
     {
         self.type_signature
-            .verify_structure(parent_system, min_serial, directory, errors, |e| {
+            .verify_structure(parent_system, max_serial, index, errors, |e| {
                 generate_error(VariableParsingError::TypeSignatureError(e))
-            });
+            })
     }
 
+    // TODO: Remove.
+    pub fn count(&self, count: usize) {
+        self.count.set(count).unwrap()
+    }
+
+    // TODO: Remove.
+    pub fn get_ref(&self) -> VariableBlockRef {
+        VariableBlockRef::new(*self.count.get().unwrap())
+    }
+
+    // TODO: Remove.
     pub fn finish(&self) -> VariableBlock {
         let id = self.id.clone();
         let type_signature = self.type_signature.finish();
@@ -1833,30 +1797,49 @@ impl VariableBuilder {
     pub fn id(&self) -> &str {
         &self.id
     }
+
+    pub fn type_signature(&'a self) -> &TypeSignatureBuilder {
+        &self.type_signature
+    }
 }
 
-pub struct FormulaSymbolBuilder {
+impl<'a> PartialEq for VariableBuilder<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        std::ptr::eq(self, other)
+    }
+}
+impl<'a> Eq for VariableBuilder<'a> {}
+
+#[derive(Debug)]
+pub struct FormulaSymbolBuilder<'a> {
     id: String,
+
+    symbol_ref: OnceCell<&'a SymbolBuilder<'a>>,
 }
 
-impl FormulaSymbolBuilder {
-    fn from_pest(pair: Pair<Rule>) -> FormulaSymbolBuilder {
+impl<'a> FormulaSymbolBuilder<'a> {
+    fn from_pest(pair: Pair<Rule>) -> Self {
         assert_eq!(pair.as_rule(), Rule::ident);
 
         let id = pair.as_str().to_owned();
 
-        FormulaSymbolBuilder { id }
+        FormulaSymbolBuilder {
+            id,
+
+            symbol_ref: OnceCell::new(),
+        }
     }
 }
 
-pub struct FormulaVariableBuilder {
+#[derive(Debug)]
+pub struct FormulaVariableBuilder<'a> {
     id: String,
 
-    var_ref: Cell<Option<VariableBuilderRef>>,
+    var_ref: OnceCell<&'a VariableBuilder<'a>>,
 }
 
-impl FormulaVariableBuilder {
-    fn from_pest(pair: Pair<Rule>) -> FormulaVariableBuilder {
+impl<'a> FormulaVariableBuilder<'a> {
+    fn from_pest(pair: Pair<Rule>) -> Self {
         assert_eq!(pair.as_rule(), Rule::var);
 
         let pair = pair.into_inner().next().unwrap();
@@ -1865,221 +1848,237 @@ impl FormulaVariableBuilder {
         FormulaVariableBuilder {
             id,
 
-            var_ref: Cell::new(None),
+            var_ref: OnceCell::new(),
         }
     }
 
     fn build<F>(
-        &self,
-        local_index: &LocalIndex,
-        errors: &mut ParsingErrorContext,
+        &'a self,
+        formula_ref: &'a FormulaBuilder<'a>,
+        local_index: &LocalBuilderIndex<'a, '_>,
+        errors: &mut ParsingErrorContext<'a>,
         generate_error: F,
-    ) where
-        F: Fn(FormulaParsingError) -> ParsingError,
+    ) -> bool
+    where
+        F: Fn(&'a FormulaBuilder<'a>, FormulaParsingError) -> ParsingError<'a>,
     {
         assert!(self.var_ref.get().is_none());
 
-        self.var_ref.set(local_index.search_variable(&self.id));
+        match local_index.search_variable(&self.id) {
+            Some(var) => {
+                self.var_ref.set(var).unwrap();
+                true
+            }
 
-        if self.var_ref.get().is_none() {
-            errors.err(generate_error(FormulaParsingError::VariableIdNotFound(
-                self.id.clone(),
-            )));
+            None => {
+                errors.err(generate_error(
+                    formula_ref,
+                    FormulaParsingError::VariableIdNotFound,
+                ));
+                false
+            }
         }
     }
 
+    // TODO: Remove.
     fn finish(&self) -> FormulaBlock {
-        FormulaBlock::Variable(self.var_ref.get().unwrap().finish())
+        FormulaBlock::Variable(self.var_ref.get().unwrap().get_ref())
     }
 
-    fn type_signature<'a>(&'a self, vars: &'a [VariableBuilder]) -> &'a TypeSignatureBuilder {
-        &vars[self.var_ref.get().unwrap().get()].type_signature
+    fn type_signature(&'a self) -> &TypeSignatureBuilder {
+        self.var_ref.get().unwrap().type_signature()
     }
 }
 
-pub struct FormulaPrefixBuilder {
+#[derive(Debug)]
+pub struct FormulaPrefixBuilder<'a> {
     operator: ReadOperator,
-    inner: Box<FormulaBuilder>,
+    inner: Box<FormulaBuilder<'a>>,
 
-    operator_ref: Cell<Option<Readable>>,
+    operator_ref: OnceCell<ReadableBuilder<'a>>,
 }
 
-impl FormulaPrefixBuilder {
-    fn from_pest(pair: Pair<Rule>, inner: FormulaBuilder) -> FormulaPrefixBuilder {
+impl<'a> FormulaPrefixBuilder<'a> {
+    fn from_pest(pair: Pair<Rule>, inner: FormulaBuilder<'a>) -> Self {
         FormulaPrefixBuilder {
             operator: ReadOperator::from_pest(pair),
             inner: Box::new(inner),
 
-            operator_ref: Cell::new(None),
+            operator_ref: OnceCell::new(),
         }
     }
 
     fn build<F>(
-        &self,
-        local_index: &LocalIndex,
-        directory: &BuilderDirectory,
-        vars: &[VariableBuilder],
-        errors: &mut ParsingErrorContext,
+        &'a self,
+        formula_ref: &'a FormulaBuilder<'a>,
+        local_index: &LocalBuilderIndex<'a, '_>,
+        errors: &mut ParsingErrorContext<'a>,
         generate_error: F,
-    ) where
-        F: Fn(FormulaParsingError) -> ParsingError + Copy,
+    ) -> bool
+    where
+        F: Fn(&'a FormulaBuilder<'a>, FormulaParsingError) -> ParsingError<'a> + Copy,
     {
-        self.inner
-            .build(local_index, directory, vars, errors, generate_error);
+        if !self.inner.build(local_index, errors, generate_error) {
+            return false;
+        };
 
-        let inner_type = self.inner.type_signature(directory, vars);
-        let read_signature = ReadSignature::new(
-            ReadBuilder {
+        let inner_type = self.inner.type_signature();
+        let read_signature = ReadSignature {
+            read: ReadBuilder {
                 style: ReadStyle::Prefix,
                 operator: self.operator,
             },
-            vec![inner_type.clone()],
-        );
+            inputs: vec![inner_type],
+        };
 
-        self.operator_ref
-            .set(local_index.search_operator(&read_signature));
+        match local_index.search_operator(&read_signature) {
+            Some(operator_ref) => {
+                self.operator_ref.set(operator_ref).unwrap();
+                true
+            }
 
-        if self.operator_ref.get().is_none() {
-            errors.err(generate_error(FormulaParsingError::OperatorNotFound(
-                read_signature,
-            )));
+            None => {
+                errors.err(generate_error(
+                    formula_ref,
+                    FormulaParsingError::OperatorNotFound,
+                ));
+                false
+            }
         }
     }
 
     fn finish(&self) -> FormulaBlock {
         let inner = self.inner.finish();
 
-        match self.operator_ref.get().unwrap().kind() {
-            ReadableKind::Symbol(symbol_ref) => FormulaBlock::Application(
-                Box::new(FormulaBlock::Symbol(symbol_ref.finish())),
+        match self.operator_ref.get().unwrap() {
+            ReadableBuilder::Symbol(symbol_ref) => FormulaBlock::Application(
+                Box::new(FormulaBlock::Symbol(symbol_ref.get_ref())),
                 Box::new(inner),
             ),
 
-            ReadableKind::Definition(_) => todo!(),
+            ReadableBuilder::Definition(definition_ref) => {
+                FormulaBlock::Definition(definition_ref.get_ref(), vec![inner])
+            }
         }
     }
 
-    fn type_signature<'a>(&'a self, directory: &'a BuilderDirectory) -> &'a TypeSignatureBuilder {
-        let readable = self.operator_ref.get().unwrap();
-        match readable.kind() {
-            ReadableKind::Symbol(symbol_ref) => directory[symbol_ref].type_signature().applied(),
-            ReadableKind::Definition(_) => todo!(),
-        }
+    fn type_signature(&'a self) -> &TypeSignatureBuilder {
+        self.operator_ref.get().unwrap().type_signature().applied()
     }
 }
 
-pub struct FormulaInfixBuilder {
+#[derive(Debug)]
+pub struct FormulaInfixBuilder<'a> {
     operator: ReadOperator,
-    lhs: Box<FormulaBuilder>,
-    rhs: Box<FormulaBuilder>,
+    lhs: Box<FormulaBuilder<'a>>,
+    rhs: Box<FormulaBuilder<'a>>,
 
-    operator_ref: Cell<Option<Readable>>,
+    operator_ref: OnceCell<ReadableBuilder<'a>>,
 }
 
-impl FormulaInfixBuilder {
-    fn from_op(
-        operator: ReadOperator,
-        lhs: FormulaBuilder,
-        rhs: FormulaBuilder,
-    ) -> FormulaInfixBuilder {
+impl<'a> FormulaInfixBuilder<'a> {
+    fn from_op(operator: ReadOperator, lhs: FormulaBuilder<'a>, rhs: FormulaBuilder<'a>) -> Self {
         FormulaInfixBuilder {
             operator,
             lhs: Box::new(lhs),
             rhs: Box::new(rhs),
 
-            operator_ref: Cell::new(None),
+            operator_ref: OnceCell::new(),
         }
     }
 
     fn build<F>(
-        &self,
-        local_index: &LocalIndex,
-        directory: &BuilderDirectory,
-        vars: &[VariableBuilder],
-        errors: &mut ParsingErrorContext,
+        &'a self,
+        formula_ref: &'a FormulaBuilder<'a>,
+        local_index: &LocalBuilderIndex<'a, '_>,
+        errors: &mut ParsingErrorContext<'a>,
         generate_error: F,
-    ) where
-        F: Fn(FormulaParsingError) -> ParsingError + Copy,
+    ) -> bool
+    where
+        F: Fn(&'a FormulaBuilder<'a>, FormulaParsingError) -> ParsingError<'a> + Copy,
     {
-        self.lhs
-            .build(local_index, directory, vars, errors, generate_error);
-        self.rhs
-            .build(local_index, directory, vars, errors, generate_error);
+        if !self.lhs.build(local_index, errors, generate_error) {
+            return false;
+        }
+        if !self.rhs.build(local_index, errors, generate_error) {
+            return false;
+        }
 
-        let lhs_type = self.lhs.type_signature(directory, vars);
-        let rhs_type = self.rhs.type_signature(directory, vars);
-        let read_signature = ReadSignature::new(
-            ReadBuilder {
+        let lhs_type = self.lhs.type_signature();
+        let rhs_type = self.rhs.type_signature();
+        let read_signature = ReadSignature {
+            read: ReadBuilder {
                 style: ReadStyle::Infix,
                 operator: self.operator,
             },
-            vec![lhs_type.clone(), rhs_type.clone()],
-        );
+            inputs: vec![lhs_type, rhs_type],
+        };
 
-        self.operator_ref
-            .set(local_index.search_operator(&read_signature));
+        match local_index.search_operator(&read_signature) {
+            Some(operator_ref) => {
+                self.operator_ref.set(operator_ref).unwrap();
+                true
+            }
 
-        if self.operator_ref.get().is_none() {
-            errors.err(generate_error(FormulaParsingError::OperatorNotFound(
-                read_signature,
-            )));
+            None => {
+                errors.err(generate_error(
+                    formula_ref,
+                    FormulaParsingError::OperatorNotFound,
+                ));
+                false
+            }
         }
     }
 
+    fn type_signature(&'a self) -> &TypeSignatureBuilder {
+        self.operator_ref
+            .get()
+            .unwrap()
+            .type_signature()
+            .applied()
+            .applied()
+    }
+
+    // TODO: Remove.
     fn finish(&self) -> FormulaBlock {
         let lhs = self.lhs.finish();
         let rhs = self.rhs.finish();
 
-        match self.operator_ref.get().unwrap().kind() {
-            ReadableKind::Symbol(symbol_ref) => FormulaBlock::Application(
+        match self.operator_ref.get().unwrap() {
+            ReadableBuilder::Symbol(symbol_ref) => FormulaBlock::Application(
                 Box::new(FormulaBlock::Application(
-                    Box::new(FormulaBlock::Symbol(symbol_ref.finish())),
+                    Box::new(FormulaBlock::Symbol(symbol_ref.get_ref())),
                     Box::new(lhs),
                 )),
                 Box::new(rhs),
             ),
 
-            ReadableKind::Definition(definition_ref) => {
-                FormulaBlock::Definition(definition_ref.finish(), vec![lhs, rhs])
+            ReadableBuilder::Definition(definition_ref) => {
+                FormulaBlock::Definition(definition_ref.get_ref(), vec![lhs, rhs])
             }
         }
     }
 
-    fn type_signature<'a>(&'a self, directory: &'a BuilderDirectory) -> &'a TypeSignatureBuilder {
-        let readable = self.operator_ref.get().unwrap();
-        match readable.kind() {
-            ReadableKind::Symbol(symbol_ref) => {
-                directory[symbol_ref].type_signature().applied().applied()
-            }
-
-            ReadableKind::Definition(definition_ref) => directory[definition_ref]
-                .type_signature()
-                .applied()
-                .applied(),
-        }
-    }
-
-    fn simple_binary(
-        &self,
-    ) -> Option<(FunctionBuilderRef, VariableBuilderRef, VariableBuilderRef)> {
-        let child_ref = self.operator_ref.get().unwrap().kind().into();
+    fn simple_binary(&'a self) -> Option<(ReadableBuilder, &VariableBuilder, &VariableBuilder)> {
+        let readable = *self.operator_ref.get().unwrap();
         let left = self.lhs.variable()?;
         let right = self.rhs.variable()?;
 
-        Some((child_ref, left, right))
+        Some((readable, left, right))
     }
 }
 
-enum FormulaBuilder {
-    Symbol(FormulaSymbolBuilder),
-    Variable(FormulaVariableBuilder),
+#[derive(Debug)]
+pub enum FormulaBuilder<'a> {
+    Symbol(FormulaSymbolBuilder<'a>),
+    Variable(FormulaVariableBuilder<'a>),
 
-    Prefix(FormulaPrefixBuilder),
-    Infix(FormulaInfixBuilder),
+    Prefix(FormulaPrefixBuilder<'a>),
+    Infix(FormulaInfixBuilder<'a>),
 }
 
-impl FormulaBuilder {
-    fn primary(pair: Pair<Rule>) -> FormulaBuilder {
+impl<'a> FormulaBuilder<'a> {
+    fn primary(pair: Pair<Rule>) -> Self {
         match pair.as_rule() {
             Rule::ident => FormulaBuilder::Symbol(FormulaSymbolBuilder::from_pest(pair)),
             Rule::var => FormulaBuilder::Variable(FormulaVariableBuilder::from_pest(pair)),
@@ -2090,7 +2089,7 @@ impl FormulaBuilder {
         }
     }
 
-    fn prec_climb(pairs: &mut Pairs<Rule>, curr_prec: usize) -> FormulaBuilder {
+    fn prec_climb(pairs: &mut Pairs<Rule>, curr_prec: usize) -> Self {
         let prefix_list = pairs.next().unwrap().into_inner();
 
         let mut primary =
@@ -2103,16 +2102,17 @@ impl FormulaBuilder {
         // Google "Precedence Climbing".
         while let Some(pair) = pairs.peek() {
             let infix = ReadOperator::from_pest(pair);
+            let precedence = infix.precedence();
 
-            if infix.prec() < curr_prec {
+            if precedence < curr_prec {
                 break;
             }
             pairs.next();
 
-            let next_prec = if infix.is_left_assoc() {
-                infix.prec() + 1
+            let next_prec = if infix.is_left_associative() {
+                precedence + 1
             } else {
-                infix.prec()
+                precedence
             };
 
             let rhs = Self::prec_climb(pairs, next_prec);
@@ -2122,123 +2122,111 @@ impl FormulaBuilder {
         primary
     }
 
-    fn from_pest(pair: Pair<Rule>) -> FormulaBuilder {
+    fn from_pest(pair: Pair<Rule>) -> Self {
         assert_eq!(pair.as_rule(), Rule::formula);
 
         Self::prec_climb(&mut pair.into_inner(), 0)
     }
 
     fn build<F>(
-        &self,
-        local_index: &LocalIndex,
-        directory: &BuilderDirectory,
-        vars: &[VariableBuilder],
-        errors: &mut ParsingErrorContext,
+        &'a self,
+        local_index: &LocalBuilderIndex<'a, '_>,
+        errors: &mut ParsingErrorContext<'a>,
         generate_error: F,
-    ) where
-        F: Fn(FormulaParsingError) -> ParsingError + Copy,
+    ) -> bool
+    where
+        F: Fn(&'a FormulaBuilder<'a>, FormulaParsingError) -> ParsingError<'a> + Copy,
     {
         match self {
-            Self::Symbol(builder) => todo!(),
-            Self::Variable(builder) => builder.build(local_index, errors, generate_error),
+            Self::Symbol(_) => todo!(),
+            Self::Variable(formula) => formula.build(self, local_index, errors, generate_error),
 
-            Self::Prefix(builder) => {
-                builder.build(local_index, directory, vars, errors, generate_error)
-            }
-            Self::Infix(builder) => {
-                builder.build(local_index, directory, vars, errors, generate_error)
-            }
+            Self::Prefix(formula) => formula.build(self, local_index, errors, generate_error),
+            Self::Infix(formula) => formula.build(self, local_index, errors, generate_error),
         }
     }
 
     fn finish(&self) -> FormulaBlock {
         match self {
-            Self::Symbol(builder) => todo!(),
-            Self::Variable(builder) => builder.finish(),
+            Self::Symbol(_) => todo!(),
+            Self::Variable(formula) => formula.finish(),
 
-            Self::Prefix(builder) => builder.finish(),
-            Self::Infix(builder) => builder.finish(),
+            Self::Prefix(formula) => formula.finish(),
+            Self::Infix(formula) => formula.finish(),
         }
     }
 
-    fn type_signature<'a>(
-        &'a self,
-        directory: &'a BuilderDirectory,
-        vars: &'a [VariableBuilder],
-    ) -> &'a TypeSignatureBuilder {
+    fn type_signature(&'a self) -> &TypeSignatureBuilder {
         match self {
-            Self::Symbol(builder) => todo!(),
-            Self::Variable(builder) => builder.type_signature(vars),
+            Self::Symbol(_) => todo!(),
+            Self::Variable(formula) => formula.type_signature(),
 
-            Self::Prefix(builder) => builder.type_signature(directory),
-            Self::Infix(builder) => builder.type_signature(directory),
+            Self::Prefix(formula) => formula.type_signature(),
+            Self::Infix(formula) => formula.type_signature(),
         }
     }
 
-    fn variable(&self) -> Option<VariableBuilderRef> {
+    fn variable(&'a self) -> Option<&VariableBuilder> {
         match self {
-            Self::Variable(builder) => Some(builder.var_ref.get().unwrap()),
+            Self::Variable(formula) => Some(formula.var_ref.get().unwrap()),
 
             _ => None,
         }
     }
 
-    fn simple_binary(
-        &self,
-    ) -> Option<(FunctionBuilderRef, VariableBuilderRef, VariableBuilderRef)> {
+    fn simple_binary(&'a self) -> Option<(ReadableBuilder, &VariableBuilder, &VariableBuilder)> {
         match self {
-            Self::Infix(builder) => builder.simple_binary(),
+            Self::Infix(formula) => formula.simple_binary(),
 
             _ => todo!(),
         }
     }
 }
 
-pub struct DisplayFormulaBuilder {
+#[derive(Debug)]
+pub struct DisplayFormulaBuilder<'a> {
     display: MathBuilder,
-    contents: FormulaBuilder,
+    formula: FormulaBuilder<'a>,
 }
 
-impl DisplayFormulaBuilder {
-    pub fn from_pest(pair: Pair<Rule>) -> DisplayFormulaBuilder {
+impl<'a> DisplayFormulaBuilder<'a> {
+    pub fn from_pest(pair: Pair<Rule>) -> Self {
         let display = MathBuilder::from_pest_formula(pair.clone());
-        let contents = FormulaBuilder::from_pest(pair);
+        let formula = FormulaBuilder::from_pest(pair);
 
-        DisplayFormulaBuilder { display, contents }
+        DisplayFormulaBuilder { display, formula }
     }
 
     pub fn build<F>(
-        &self,
-        local_index: &LocalIndex,
-        directory: &BuilderDirectory,
-        vars: &[VariableBuilder],
-        errors: &mut ParsingErrorContext,
-        generate_error: F,
-    ) where
-        F: Fn(FormulaParsingError) -> ParsingError + Copy,
-    {
-        self.contents
-            .build(local_index, directory, vars, errors, generate_error);
-    }
-
-    pub fn type_signature<'a>(
         &'a self,
-        directory: &'a BuilderDirectory,
-        vars: &'a [VariableBuilder],
-    ) -> &'a TypeSignatureBuilder {
-        self.contents.type_signature(directory, vars)
+        local_index: &LocalBuilderIndex<'a, '_>,
+        errors: &mut ParsingErrorContext<'a>,
+        generate_error: F,
+    ) -> bool
+    where
+        F: Fn(&'a FormulaBuilder<'a>, FormulaParsingError) -> ParsingError<'a> + Copy,
+    {
+        self.formula.build(local_index, errors, generate_error)
     }
 
     pub fn finish(&self) -> DisplayFormulaBlock {
         let display = self.display.finish();
-        let contents = self.contents.finish();
+        let formula = self.formula.finish();
 
-        DisplayFormulaBlock::new(display, contents)
+        DisplayFormulaBlock::new(display, formula)
+    }
+
+    pub fn formula(&'a self) -> &FormulaBuilder {
+        &self.formula
+    }
+
+    pub fn type_signature(&'a self) -> &TypeSignatureBuilder {
+        self.formula.type_signature()
     }
 
     pub fn simple_binary(
-        &self,
-    ) -> Option<(FunctionBuilderRef, VariableBuilderRef, VariableBuilderRef)> {
-        self.contents.simple_binary()
+        &'a self,
+    ) -> Option<(ReadableBuilder, &VariableBuilder, &VariableBuilder)> {
+        self.formula.simple_binary()
     }
 }

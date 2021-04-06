@@ -27,6 +27,7 @@ pub struct Page {
 
     blocks: Vec<Block>,
 
+    // TODO: This is always Some, which means we can remove the Option.
     local_bibliography: Option<LocalBibliography>,
 }
 

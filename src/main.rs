@@ -15,14 +15,13 @@
 
 use std::env;
 
-use ckproof::builders::DocumentBuilder;
+use ckproof::builders::ManifestBuilder;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
 
-    let mut builder = DocumentBuilder::from_lib(&args[1]).unwrap();
+    let builder = ManifestBuilder::from_lib(&args[1]);
     let document = builder.build().unwrap();
-
     let checkable = document.checkable();
     let checking_errors = checkable.check();
     if checking_errors.error_found() {

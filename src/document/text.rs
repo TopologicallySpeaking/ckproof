@@ -23,7 +23,7 @@ use crate::rendered::{
 
 use super::directory::{BlockDirectory, BlockReference, LocalBibliographyRef, ProofBlockRef};
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum BareElement {
     OpenBracket,
     CloseBracket,
@@ -60,7 +60,7 @@ impl BareElement {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct BareText {
     elements: Vec<BareElement>,
 }

@@ -17,35 +17,20 @@ use pest::error::Error as PestError;
 use std::io::Error as IoError;
 use url::ParseError as UrlError;
 
-use super::deduction::{Flag, ProofBuilderElementRef};
-use super::directory::{
-    AxiomBuilderRef, BibliographyBuilderRef, DeductableBuilderRef, DefinitionBuilderRef,
-    ProofBuilderRef, ProofBuilderStepRef, QuoteBuilderRef, ReadSignature, Readable, ReadableKind,
-    SymbolBuilderRef, SystemBuilderChild, SystemBuilderRef, TableBuilderRef, TextBlockBuilderRef,
-    TheoremBuilderRef, TodoBuilderRef, TypeBuilderRef, VariableBuilderRef,
+use super::bibliography::BibliographyBuilderEntry;
+use super::language::{
+    DefinitionBuilder, FormulaBuilder, ReadableBuilder, SymbolBuilder, TypeBuilder,
+    TypeSignatureBuilderGround, VariableBuilder,
+};
+use super::structure::{BookBuilder, ChapterBuilder};
+use super::system::{
+    AxiomBuilder, DeductableBuilder, Flag, ProofBuilder, ProofBuilderStep, SystemBuilder,
+    SystemBuilderChild, TheoremBuilder,
 };
 use super::text::{
-    MlaContainerRef, ParagraphBuilderElementRef, TableBuilderCellRef, TodoBuilderElementRef,
+    ParagraphBuilder, QuoteBuilder, RawCitationContainerBuilder, TableBuilder, TextBuilder,
 };
 use super::Rule;
-
-#[derive(Debug)]
-pub enum BuilderCreationError {
-    IoError(IoError),
-    PestError(PestError<Rule>),
-}
-
-impl From<IoError> for BuilderCreationError {
-    fn from(e: IoError) -> BuilderCreationError {
-        BuilderCreationError::IoError(e)
-    }
-}
-
-impl From<PestError<Rule>> for BuilderCreationError {
-    fn from(e: PestError<Rule>) -> BuilderCreationError {
-        BuilderCreationError::PestError(e)
-    }
-}
 
 #[derive(Debug)]
 pub enum ParagraphElementParsingError {
@@ -62,14 +47,14 @@ pub enum ParagraphElementParsingError {
 
 #[derive(Debug)]
 pub enum ParagraphParsingError {
-    ElementError(ParagraphBuilderElementRef, ParagraphElementParsingError),
+    ElementError(usize, ParagraphElementParsingError),
 
     UnclosedUnicornVomit,
     UnclosedEm,
 }
 
 #[derive(Debug)]
-pub enum MlaContainerParsingError {
+pub enum RawCitationContainerParsingError {
     DuplicateTitle,
     DuplicateOtherContributors,
     DuplicateVersion,
@@ -80,60 +65,86 @@ pub enum MlaContainerParsingError {
 }
 
 #[derive(Debug)]
-pub enum MlaParsingError {
+pub enum RawCitationParsingError<'a> {
     MissingTitle,
-    DuplicateName,
+    DuplicateAuthor,
     DuplicateTitle,
 
-    ContainerError(MlaContainerRef, MlaContainerParsingError),
+    ContainerError(
+        &'a RawCitationContainerBuilder,
+        RawCitationContainerParsingError,
+    ),
 }
 
 #[derive(Debug)]
-pub enum TextParsingError {
+pub enum TextParsingError<'a> {
     ParagraphError(ParagraphParsingError),
-    MlaError(MlaParsingError),
+    RawCitationError(RawCitationParsingError<'a>),
 }
 
 #[derive(Debug)]
-pub enum SystemParsingError {
-    IdAlreadyTaken(SystemBuilderRef),
+pub enum BookParsingError {
+    TaglineError(ParagraphParsingError),
+}
+
+#[derive(Debug)]
+pub enum ChapterParsingError {
+    TaglineError(ParagraphParsingError),
+}
+
+#[derive(Debug)]
+pub enum BibliographyParsingError<'a> {
+    KeyAlreadyTaken(&'a BibliographyBuilderEntry),
+    RawCitationError(RawCitationParsingError<'a>),
+}
+
+#[derive(Debug)]
+pub enum SystemParsingError<'a> {
+    IdAlreadyTaken(&'a SystemBuilder<'a>),
 
     MissingName,
     MissingTagline,
     DuplicateName,
     DuplicateTagline,
     DuplicateDescription,
+
     TaglineParsingError(ParagraphParsingError),
-    DescriptionParsingError(TextParsingError),
+    DescriptionParsingError(&'a TextBuilder<'a>, TextParsingError<'a>),
 }
 
 #[derive(Debug)]
-pub enum TypeParsingError {
+pub enum SystemChildParsingError<'a> {
     ParentNotFound,
-    IdAlreadyTaken(SystemBuilderChild),
+    IdAlreadyTaken(SystemBuilderChild<'a>),
+}
 
+#[derive(Debug)]
+pub enum ReadableParsingError<'a> {
+    IdAlreadyTaken(ReadableBuilder<'a>),
+    DuplicateReflexive(DeductableBuilder<'a>),
+}
+
+#[derive(Debug)]
+pub enum TypeParsingError<'a> {
     MissingName,
     MissingTagline,
     DuplicateName,
     DuplicateTagline,
     DuplicateDescription,
+
     TaglineParsingError(ParagraphParsingError),
-    DescriptionParsingError(TextParsingError),
+    DescriptionParsingError(&'a TextBuilder<'a>, TextParsingError<'a>),
 }
 
 #[derive(Debug)]
-pub enum TypeSignatureParsingError {
-    TypeIdNotFound(String),
-    SystemChildWrongKind(SystemBuilderChild),
-    ForwardReference(TypeBuilderRef),
+pub enum TypeSignatureParsingError<'a> {
+    TypeIdNotFound(&'a TypeSignatureBuilderGround<'a>),
+    SystemChildWrongKind(&'a TypeSignatureBuilderGround<'a>),
+    ForwardReference(&'a TypeSignatureBuilderGround<'a>),
 }
 
 #[derive(Debug)]
-pub enum SymbolParsingError {
-    ParentNotFound,
-    IdAlreadyTaken(SystemBuilderChild),
-    ReadSignatureAlreadyTaken(Readable),
-
+pub enum SymbolParsingError<'a> {
     MissingName,
     MissingTagline,
     MissingTypeSignature,
@@ -143,20 +154,14 @@ pub enum SymbolParsingError {
     DuplicateTypeSignature,
     DuplicateReads,
     DuplicateDisplays,
+
     TaglineParsingError(ParagraphParsingError),
-    DescriptionParsingError(TextParsingError),
-
-    TypeSignatureError(TypeSignatureParsingError),
-
-    SymbolFlagsError(SymbolFlagsParsingError),
+    DescriptionParsingError(&'a TextBuilder<'a>, TextParsingError<'a>),
+    TypeSignatureError(TypeSignatureParsingError<'a>),
 }
 
 #[derive(Debug)]
-pub enum DefinitionParsingError {
-    ParentNotFound,
-    IdAlreadyTaken(SystemBuilderChild),
-    ReadSignatureAlreadyTaken(Readable),
-
+pub enum DefinitionParsingError<'a> {
     MissingName,
     MissingTagline,
     DuplicateName,
@@ -165,31 +170,23 @@ pub enum DefinitionParsingError {
     DuplicateInputs,
     DuplicateReads,
     DuplicateDisplays,
-    TaglineParsingError(ParagraphParsingError),
-    DescriptionParsingError(TextParsingError),
 
-    VariableError(VariableBuilderRef, VariableParsingError),
-    FormulaError(FormulaParsingError),
-    SymbolFlagsError(SymbolFlagsParsingError),
+    TaglineParsingError(ParagraphParsingError),
+    DescriptionParsingError(&'a TextBuilder<'a>, TextParsingError<'a>),
+
+    VariableError(&'a VariableBuilder<'a>, VariableParsingError<'a>),
+    FormulaError(&'a FormulaBuilder<'a>, FormulaParsingError),
 }
 
 #[derive(Debug)]
-pub enum VariableParsingError {
-    IdAlreadyTaken(VariableBuilderRef),
-    TypeSignatureError(TypeSignatureParsingError),
+pub enum VariableParsingError<'a> {
+    TypeSignatureError(TypeSignatureParsingError<'a>),
 }
 
 #[derive(Debug)]
 pub enum FormulaParsingError {
-    VariableIdNotFound(String),
-    OperatorNotFound(ReadSignature),
-}
-
-#[derive(Debug)]
-pub enum SymbolFlagsParsingError {
-    RedundantReflexivity(DeductableBuilderRef),
-    RedundantSymmetry(DeductableBuilderRef),
-    RedundantTransitivity(DeductableBuilderRef),
+    VariableIdNotFound,
+    OperatorNotFound,
 }
 
 #[derive(Debug)]
@@ -218,226 +215,151 @@ pub enum FlagListParsingError {
 }
 
 #[derive(Debug)]
-pub enum AxiomParsingError {
-    ParentNotFound,
-    IdAlreadyTaken(SystemBuilderChild),
-
+pub enum AxiomParsingError<'a> {
     MissingName,
     MissingTagline,
-    DuplicateName,
-    DuplicateTagline,
-    DuplicateDescription,
-    TaglineParsingError(ParagraphParsingError),
-    DescriptionParsingError(TextParsingError),
-
-    VariableError(VariableBuilderRef, VariableParsingError),
-    PremiseError(usize, FormulaParsingError),
-    AssertionError(FormulaParsingError),
-}
-
-#[derive(Debug)]
-pub enum TheoremParsingError {
-    ParentNotFound,
-    IdAlreadyTaken(SystemBuilderChild),
-
-    MissingName,
-    MissingTagline,
+    MissingAssertion,
     DuplicateName,
     DuplicateTagline,
     DuplicateDescription,
     DuplicateFlagList,
+    DuplicatePremise,
+    DuplicateAssertion,
+
     TaglineParsingError(ParagraphParsingError),
-    DescriptionParsingError(TextParsingError),
+    DescriptionParsingError(&'a TextBuilder<'a>, TextParsingError<'a>),
     FlagListError(FlagListParsingError),
 
-    VariableError(VariableBuilderRef, VariableParsingError),
-    PremiseError(usize, FormulaParsingError),
-    AssertionError(FormulaParsingError),
+    VariableError(&'a VariableBuilder<'a>, VariableParsingError<'a>),
+    FormulaError(&'a FormulaBuilder<'a>, FormulaParsingError),
 }
 
 #[derive(Debug)]
-pub enum ProofStepParsingError {
-    TagAlreadyTaken(ProofBuilderStepRef),
+pub enum TheoremParsingError<'a> {
+    MissingName,
+    MissingTagline,
+    MissingAssertion,
+    DuplicateName,
+    DuplicateTagline,
+    DuplicateDescription,
+    DuplicateFlagList,
+    DuplicatePremise,
+    DuplicateAssertion,
+
+    TaglineParsingError(ParagraphParsingError),
+    DescriptionParsingError(&'a TextBuilder<'a>, TextParsingError<'a>),
+    FlagListError(FlagListParsingError),
+
+    VariableError(&'a VariableBuilder<'a>, VariableParsingError<'a>),
+    FormulaError(&'a FormulaBuilder<'a>, FormulaParsingError),
+}
+
+#[derive(Debug)]
+pub enum ProofStepParsingError<'a> {
+    TagAlreadyTaken(&'a ProofBuilderStep<'a>),
+
     MissingJustification,
-    DuplicateJustification,
     DuplicateTags,
+    DuplicateJustification,
 
     SystemChildJustificationNotFound,
     SystemChildJustificationWrongKind,
+
+    TheoremJustificationUnproven,
     TheoremJustificationUsedBeforeProof,
     TheoremJustificationCircularProof,
-    TheoremJustificationUnproven,
 
-    FormulaError(FormulaParsingError),
+    HypothesisZeroIndex,
+    HypothesisIndexOutOfRange,
+
+    FormulaError(&'a FormulaBuilder<'a>, FormulaParsingError),
 }
 
 #[derive(Debug)]
-pub enum ProofElementParsingError {
-    TextError(TextParsingError),
-}
-
-#[derive(Debug)]
-pub enum ProofParsingError {
+pub enum ProofParsingError<'a> {
     ParentNotFound,
     ParentNotTheorem,
 
-    VariableError(VariableBuilderRef, VariableParsingError),
-    StepError(ProofBuilderStepRef, ProofStepParsingError),
-    ElementError(ProofBuilderElementRef, ProofElementParsingError),
+    TextError(&'a TextBuilder<'a>, TextParsingError<'a>),
+    StepError(&'a ProofBuilderStep<'a>, ProofStepParsingError<'a>),
 }
 
 #[derive(Debug)]
-pub enum TableParsingError {
-    CellParsingError(TableBuilderCellRef, ParagraphParsingError),
-    CaptionParsingError(ParagraphParsingError),
+pub enum TableParsingError<'a> {
+    CellError(&'a ParagraphBuilder<'a>, ParagraphParsingError),
+    CaptionError(ParagraphParsingError),
+}
+
+#[derive(Debug)]
+pub enum QuoteValueParsingError {
+    BibKeyNotFound,
 }
 
 #[derive(Debug)]
 pub enum QuoteParsingError {
-    OriginalKeyNotFound,
-    ValueKeyNotFound,
+    OriginalError(QuoteValueParsingError),
+    ValueError(QuoteValueParsingError),
 }
 
 #[derive(Debug)]
-pub enum TodoParsingError {
-    TextError(TodoBuilderElementRef, TextParsingError),
-}
-
-#[derive(Debug)]
-pub enum BibliographyParsingError {
-    MlaError(BibliographyBuilderRef, MlaParsingError),
-    KeyAlreadyTaken(BibliographyBuilderRef, BibliographyBuilderRef),
-}
-
-#[derive(Debug)]
-pub enum ParsingError {
+pub enum ParsingError<'a> {
     IoError(IoError),
     PestError(PestError<Rule>),
     UrlError(UrlError),
 
-    SystemError(SystemBuilderRef, SystemParsingError),
-    TypeError(TypeBuilderRef, TypeParsingError),
-    SymbolError(SymbolBuilderRef, SymbolParsingError),
-    DefinitionError(DefinitionBuilderRef, DefinitionParsingError),
-    AxiomError(AxiomBuilderRef, AxiomParsingError),
-    TheoremError(TheoremBuilderRef, TheoremParsingError),
-    ProofError(ProofBuilderRef, ProofParsingError),
+    BookError(&'a BookBuilder<'a>, BookParsingError),
+    ChapterError(&'a ChapterBuilder<'a>, ChapterParsingError),
+    BibliographyError(&'a BibliographyBuilderEntry, BibliographyParsingError<'a>),
 
-    TableError(TableBuilderRef, TableParsingError),
-    QuoteError(QuoteBuilderRef, QuoteParsingError),
-    TodoError(TodoBuilderRef, TodoParsingError),
-    TextBlockError(TextBlockBuilderRef, TextParsingError),
+    SystemError(&'a SystemBuilder<'a>, SystemParsingError<'a>),
+    SystemChildError(SystemBuilderChild<'a>, SystemChildParsingError<'a>),
+    ReadableError(ReadableBuilder<'a>, ReadableParsingError<'a>),
 
-    BibliographyError(BibliographyParsingError),
+    TypeError(&'a TypeBuilder<'a>, TypeParsingError<'a>),
+    SymbolError(&'a SymbolBuilder<'a>, SymbolParsingError<'a>),
+    DefinitionError(&'a DefinitionBuilder<'a>, DefinitionParsingError<'a>),
+    AxiomError(&'a AxiomBuilder<'a>, AxiomParsingError<'a>),
+    TheoremError(&'a TheoremBuilder<'a>, TheoremParsingError<'a>),
+    ProofError(&'a ProofBuilder<'a>, ProofParsingError<'a>),
+
+    TableError(&'a TableBuilder<'a>, TableParsingError<'a>),
+    QuoteError(&'a QuoteBuilder<'a>, QuoteParsingError),
+    TextError(&'a TextBuilder<'a>, TextParsingError<'a>),
 }
 
-impl ParsingError {
-    pub fn system_child_parent_not_found(child_ref: SystemBuilderChild) -> ParsingError {
-        match child_ref {
-            SystemBuilderChild::Type(type_ref) => {
-                ParsingError::TypeError(type_ref, TypeParsingError::ParentNotFound)
-            }
-            SystemBuilderChild::Symbol(symbol_ref) => {
-                ParsingError::SymbolError(symbol_ref, SymbolParsingError::ParentNotFound)
-            }
-            SystemBuilderChild::Definition(definition_ref) => ParsingError::DefinitionError(
-                definition_ref,
-                DefinitionParsingError::ParentNotFound,
-            ),
-            SystemBuilderChild::Axiom(axiom_ref) => {
-                ParsingError::AxiomError(axiom_ref, AxiomParsingError::ParentNotFound)
-            }
-            SystemBuilderChild::Theorem(axiom_ref) => {
-                ParsingError::TheoremError(axiom_ref, TheoremParsingError::ParentNotFound)
-            }
-        }
-    }
-
-    pub fn system_child_id_already_taken(
-        child_ref: SystemBuilderChild,
-        old_ref: SystemBuilderChild,
-    ) -> ParsingError {
-        match child_ref {
-            SystemBuilderChild::Type(type_ref) => {
-                ParsingError::TypeError(type_ref, TypeParsingError::IdAlreadyTaken(old_ref))
-            }
-            SystemBuilderChild::Symbol(symbol_ref) => {
-                ParsingError::SymbolError(symbol_ref, SymbolParsingError::IdAlreadyTaken(old_ref))
-            }
-            SystemBuilderChild::Definition(definition_ref) => ParsingError::DefinitionError(
-                definition_ref,
-                DefinitionParsingError::IdAlreadyTaken(old_ref),
-            ),
-            SystemBuilderChild::Axiom(axiom_ref) => {
-                ParsingError::AxiomError(axiom_ref, AxiomParsingError::IdAlreadyTaken(old_ref))
-            }
-            SystemBuilderChild::Theorem(axiom_ref) => {
-                ParsingError::TheoremError(axiom_ref, TheoremParsingError::IdAlreadyTaken(old_ref))
-            }
-        }
-    }
-
-    pub fn read_signature_already_taken(read: Readable, old_read: Readable) -> ParsingError {
-        match read.kind() {
-            ReadableKind::Symbol(symbol_ref) => ParsingError::SymbolError(
-                symbol_ref,
-                SymbolParsingError::ReadSignatureAlreadyTaken(old_read),
-            ),
-
-            ReadableKind::Definition(definition_ref) => ParsingError::DefinitionError(
-                definition_ref,
-                DefinitionParsingError::ReadSignatureAlreadyTaken(old_read),
-            ),
-        }
-    }
-}
-
-impl From<IoError> for ParsingError {
-    fn from(e: IoError) -> ParsingError {
+impl<'a> From<IoError> for ParsingError<'a> {
+    fn from(e: IoError) -> Self {
         ParsingError::IoError(e)
     }
 }
 
-impl From<PestError<Rule>> for ParsingError {
-    fn from(e: PestError<Rule>) -> ParsingError {
+impl<'a> From<PestError<Rule>> for ParsingError<'a> {
+    fn from(e: PestError<Rule>) -> Self {
         ParsingError::PestError(e)
     }
 }
 
-impl From<UrlError> for ParsingError {
-    fn from(e: UrlError) -> ParsingError {
+impl<'a> From<UrlError> for ParsingError<'a> {
+    fn from(e: UrlError) -> Self {
         ParsingError::UrlError(e)
     }
 }
 
-#[derive(Debug)]
-pub enum ParsingWarning {}
-
-#[derive(Debug)]
-pub struct ParsingErrorContext {
-    warnings: Vec<ParsingWarning>,
-    errors: Vec<ParsingError>,
+#[derive(Default, Debug)]
+pub struct ParsingErrorContext<'a> {
+    errors: Vec<ParsingError<'a>>,
 }
 
-impl ParsingErrorContext {
-    pub fn new() -> ParsingErrorContext {
-        ParsingErrorContext {
-            warnings: Vec::new(),
-            errors: Vec::new(),
-        }
+impl<'a> ParsingErrorContext<'a> {
+    pub fn new() -> Self {
+        Self::default()
     }
 
-    pub fn err<E: Into<ParsingError>>(&mut self, e: E) {
+    pub fn err<E: Into<ParsingError<'a>>>(&mut self, e: E) {
         self.errors.push(e.into());
     }
 
     pub fn error_found(&self) -> bool {
         !self.errors.is_empty()
-    }
-}
-
-impl Default for ParsingErrorContext {
-    fn default() -> Self {
-        Self::new()
     }
 }

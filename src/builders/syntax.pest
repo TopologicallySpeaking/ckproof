@@ -324,48 +324,48 @@ todo_block = {
   ~ "<" ~ "/" ~ "todo" ~ ">"
 }
 
-mla = {
-  "<" ~ "mla" ~ ">"
-    ~ mla_entry*
-  ~ "<" ~ "/" ~ "mla" ~ ">"
+raw_citation = {
+  "<" ~ "raw_citation" ~ ">"
+    ~ raw_citation_entry*
+  ~ "<" ~ "/" ~ "raw_citation" ~ ">"
 }
-mla_entry = _{
-  mla_authors | mla_title | mla_container
+raw_citation_entry = _{
+  raw_citation_authors | raw_citation_title | raw_citation_container
 }
-mla_authors = {
+raw_citation_authors = {
   "authors" ~ "=" ~ "{" ~ unformatted ~ "}"
 }
-mla_title = {
+raw_citation_title = {
   "title" ~ "=" ~ "{" ~ unformatted ~ "}"
 }
-mla_container = {
+raw_citation_container = {
   "container" ~ "{"
-    ~ mla_container_entry*
+    ~ raw_citation_container_entry*
   ~ "}"
 }
-mla_container_entry = _{
-  mla_container_title | mla_other_contributors | mla_version | mla_number
-  | mla_publisher | mla_publication_date | mla_location
+raw_citation_container_entry = _{
+  raw_citation_container_title | raw_citation_other_contributors | raw_citation_version | raw_citation_number
+  | raw_citation_publisher | raw_citation_publication_date | raw_citation_location
 }
-mla_container_title = {
+raw_citation_container_title = {
   "container_title" ~ "=" ~ "{" ~ unformatted ~ "}"
 }
-mla_other_contributors = {
+raw_citation_other_contributors = {
   "other_contributors" ~ "=" ~ "{" ~ unformatted ~ "}"
 }
-mla_version= {
+raw_citation_version= {
   "version" ~ "=" ~ "{" ~ unformatted ~ "}"
 }
-mla_number = {
+raw_citation_number = {
   "number" ~ "=" ~ "{" ~ unformatted ~ "}"
 }
-mla_publisher = {
+raw_citation_publisher = {
   "publisher" ~ "=" ~ "{" ~ unformatted ~ "}"
 }
-mla_publication_date = {
+raw_citation_publication_date = {
   "publication_date" ~ "=" ~ "{" ~ unformatted ~ "}"
 }
-mla_location = {
+raw_citation_location = {
   "location" ~ "=" ~ "{" ~ unformatted ~ "}"
 }
 
@@ -380,7 +380,7 @@ sublist = {
 }
 
 heading_block = { subheading+ }
-text_block = { mla | sublist | display_math | paragraph }
+text_block = { raw_citation | sublist | display_math | paragraph }
 
 document = { SOI ~ document_block* ~ EOI }
 document_block = _{
@@ -408,7 +408,7 @@ manifest_page = { ident ~ ":" ~ string ~ "," }
 bib = { SOI ~ bib_entry* ~ EOI }
 bib_entry = {
   ident ~ "{"
-    ~ mla_entry*
+    ~ raw_citation_entry*
   ~ "}"
 }
 

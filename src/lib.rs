@@ -14,12 +14,15 @@
 // not, see <https://www.gnu.org/licenses/>.
 
 #![deny(clippy::all)]
+#![feature(nll)]
+#![feature(once_cell)]
 
 pub mod builders;
 pub mod deduction;
 pub mod document;
 pub mod rendered;
 
+// TODO: Move somewhere more reasonable.
 fn map_ident(ident: &str) -> &str {
     match ident {
         "alpha" => "\u{03B1}",
