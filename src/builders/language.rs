@@ -680,6 +680,10 @@ impl<'a> PropertyList<'a> {
         }
     }
 
+    fn get_reflexive(&'a self) -> Option<DeductableBuilder> {
+        self.reflexive.get().copied()
+    }
+
     fn set_symmetric(
         &self,
         readable_ref: ReadableBuilder<'a>,
@@ -692,6 +696,10 @@ impl<'a> PropertyList<'a> {
                 ReadableParsingError::DuplicateSymmetric(deductable_ref),
             ));
         }
+    }
+
+    fn get_symmetric(&'a self) -> Option<DeductableBuilder> {
+        self.symmetric.get().copied()
     }
 
     fn set_transitive(
@@ -708,6 +716,7 @@ impl<'a> PropertyList<'a> {
         }
     }
 
+    // TODO: Allow inputs to use different preorders.
     fn set_function(
         &self,
         readable_ref: ReadableBuilder<'a>,
@@ -728,6 +737,10 @@ impl<'a> PropertyList<'a> {
                 slot.insert(deductable_ref);
             }
         }
+    }
+
+    fn get_function(&'a self, relation: ReadableBuilder<'a>) -> Option<DeductableBuilder> {
+        self.function.borrow().get(&relation).copied()
     }
 
     fn is_reflexive(&self) -> bool {
@@ -1095,6 +1108,10 @@ impl<'a> SymbolBuilder<'a> {
             .set_reflexive(ReadableBuilder::Symbol(self), deductable_ref, errors);
     }
 
+    pub fn get_reflexive(&'a self) -> Option<DeductableBuilder> {
+        self.properties.get_reflexive()
+    }
+
     pub fn set_symmetric(
         &'a self,
         deductable_ref: DeductableBuilder<'a>,
@@ -1102,6 +1119,10 @@ impl<'a> SymbolBuilder<'a> {
     ) {
         self.properties
             .set_symmetric(ReadableBuilder::Symbol(self), deductable_ref, errors);
+    }
+
+    pub fn get_symmetric(&'a self) -> Option<DeductableBuilder> {
+        self.properties.get_symmetric()
     }
 
     pub fn set_transitive(
@@ -1125,6 +1146,10 @@ impl<'a> SymbolBuilder<'a> {
             relation,
             errors,
         );
+    }
+
+    pub fn get_function(&'a self, relation: ReadableBuilder<'a>) -> Option<DeductableBuilder> {
+        self.properties.get_function(relation)
     }
 
     pub fn is_reflexive(&self) -> bool {
@@ -1626,6 +1651,10 @@ impl<'a> DefinitionBuilder<'a> {
             .set_reflexive(ReadableBuilder::Definition(self), deductable_ref, errors);
     }
 
+    pub fn get_reflexive(&'a self) -> Option<DeductableBuilder> {
+        self.properties.get_reflexive()
+    }
+
     pub fn set_symmetric(
         &'a self,
         deductable_ref: DeductableBuilder<'a>,
@@ -1633,6 +1662,10 @@ impl<'a> DefinitionBuilder<'a> {
     ) {
         self.properties
             .set_symmetric(ReadableBuilder::Definition(self), deductable_ref, errors);
+    }
+
+    pub fn get_symmetric(&'a self) -> Option<DeductableBuilder> {
+        self.properties.get_symmetric()
     }
 
     pub fn set_transitive(
@@ -1656,6 +1689,10 @@ impl<'a> DefinitionBuilder<'a> {
             relation,
             errors,
         );
+    }
+
+    pub fn get_function(&'a self, relation: ReadableBuilder<'a>) -> Option<DeductableBuilder> {
+        self.properties.get_function(relation)
     }
 
     pub fn is_reflexive(&self) -> bool {
@@ -1822,6 +1859,13 @@ impl<'a> ReadableBuilder<'a> {
         }
     }
 
+    pub fn get_reflexive(self) -> Option<DeductableBuilder<'a>> {
+        match self {
+            Self::Symbol(symbol_ref) => symbol_ref.get_reflexive(),
+            Self::Definition(definition_ref) => definition_ref.get_reflexive(),
+        }
+    }
+
     pub fn set_symmetric(
         &self,
         deductable_ref: DeductableBuilder<'a>,
@@ -1832,6 +1876,13 @@ impl<'a> ReadableBuilder<'a> {
             Self::Definition(definition_ref) => {
                 definition_ref.set_symmetric(deductable_ref, errors)
             }
+        }
+    }
+
+    pub fn get_symmetric(self) -> Option<DeductableBuilder<'a>> {
+        match self {
+            Self::Symbol(symbol_ref) => symbol_ref.get_symmetric(),
+            Self::Definition(definition_ref) => definition_ref.get_symmetric(),
         }
     }
 
@@ -1859,6 +1910,13 @@ impl<'a> ReadableBuilder<'a> {
             Self::Definition(definition_ref) => {
                 definition_ref.set_function(deductable_ref, relation, errors)
             }
+        }
+    }
+
+    pub fn get_function(self, relation: ReadableBuilder<'a>) -> Option<DeductableBuilder> {
+        match self {
+            Self::Symbol(symbol_ref) => symbol_ref.get_function(relation),
+            Self::Definition(definition_ref) => definition_ref.get_function(relation),
         }
     }
 
@@ -1974,6 +2032,13 @@ impl<'a> FormulaSymbolBuilder<'a> {
     }
 }
 
+impl<'a> PartialEq for FormulaSymbolBuilder<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        todo!()
+    }
+}
+impl<'a> Eq for FormulaSymbolBuilder<'a> {}
+
 #[derive(Clone, Debug)]
 pub struct FormulaVariableBuilder<'a> {
     id: String,
@@ -2032,6 +2097,13 @@ impl<'a> FormulaVariableBuilder<'a> {
         self.var_ref.get().unwrap().type_signature()
     }
 }
+
+impl<'a> PartialEq for FormulaVariableBuilder<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        self.var_ref.get().unwrap() == other.var_ref.get().unwrap()
+    }
+}
+impl<'a> Eq for FormulaVariableBuilder<'a> {}
 
 #[derive(Clone, Debug)]
 pub struct FormulaPrefixBuilder<'a> {
@@ -2121,6 +2193,14 @@ impl<'a> FormulaPrefixBuilder<'a> {
         Some((readable, inputs))
     }
 }
+
+impl<'a> PartialEq for FormulaPrefixBuilder<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        self.operator_ref.get().unwrap() == other.operator_ref.get().unwrap()
+            && self.inner == other.inner
+    }
+}
+impl<'a> Eq for FormulaPrefixBuilder<'a> {}
 
 #[derive(Clone, Debug)]
 pub struct FormulaInfixBuilder<'a> {
@@ -2238,6 +2318,61 @@ impl<'a> FormulaInfixBuilder<'a> {
     }
 }
 
+impl<'a> PartialEq for FormulaInfixBuilder<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        self.operator_ref.get().unwrap() == other.operator_ref.get().unwrap()
+            && self.lhs == other.lhs
+            && self.rhs == other.rhs
+    }
+}
+impl<'a> Eq for FormulaInfixBuilder<'a> {}
+
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct FormulaReadableApplicationBuilder<'a> {
+    readable: ReadableBuilder<'a>,
+    inputs: Vec<FormulaBuilder<'a>>,
+}
+
+impl<'a> FormulaReadableApplicationBuilder<'a> {
+    pub fn new(readable: ReadableBuilder<'a>, inputs: Vec<FormulaBuilder<'a>>) -> Self {
+        FormulaReadableApplicationBuilder { readable, inputs }
+    }
+
+    pub fn test(&self, other: &FormulaBuilder<'a>) -> bool {
+        match other {
+            FormulaBuilder::Symbol(_) => todo!(),
+            FormulaBuilder::Variable(_) => false,
+
+            FormulaBuilder::Prefix(_) => todo!(),
+            FormulaBuilder::Infix(formula) => {
+                self.inputs.len() == 2
+                    && &self.readable == formula.operator_ref.get().unwrap()
+                    && &self.inputs[0] == formula.lhs.as_ref()
+                    && &self.inputs[1] == formula.rhs.as_ref()
+            }
+
+            FormulaBuilder::ReadableApplication(app) => self == app,
+        }
+    }
+
+    // TODO: Remove.
+    fn finish(&self) -> FormulaBlock {
+        match self.readable {
+            ReadableBuilder::Symbol(symbol_ref) => self
+                .inputs
+                .iter()
+                .fold(FormulaBlock::Symbol(symbol_ref.get_ref()), |curr, input| {
+                    FormulaBlock::Application(Box::new(curr), Box::new(input.finish()))
+                }),
+
+            ReadableBuilder::Definition(definition_ref) => FormulaBlock::Definition(
+                definition_ref.get_ref(),
+                self.inputs.iter().map(FormulaBuilder::finish).collect(),
+            ),
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum FormulaBuilder<'a> {
     Symbol(FormulaSymbolBuilder<'a>),
@@ -2245,6 +2380,8 @@ pub enum FormulaBuilder<'a> {
 
     Prefix(FormulaPrefixBuilder<'a>),
     Infix(FormulaInfixBuilder<'a>),
+
+    ReadableApplication(FormulaReadableApplicationBuilder<'a>),
 }
 
 impl<'a> FormulaBuilder<'a> {
@@ -2313,6 +2450,8 @@ impl<'a> FormulaBuilder<'a> {
 
             Self::Prefix(formula) => formula.build(self, local_index, errors, generate_error),
             Self::Infix(formula) => formula.build(self, local_index, errors, generate_error),
+
+            Self::ReadableApplication(_) => unreachable!(),
         }
     }
 
@@ -2323,6 +2462,8 @@ impl<'a> FormulaBuilder<'a> {
 
             Self::Prefix(formula) => formula.finish(),
             Self::Infix(formula) => formula.finish(),
+
+            Self::ReadableApplication(formula) => formula.finish(),
         }
     }
 
@@ -2333,6 +2474,8 @@ impl<'a> FormulaBuilder<'a> {
 
             Self::Prefix(formula) => formula.type_signature(),
             Self::Infix(formula) => formula.type_signature(),
+
+            Self::ReadableApplication(formula) => todo!(),
         }
     }
 
@@ -2344,7 +2487,7 @@ impl<'a> FormulaBuilder<'a> {
         }
     }
 
-    fn binary(&'a self) -> Option<(ReadableBuilder, &FormulaBuilder, &FormulaBuilder)> {
+    pub fn binary(&'a self) -> Option<(ReadableBuilder, &FormulaBuilder, &FormulaBuilder)> {
         match self {
             Self::Infix(formula) => formula.binary(),
 
@@ -2352,7 +2495,9 @@ impl<'a> FormulaBuilder<'a> {
         }
     }
 
-    fn simple_binary(&'a self) -> Option<(ReadableBuilder, &VariableBuilder, &VariableBuilder)> {
+    pub fn simple_binary(
+        &'a self,
+    ) -> Option<(ReadableBuilder, &VariableBuilder, &VariableBuilder)> {
         self.binary().and_then(|(readable_ref, left, right)| {
             Some((readable_ref, left.variable()?, right.variable()?))
         })
@@ -2372,6 +2517,26 @@ impl<'a> FormulaBuilder<'a> {
         }
     }
 }
+
+impl<'a> PartialEq for FormulaBuilder<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Symbol(self_symbol), Self::Symbol(other_symbol)) => self_symbol == other_symbol,
+            (Self::Variable(self_variable), Self::Variable(other_variable)) => {
+                self_variable == other_variable
+            }
+
+            (Self::Prefix(self_prefix), Self::Prefix(other_prefix)) => self_prefix == other_prefix,
+            (Self::Infix(self_infix), Self::Infix(other_infix)) => self_infix == other_infix,
+
+            (Self::ReadableApplication(self_app), _) => self_app.test(other),
+            (_, Self::ReadableApplication(other_app)) => other_app.test(self),
+
+            _ => false,
+        }
+    }
+}
+impl<'a> Eq for FormulaBuilder<'a> {}
 
 #[derive(Debug)]
 pub struct DisplayFormulaBuilder<'a> {

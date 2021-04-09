@@ -37,8 +37,8 @@ use super::errors::{
 };
 use super::index::{BuilderIndex, LocalBuilderIndex};
 use super::language::{
-    DefinitionBuilder, DisplayFormulaBuilder, FormulaBuilder, SymbolBuilder, TypeBuilder,
-    VariableBuilder,
+    DefinitionBuilder, DisplayFormulaBuilder, FormulaBuilder, FormulaReadableApplicationBuilder,
+    ReadableBuilder, SymbolBuilder, TypeBuilder, VariableBuilder,
 };
 use super::text::{ParagraphBuilder, TextBuilder};
 use super::Rule;
@@ -1950,6 +1950,7 @@ impl<'a> SystemChildJustificationBuilder<'a> {
 #[derive(Debug)]
 enum MacroJustificationBuilder {
     Definition,
+    Substitution,
 }
 
 impl MacroJustificationBuilder {
@@ -1958,26 +1959,127 @@ impl MacroJustificationBuilder {
 
         match pair.into_inner().next().unwrap().as_rule() {
             Rule::macro_justification_by_definition => Self::Definition,
+            Rule::macro_justification_by_substitution => Self::Substitution,
 
             _ => unreachable!(),
         }
     }
 
+    fn build_substitution_iter<'a>(
+        left: &'a FormulaBuilder<'a>,
+        right: &'a FormulaBuilder<'a>,
+        relation: ReadableBuilder<'a>,
+        prev_steps: &'a [ProofBuilderElement<'a>],
+    ) -> Box<dyn Iterator<Item = Option<ProofBuilderSmallStep<'a>>> + 'a> {
+        let formula = FormulaBuilder::ReadableApplication(FormulaReadableApplicationBuilder::new(
+            relation,
+            vec![left.clone(), right.clone()],
+        ));
+        let formula_reversed = FormulaBuilder::ReadableApplication(
+            FormulaReadableApplicationBuilder::new(relation, vec![right.clone(), left.clone()]),
+        );
+
+        // If this formula has already been derived.
+        if prev_steps.iter().any(|step| step.eq_formula(&formula)) {
+            Box::new(std::iter::empty())
+        }
+        // If this formula has been derived, but backwards. For example, we need a = b but we have
+        // b = a, but we can switch the order by symmetry.
+        else if relation.is_symmetric()
+            && prev_steps
+                .iter()
+                .any(|step| step.eq_formula(&formula_reversed))
+        {
+            let deductable_ref = relation.get_symmetric().unwrap();
+            let ret = Some(ProofBuilderSmallStep {
+                justification: ProofBuilderSmallJustification::from_deductable(deductable_ref),
+                formula,
+            });
+
+            Box::new(std::iter::once(ret))
+        }
+        // If this formula can be derived by relfexivity.
+        else if left == right {
+            let deductable_ref = relation.get_reflexive().unwrap();
+            let ret = Some(ProofBuilderSmallStep {
+                justification: ProofBuilderSmallJustification::from_deductable(deductable_ref),
+                formula,
+            });
+
+            Box::new(std::iter::once(ret))
+        }
+        // Test if we can use function substitution over the relation.
+        else if let (Some((left_function, left_inputs)), Some((right_function, right_inputs))) =
+            (left.application(), right.application())
+        {
+            if left_inputs.len() != right_inputs.len() {
+                todo!()
+            }
+
+            let input_steps =
+                left_inputs
+                    .zip(right_inputs)
+                    .flat_map(move |(left_input, right_input)| {
+                        Self::build_substitution_iter(left_input, right_input, relation, prev_steps)
+                    });
+
+            if left_function != right_function {
+                todo!()
+            }
+
+            if let Some(deductable_ref) = left_function.get_function(relation) {
+                Box::new(
+                    input_steps.chain(std::iter::once(Some(ProofBuilderSmallStep {
+                        justification: ProofBuilderSmallJustification::from_deductable(
+                            deductable_ref,
+                        ),
+                        formula,
+                    }))),
+                )
+            } else {
+                todo!()
+            }
+        }
+        // This statement cannot be derived by simple substitution.
+        else {
+            todo!()
+        }
+    }
+
+    fn build_substitution<'a>(
+        formula: &'a FormulaBuilder<'a>,
+        prev_steps: &'a [ProofBuilderElement<'a>],
+    ) -> Option<Vec<ProofBuilderSmallStep<'a>>> {
+        if let Some((relation, left, right)) = formula.binary() {
+            if !relation.is_preorder() {
+                todo!()
+            }
+
+            Self::build_substitution_iter(left, right, relation, prev_steps).collect()
+        } else {
+            todo!()
+        }
+    }
+
     fn build_small_steps<'a>(
         &'a self,
-        formula: &FormulaBuilder<'a>,
+        formula: &'a FormulaBuilder<'a>,
+        prev_steps: &'a [ProofBuilderElement<'a>],
     ) -> Option<Vec<ProofBuilderSmallStep>> {
         match self {
             Self::Definition => Some(vec![ProofBuilderSmallStep {
                 justification: ProofBuilderSmallJustification::Definition,
                 formula: formula.clone(),
             }]),
+
+            Self::Substitution => Self::build_substitution(formula, prev_steps),
         }
     }
 
     fn finish(&self) -> ProofBlockJustification {
         match self {
             Self::Definition => ProofBlockJustification::Definition,
+            Self::Substitution => ProofBlockJustification::Substitution,
         }
     }
 }
@@ -2054,12 +2156,13 @@ impl<'a> ProofJustificationBuilder<'a> {
 
     fn build_small_steps(
         &'a self,
-        formula: &FormulaBuilder<'a>,
+        formula: &'a FormulaBuilder<'a>,
+        prev_steps: &'a [ProofBuilderElement<'a>],
         errors: &mut ParsingErrorContext,
     ) -> Option<Vec<ProofBuilderSmallStep>> {
         match self {
             Self::SystemChild(justification) => justification.build_small_steps(formula),
-            Self::Macro(justification) => justification.build_small_steps(formula),
+            Self::Macro(justification) => justification.build_small_steps(formula, prev_steps),
             Self::Hypothesis(id) => Some(vec![ProofBuilderSmallStep {
                 justification: ProofBuilderSmallJustification::Hypothesis(*id),
                 formula: formula.clone(),
@@ -2216,12 +2319,14 @@ impl<'a> ProofBuilderMeta<'a> {
 
     fn build_small_steps(
         &'a self,
-        formula: &FormulaBuilder<'a>,
+        formula: &'a FormulaBuilder<'a>,
+        prev_steps: &'a [ProofBuilderElement<'a>],
         errors: &mut ParsingErrorContext,
     ) -> Option<Vec<ProofBuilderSmallStep>> {
         assert!(self.justification_verified.get());
 
-        self.justification().build_small_steps(formula, errors)
+        self.justification()
+            .build_small_steps(formula, prev_steps, errors)
     }
 
     fn justification(&'a self) -> &ProofJustificationBuilder {
@@ -2240,6 +2345,13 @@ enum ProofBuilderSmallJustification<'a> {
 }
 
 impl<'a> ProofBuilderSmallJustification<'a> {
+    fn from_deductable(deductable_ref: DeductableBuilder<'a>) -> Self {
+        match deductable_ref {
+            DeductableBuilder::Axiom(axiom_ref) => Self::Axiom(axiom_ref),
+            DeductableBuilder::Theorem(theorem_ref) => Self::Theorem(theorem_ref),
+        }
+    }
+
     // TODO: Remove.
     fn finish(&self) -> ProofBlockSmallJustification {
         match self {
@@ -2336,6 +2448,7 @@ impl<'a> ProofBuilderStep<'a> {
     fn build(
         &'a self,
         proof_ref: &'a ProofBuilder<'a>,
+        prev_steps: &'a [ProofBuilderElement<'a>],
         local_index: &LocalBuilderIndex<'a, '_>,
         errors: &mut ParsingErrorContext<'a>,
     ) {
@@ -2346,7 +2459,10 @@ impl<'a> ProofBuilderStep<'a> {
             )
         });
 
-        if let Some(small_steps) = self.meta.build_small_steps(self.formula.formula(), errors) {
+        if let Some(small_steps) =
+            self.meta
+                .build_small_steps(self.formula.formula(), prev_steps, errors)
+        {
             self.small_steps.set(small_steps).unwrap();
         }
     }
@@ -2464,12 +2580,20 @@ impl<'a> ProofBuilderElement<'a> {
     fn build_formulas(
         &'a self,
         proof_ref: &'a ProofBuilder<'a>,
+        prev_steps: &'a [ProofBuilderElement<'a>],
         local_index: &LocalBuilderIndex<'a, '_>,
         errors: &mut ParsingErrorContext<'a>,
     ) {
         match self {
             Self::Text(_) => {}
-            Self::Step(step) => step.build(proof_ref, local_index, errors),
+            Self::Step(step) => step.build(proof_ref, prev_steps, local_index, errors),
+        }
+    }
+
+    fn eq_formula(&'a self, formula: &FormulaBuilder<'a>) -> bool {
+        match self {
+            Self::Text(_) => false,
+            Self::Step(step) => step.formula.formula() == formula,
         }
     }
 
@@ -2598,8 +2722,8 @@ impl<'a> ProofBuilder<'a> {
         let theorem = self.theorem_ref.get().unwrap();
         let local_index = index.get_local(theorem.system_id(), theorem.vars());
 
-        for element in &self.elements {
-            element.build_formulas(self, &local_index, errors);
+        for (i, element) in self.elements.iter().enumerate() {
+            element.build_formulas(self, &self.elements[..i], &local_index, errors);
         }
     }
 

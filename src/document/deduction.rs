@@ -230,6 +230,7 @@ pub enum ProofBlockJustification {
     Hypothesis(usize),
 
     Definition,
+    Substitution,
 }
 
 impl ProofBlockJustification {
@@ -254,6 +255,7 @@ impl ProofBlockJustification {
             Self::Hypothesis(id) => ProofRenderedJustification::Hypothesis(*id),
 
             Self::Definition => ProofRenderedJustification::Definition,
+            Self::Substitution => ProofRenderedJustification::Substitution,
         }
     }
 }
