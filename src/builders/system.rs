@@ -21,8 +21,8 @@ use std::lazy::OnceCell;
 use pest::iterators::{Pair, Pairs};
 
 use crate::document::deduction::{
-    AxiomBlock, ProofBlock, ProofBlockElement, ProofBlockJustification, ProofBlockStep,
-    TheoremBlock,
+    AxiomBlock, ProofBlock, ProofBlockElement, ProofBlockJustification,
+    ProofBlockSmallJustification, ProofBlockSmallStep, ProofBlockStep, TheoremBlock,
 };
 use crate::document::directory::{
     AxiomBlockRef, BlockReference, ProofBlockRef, ProofBlockStepRef, SystemBlockRef,
@@ -37,7 +37,8 @@ use super::errors::{
 };
 use super::index::{BuilderIndex, LocalBuilderIndex};
 use super::language::{
-    DefinitionBuilder, DisplayFormulaBuilder, SymbolBuilder, TypeBuilder, VariableBuilder,
+    DefinitionBuilder, DisplayFormulaBuilder, FormulaBuilder, SymbolBuilder, TypeBuilder,
+    VariableBuilder,
 };
 use super::text::{ParagraphBuilder, TextBuilder};
 use super::Rule;
@@ -1911,6 +1912,27 @@ impl<'a> SystemChildJustificationBuilder<'a> {
         }
     }
 
+    fn build_small_steps(
+        &'a self,
+        formula: &FormulaBuilder<'a>,
+    ) -> Option<Vec<ProofBuilderSmallStep>> {
+        let justification = match *self.child.get().unwrap() {
+            SystemBuilderChild::Axiom(axiom_ref) => {
+                ProofBuilderSmallJustification::Axiom(axiom_ref)
+            }
+            SystemBuilderChild::Theorem(theorem_ref) => {
+                ProofBuilderSmallJustification::Theorem(theorem_ref)
+            }
+
+            _ => unreachable!(),
+        };
+
+        Some(vec![ProofBuilderSmallStep {
+            justification,
+            formula: formula.clone(),
+        }])
+    }
+
     fn finish(&self) -> ProofBlockJustification {
         match self.child.get().unwrap() {
             SystemBuilderChild::Axiom(axiom_ref) => {
@@ -1938,6 +1960,18 @@ impl MacroJustificationBuilder {
             Rule::macro_justification_by_definition => Self::Definition,
 
             _ => unreachable!(),
+        }
+    }
+
+    fn build_small_steps<'a>(
+        &'a self,
+        formula: &FormulaBuilder<'a>,
+    ) -> Option<Vec<ProofBuilderSmallStep>> {
+        match self {
+            Self::Definition => Some(vec![ProofBuilderSmallStep {
+                justification: ProofBuilderSmallJustification::Definition,
+                formula: formula.clone(),
+            }]),
         }
     }
 
@@ -2015,6 +2049,21 @@ impl<'a> ProofJustificationBuilder<'a> {
                     true
                 }
             }
+        }
+    }
+
+    fn build_small_steps(
+        &'a self,
+        formula: &FormulaBuilder<'a>,
+        errors: &mut ParsingErrorContext,
+    ) -> Option<Vec<ProofBuilderSmallStep>> {
+        match self {
+            Self::SystemChild(justification) => justification.build_small_steps(formula),
+            Self::Macro(justification) => justification.build_small_steps(formula),
+            Self::Hypothesis(id) => Some(vec![ProofBuilderSmallStep {
+                justification: ProofBuilderSmallJustification::Hypothesis(*id),
+                formula: formula.clone(),
+            }]),
         }
     }
 
@@ -2165,9 +2214,59 @@ impl<'a> ProofBuilderMeta<'a> {
         self.justification_verified.set(!found_error);
     }
 
+    fn build_small_steps(
+        &'a self,
+        formula: &FormulaBuilder<'a>,
+        errors: &mut ParsingErrorContext,
+    ) -> Option<Vec<ProofBuilderSmallStep>> {
+        assert!(self.justification_verified.get());
+
+        self.justification().build_small_steps(formula, errors)
+    }
+
     fn justification(&'a self) -> &ProofJustificationBuilder {
         assert!(self.justification_verified.get());
         &self.justifications[0]
+    }
+}
+
+#[derive(Debug)]
+enum ProofBuilderSmallJustification<'a> {
+    Axiom(&'a AxiomBuilder<'a>),
+    Theorem(&'a TheoremBuilder<'a>),
+    Hypothesis(usize),
+
+    Definition,
+}
+
+impl<'a> ProofBuilderSmallJustification<'a> {
+    // TODO: Remove.
+    fn finish(&self) -> ProofBlockSmallJustification {
+        match self {
+            Self::Axiom(axiom_ref) => ProofBlockSmallJustification::Axiom(axiom_ref.get_ref()),
+            Self::Theorem(theorem_ref) => {
+                ProofBlockSmallJustification::Theorem(theorem_ref.get_ref())
+            }
+            Self::Hypothesis(id) => ProofBlockSmallJustification::Hypothesis(*id),
+
+            Self::Definition => ProofBlockSmallJustification::Definition,
+        }
+    }
+}
+
+#[derive(Debug)]
+struct ProofBuilderSmallStep<'a> {
+    justification: ProofBuilderSmallJustification<'a>,
+    formula: FormulaBuilder<'a>,
+}
+
+impl<'a> ProofBuilderSmallStep<'a> {
+    // TODO: Remove.
+    fn finish(&self) -> ProofBlockSmallStep {
+        let justification = self.justification.finish();
+        let formula = self.formula.finish();
+
+        ProofBlockSmallStep::new(justification, formula)
     }
 }
 
@@ -2176,6 +2275,8 @@ pub struct ProofBuilderStep<'a> {
     meta: ProofBuilderMeta<'a>,
     formula: DisplayFormulaBuilder<'a>,
     end: String,
+
+    small_steps: OnceCell<Vec<ProofBuilderSmallStep<'a>>>,
 
     // TODO: Remove.
     count: usize,
@@ -2203,6 +2304,8 @@ impl<'a> ProofBuilderStep<'a> {
             meta,
             formula,
             end,
+
+            small_steps: OnceCell::new(),
 
             count,
             id: OnceCell::new(),
@@ -2242,6 +2345,10 @@ impl<'a> ProofBuilderStep<'a> {
                 ProofParsingError::StepError(self, ProofStepParsingError::FormulaError(formula, e)),
             )
         });
+
+        if let Some(small_steps) = self.meta.build_small_steps(self.formula.formula(), errors) {
+            self.small_steps.set(small_steps).unwrap();
+        }
     }
 
     // TODO: Remove.
@@ -2275,10 +2382,17 @@ impl<'a> ProofBuilderStep<'a> {
         let id = self.id.get().unwrap().to_owned();
         let href = self.href.get().unwrap().to_owned();
         let justification = self.meta.justification().finish();
-        let formula = self.formula.finish();
+        let small_steps = self
+            .small_steps
+            .get()
+            .unwrap()
+            .iter()
+            .map(ProofBuilderSmallStep::finish)
+            .collect();
+        let formula = self.formula.display().finish();
         let end = self.end.clone();
 
-        ProofBlockStep::new(id, href, justification, formula, end)
+        ProofBlockStep::new(id, href, justification, small_steps, formula, end)
     }
 }
 

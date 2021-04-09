@@ -1953,7 +1953,7 @@ impl<'a> PartialEq for VariableBuilder<'a> {
 }
 impl<'a> Eq for VariableBuilder<'a> {}
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct FormulaSymbolBuilder<'a> {
     id: String,
 
@@ -1974,7 +1974,7 @@ impl<'a> FormulaSymbolBuilder<'a> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct FormulaVariableBuilder<'a> {
     id: String,
 
@@ -2033,7 +2033,7 @@ impl<'a> FormulaVariableBuilder<'a> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct FormulaPrefixBuilder<'a> {
     operator: ReadOperator,
     inner: Box<FormulaBuilder<'a>>,
@@ -2122,7 +2122,7 @@ impl<'a> FormulaPrefixBuilder<'a> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct FormulaInfixBuilder<'a> {
     operator: ReadOperator,
     lhs: Box<FormulaBuilder<'a>>,
@@ -2238,7 +2238,7 @@ impl<'a> FormulaInfixBuilder<'a> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum FormulaBuilder<'a> {
     Symbol(FormulaSymbolBuilder<'a>),
     Variable(FormulaVariableBuilder<'a>),
@@ -2316,7 +2316,7 @@ impl<'a> FormulaBuilder<'a> {
         }
     }
 
-    fn finish(&self) -> FormulaBlock {
+    pub fn finish(&self) -> FormulaBlock {
         match self {
             Self::Symbol(_) => todo!(),
             Self::Variable(formula) => formula.finish(),
@@ -2408,6 +2408,10 @@ impl<'a> DisplayFormulaBuilder<'a> {
 
     pub fn formula(&'a self) -> &FormulaBuilder {
         &self.formula
+    }
+
+    pub fn display(&self) -> &MathBuilder {
+        &self.display
     }
 
     pub fn type_signature(&'a self) -> &TypeSignatureBuilder {

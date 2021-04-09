@@ -26,8 +26,8 @@ use crate::rendered::{
 use super::directory::{
     AxiomBlockRef, BlockDirectory, ProofBlockRef, SystemBlockRef, TheoremBlockRef,
 };
-use super::language::{DisplayFormulaBlock, VariableBlock};
-use super::text::{Paragraph, Text};
+use super::language::{DisplayFormulaBlock, FormulaBlock, VariableBlock};
+use super::text::{MathBlock, Paragraph, Text};
 
 pub struct AxiomBlock {
     id: String,
@@ -233,42 +233,6 @@ pub enum ProofBlockJustification {
 }
 
 impl ProofBlockJustification {
-    fn checkable(&self, formula: &DisplayFormulaBlock) -> Vec<ProofStep> {
-        match self {
-            Self::Axiom(axiom_ref) => {
-                let justification = ProofJustification::Axiom(AxiomRef::new(axiom_ref.get()));
-                let formula = formula.checkable();
-                let step = ProofStep::new(justification, formula);
-
-                vec![step]
-            }
-
-            Self::Theorem(theorem_ref) => {
-                let justification = ProofJustification::Theorem(TheoremRef::new(theorem_ref.get()));
-                let formula = formula.checkable();
-                let step = ProofStep::new(justification, formula);
-
-                vec![step]
-            }
-
-            Self::Hypothesis(id) => {
-                let justification = ProofJustification::Hypothesis(HypothesisRef::new(*id - 1));
-                let formula = formula.checkable();
-                let step = ProofStep::new(justification, formula);
-
-                vec![step]
-            }
-
-            Self::Definition => {
-                let justification = ProofJustification::Definition;
-                let formula = formula.checkable();
-                let step = ProofStep::new(justification, formula);
-
-                vec![step]
-            }
-        }
-    }
-
     fn render(&self, directory: &BlockDirectory) -> ProofRenderedJustification {
         match self {
             Self::Axiom(axiom_ref) => {
@@ -294,11 +258,59 @@ impl ProofBlockJustification {
     }
 }
 
+#[derive(Debug)]
+pub enum ProofBlockSmallJustification {
+    Axiom(AxiomBlockRef),
+    Theorem(TheoremBlockRef),
+    Hypothesis(usize),
+
+    Definition,
+}
+
+impl ProofBlockSmallJustification {
+    fn checkable(&self) -> ProofJustification {
+        match self {
+            Self::Axiom(axiom_ref) => ProofJustification::Axiom(AxiomRef::new(axiom_ref.get())),
+            Self::Theorem(theorem_ref) => {
+                ProofJustification::Theorem(TheoremRef::new(theorem_ref.get()))
+            }
+            Self::Hypothesis(id) => ProofJustification::Hypothesis(HypothesisRef::new(*id - 1)),
+
+            Self::Definition => ProofJustification::Definition,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct ProofBlockSmallStep {
+    justification: ProofBlockSmallJustification,
+    formula: FormulaBlock,
+}
+
+impl ProofBlockSmallStep {
+    pub fn new(
+        justification: ProofBlockSmallJustification,
+        formula: FormulaBlock,
+    ) -> ProofBlockSmallStep {
+        ProofBlockSmallStep {
+            justification,
+            formula,
+        }
+    }
+
+    fn checkable(&self) -> ProofStep {
+        let justification = self.justification.checkable();
+        let formula = self.formula.checkable();
+        ProofStep::new(justification, formula)
+    }
+}
+
 pub struct ProofBlockStep {
     id: String,
     href: String,
     justification: ProofBlockJustification,
-    formula: DisplayFormulaBlock,
+    small_steps: Vec<ProofBlockSmallStep>,
+    formula: MathBlock,
     end: String,
 }
 
@@ -307,20 +319,22 @@ impl ProofBlockStep {
         id: String,
         href: String,
         justification: ProofBlockJustification,
-        formula: DisplayFormulaBlock,
+        small_steps: Vec<ProofBlockSmallStep>,
+        formula: MathBlock,
         end: String,
     ) -> ProofBlockStep {
         ProofBlockStep {
             id,
             href,
             justification,
+            small_steps,
             formula,
             end,
         }
     }
 
-    fn checkable(&self) -> Vec<ProofStep> {
-        self.justification.checkable(&self.formula)
+    fn checkable(&self) -> impl Iterator<Item = ProofStep> + '_ {
+        self.small_steps.iter().map(ProofBlockSmallStep::checkable)
     }
 
     fn render(&self, directory: &BlockDirectory, tag: usize) -> ProofRenderedStep {

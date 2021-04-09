@@ -478,7 +478,7 @@ pub enum FormulaBlock {
 }
 
 impl FormulaBlock {
-    fn checkable(&self) -> Formula {
+    pub(super) fn checkable(&self) -> Formula {
         match self {
             Self::Symbol(symbol_ref) => Formula::Symbol(SymbolRef::new(symbol_ref.get())),
             Self::Variable(variable_ref) => Formula::Variable(VariableRef::new(variable_ref.get())),
