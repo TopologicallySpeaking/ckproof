@@ -553,6 +553,7 @@ impl ReadOperator {
     fn from_pest(pair: Pair<Rule>) -> ReadOperator {
         assert_eq!(pair.as_rule(), Rule::read_operator);
 
+        // TODO: operator_lt, operator_eq, and operator_gt
         match pair.into_inner().next().unwrap().as_rule() {
             Rule::operator_negation => Self::Negation,
             Rule::operator_implies => Self::Implies,

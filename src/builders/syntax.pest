@@ -70,7 +70,7 @@ read_operator_silent = _{
   operator_negation |operator_equiv | operator_implies
   | operator_and | operator_or
   | operator_plus | operator_minus | operator_asterisk | operator_slash
-  | operator_eq
+  | operator_lt | operator_eq | operator_gt
 }
 operator_plus = { "+" }
 operator_minus = { "-" }
@@ -81,7 +81,9 @@ operator_equiv = { "<=>" }
 operator_implies = { "=>" }
 operator_and = { "&" }
 operator_or = { "|" }
+operator_lt = { "<" }
 operator_eq = { "=" }
+operator_gt = { ">" }
 
 display_operator = { display_operator_silent }
 display_operator_silent = _{ read_operator_silent | operator_bang }
