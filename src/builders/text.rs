@@ -900,18 +900,20 @@ impl DisplayMathBuilder {
 
 struct SystemReferenceBuilder<'a> {
     id: String,
+    text: Option<BareText>,
 
     system_ref: OnceCell<&'a SystemBuilder<'a>>,
 }
 
 impl<'a> SystemReferenceBuilder<'a> {
-    fn from_pest(pair: Pair<Rule>) -> Self {
+    fn from_pest(pair: Pair<Rule>, text: Option<BareText>) -> Self {
         assert_eq!(pair.as_rule(), Rule::ident);
 
         let id = pair.as_str().to_owned();
 
         SystemReferenceBuilder {
             id,
+            text,
 
             system_ref: OnceCell::new(),
         }
@@ -942,8 +944,11 @@ impl<'a> SystemReferenceBuilder<'a> {
     }
 
     // TODO: Remove.
-    fn finish(&self) -> BlockReference {
-        BlockReference::System(self.system_ref.get().unwrap().get_ref())
+    fn finish(&self) -> ParagraphElement {
+        let r = BlockReference::System(self.system_ref.get().unwrap().get_ref());
+        let text = self.text.clone();
+
+        ParagraphElement::Reference(text, r)
     }
 }
 
@@ -956,12 +961,13 @@ impl<'a> std::fmt::Debug for SystemReferenceBuilder<'a> {
 struct SystemChildReferenceBuilder<'a> {
     system_id: String,
     child_id: String,
+    text: Option<BareText>,
 
     child_ref: OnceCell<SystemBuilderChild<'a>>,
 }
 
 impl<'a> SystemChildReferenceBuilder<'a> {
-    fn from_pest(pair: Pair<Rule>) -> Self {
+    fn from_pest(pair: Pair<Rule>, text: Option<BareText>) -> Self {
         assert_eq!(pair.as_rule(), Rule::fqid);
 
         let mut inner = pair.into_inner();
@@ -971,6 +977,7 @@ impl<'a> SystemChildReferenceBuilder<'a> {
         SystemChildReferenceBuilder {
             system_id,
             child_id,
+            text,
 
             child_ref: OnceCell::new(),
         }
@@ -1001,8 +1008,11 @@ impl<'a> SystemChildReferenceBuilder<'a> {
     }
 
     // TODO: Remove.
-    fn finish(&self) -> BlockReference {
-        self.child_ref.get().unwrap().get_ref()
+    fn finish(&self) -> ParagraphElement {
+        let r = self.child_ref.get().unwrap().get_ref();
+        let text = self.text.clone();
+
+        ParagraphElement::Reference(text, r)
     }
 }
 
@@ -1017,18 +1027,20 @@ impl<'a> std::fmt::Debug for SystemChildReferenceBuilder<'a> {
 
 struct TagReferenceBuilder<'a> {
     tag: String,
+    text: Option<BareText>,
 
     step_ref: OnceCell<&'a ProofBuilderStep<'a>>,
 }
 
 impl<'a> TagReferenceBuilder<'a> {
-    fn from_pest(pair: Pair<Rule>) -> Self {
+    fn from_pest(pair: Pair<Rule>, text: Option<BareText>) -> Self {
         assert_eq!(pair.as_rule(), Rule::tag);
 
         let tag = pair.into_inner().next().unwrap().as_str().to_owned();
 
         TagReferenceBuilder {
             tag,
+            text,
 
             step_ref: OnceCell::new(),
         }
@@ -1058,8 +1070,11 @@ impl<'a> TagReferenceBuilder<'a> {
         }
     }
 
-    fn finish(&self) -> BlockReference {
-        BlockReference::ProofStep(self.step_ref.get().unwrap().get_ref())
+    fn finish(&self) -> ParagraphElement {
+        let r = BlockReference::ProofStep(self.step_ref.get().unwrap().get_ref());
+        let text = self.text.clone();
+
+        ParagraphElement::Reference(text, r)
     }
 }
 
@@ -1077,14 +1092,45 @@ enum ReferenceBuilder<'a> {
 }
 
 impl<'a> ReferenceBuilder<'a> {
+    fn from_pest_full(pair: Pair<Rule>) -> Self {
+        assert_eq!(pair.as_rule(), Rule::text_reference_full);
+
+        let mut inner = pair.into_inner();
+        let ref_pair = inner.next().unwrap();
+        let inner_pair = inner.next().unwrap();
+
+        let text = BareText::from_pest(inner_pair);
+        match ref_pair.as_rule() {
+            Rule::ident => Self::System(SystemReferenceBuilder::from_pest(ref_pair, Some(text))),
+            Rule::fqid => {
+                Self::SystemChild(SystemChildReferenceBuilder::from_pest(ref_pair, Some(text)))
+            }
+            Rule::tag => Self::Tag(TagReferenceBuilder::from_pest(ref_pair, Some(text))),
+
+            _ => unreachable!(),
+        }
+    }
+
+    fn from_pest_void(pair: Pair<Rule>) -> Self {
+        assert_eq!(pair.as_rule(), Rule::text_reference_void);
+        let pair = pair.into_inner().next().unwrap();
+
+        match pair.as_rule() {
+            Rule::ident => Self::System(SystemReferenceBuilder::from_pest(pair, None)),
+            Rule::fqid => Self::SystemChild(SystemChildReferenceBuilder::from_pest(pair, None)),
+            Rule::tag => Self::Tag(TagReferenceBuilder::from_pest(pair, None)),
+
+            _ => unreachable!(),
+        }
+    }
+
     fn from_pest(pair: Pair<Rule>) -> Self {
         assert_eq!(pair.as_rule(), Rule::text_reference);
         let pair = pair.into_inner().next().unwrap();
 
         match pair.as_rule() {
-            Rule::ident => Self::System(SystemReferenceBuilder::from_pest(pair)),
-            Rule::fqid => Self::SystemChild(SystemChildReferenceBuilder::from_pest(pair)),
-            Rule::tag => Self::Tag(TagReferenceBuilder::from_pest(pair)),
+            Rule::text_reference_full => Self::from_pest_full(pair),
+            Rule::text_reference_void => Self::from_pest_void(pair),
 
             _ => unreachable!(),
         }
@@ -1124,7 +1170,7 @@ impl<'a> ReferenceBuilder<'a> {
     }
 
     // TODO: Remove.
-    fn finish(&self) -> BlockReference {
+    fn finish(&self) -> ParagraphElement {
         match self {
             Self::System(r) => r.finish(),
             Self::SystemChild(r) => r.finish(),
@@ -1339,7 +1385,7 @@ impl<'a> ParagraphBuilderElement<'a> {
 
     fn finish(&self) -> ParagraphElement {
         match self {
-            Self::Reference(r) => ParagraphElement::Reference(r.finish()),
+            Self::Reference(r) => r.finish(),
             Self::InlineMath(math) => ParagraphElement::InlineMath(math.finish()),
             Self::Citation(citation) => ParagraphElement::Citation(citation.finish()),
 

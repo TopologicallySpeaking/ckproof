@@ -99,7 +99,13 @@ text_element = _{
   | unformatted_element
 }
 
-text_reference = !{ "<" ~ "ref" ~ (tag | fqid | ident) ~ "/" ~ ">" }
+text_reference = { text_reference_full | text_reference_void }
+text_reference_full = !{
+  "<" ~ "ref" ~ (tag | fqid | ident) ~ ">"
+  ~ bare_text
+  ~ "<" ~ "/" ~ "ref" ~ ">"
+}
+text_reference_void = !{ "<" ~ "ref" ~ (tag | fqid | ident) ~ "/" ~ ">" }
 fqid = { ident ~ "." ~ ident }
 
 unicorn_vomit_begin = { "<" ~ "unicorn" ~ ">" }

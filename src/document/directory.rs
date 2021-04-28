@@ -21,7 +21,7 @@ use crate::rendered::{BlockRendered, MlaRendered};
 
 use super::deduction::{AxiomBlock, ProofBlock, TheoremBlock};
 use super::language::{DefinitionBlock, SymbolBlock, SystemBlock, TypeBlock};
-use super::text::{HeadingBlock, Mla, QuoteBlock, TableBlock, TextBlock, TodoBlock};
+use super::text::{BareText, HeadingBlock, Mla, QuoteBlock, TableBlock, TextBlock, TodoBlock};
 
 #[derive(Clone, Copy, Debug)]
 pub struct SystemBlockRef(usize);
@@ -213,65 +213,81 @@ pub enum BlockReference {
 }
 
 impl BlockReference {
-    pub fn render(&self, directory: &BlockDirectory) -> String {
+    pub fn render(&self, text: Option<&BareText>, directory: &BlockDirectory) -> String {
         match self {
             Self::System(system_ref) => {
                 let system = &directory[*system_ref];
+                let name = text
+                    .map(BareText::render)
+                    .unwrap_or(system.name().to_owned());
 
                 format!(
                     "<a href=\"{}\" target=\"_blank\" rel=\"noopener noreferrer\">{}</a>",
                     system.href(),
-                    system.name()
+                    name
                 )
             }
 
             Self::Type(type_ref) => {
                 let ty = &directory[*type_ref];
+                let name = text.map(BareText::render).unwrap_or(ty.name().to_owned());
 
                 format!(
                     "<a href=\"{}\" target=\"_blank\" rel=\"noopener noreferrer\">{}</a>",
                     ty.href(),
-                    ty.name()
+                    name
                 )
             }
 
             Self::Symbol(symbol_ref) => {
                 let symbol = &directory[*symbol_ref];
+                let name = text
+                    .map(BareText::render)
+                    .unwrap_or(symbol.name().to_owned());
 
                 format!(
                     "<a href=\"{}\" target=\"_blank\" rel=\"noopener noreferrer\">{}</a>",
                     symbol.href(),
-                    symbol.name()
+                    name
                 )
             }
 
             Self::Definition(definition_ref) => {
                 let definition = &directory[*definition_ref];
+                let name = text
+                    .map(BareText::render)
+                    .unwrap_or(definition.name().to_owned());
 
                 format!(
                     "<a href=\"{}\" target=\"_blank\" rel=\"noopener noreferrer\">{}</a>",
                     definition.href(),
-                    definition.name()
+                    name
                 )
             }
 
             Self::Axiom(axiom_ref) => {
                 let axiom = &directory[*axiom_ref];
+                let name = text
+                    .map(BareText::render)
+                    .unwrap_or(axiom.name().to_owned());
 
                 format!(
                     "<a href=\"{}\" target=\"_blank\" rel=\"noopener noreferrer\">{}</a>",
                     axiom.href(),
-                    axiom.name()
+                    name
                 )
             }
 
             Self::Theorem(theorem_ref) => {
                 let theorem = &directory[*theorem_ref];
+                let name = text
+                    .map(BareText::render)
+                    .unwrap_or(theorem.name().to_owned());
 
                 format!(
                     "<a href=\"{}\" target=\"_blank\" rel=\"noopener noreferrer\">{}</a>",
                     theorem.href(),
-                    theorem.name()
+                    name
                 )
             }
 
@@ -281,6 +297,7 @@ impl BlockReference {
 
     pub fn render_with_proof_steps(
         &self,
+        text: Option<&BareText>,
         directory: &BlockDirectory,
         proof_ref: ProofBlockRef,
     ) -> String {
@@ -295,7 +312,7 @@ impl BlockReference {
                 )
             }
 
-            _ => self.render(directory),
+            _ => self.render(text, directory),
         }
     }
 }

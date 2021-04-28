@@ -70,7 +70,7 @@ impl BareText {
         BareText { elements }
     }
 
-    fn render(&self) -> String {
+    pub fn render(&self) -> String {
         self.elements.iter().map(BareElement::render).collect()
     }
 }
@@ -321,7 +321,7 @@ impl DisplayMathBlock {
 }
 
 pub enum ParagraphElement {
-    Reference(BlockReference),
+    Reference(Option<BareText>, BlockReference),
     InlineMath(MathBlock),
     Citation(Citation),
 
@@ -336,7 +336,7 @@ pub enum ParagraphElement {
 impl ParagraphElement {
     fn render(&self, directory: &BlockDirectory) -> String {
         match self {
-            Self::Reference(block_ref) => block_ref.render(directory),
+            Self::Reference(text, block_ref) => block_ref.render(text.as_ref(), directory),
             Self::InlineMath(math) => format!("<math>{}</math>", math.render()),
             Self::Citation(citation) => citation.render(),
 
@@ -355,7 +355,9 @@ impl ParagraphElement {
         proof_ref: ProofBlockRef,
     ) -> String {
         match self {
-            Self::Reference(block_ref) => block_ref.render_with_proof_steps(directory, proof_ref),
+            Self::Reference(text, block_ref) => {
+                block_ref.render_with_proof_steps(text.as_ref(), directory, proof_ref)
+            }
             Self::InlineMath(math) => format!("<math>{}</math>", math.render()),
             Self::Citation(citation) => citation.render(),
 
