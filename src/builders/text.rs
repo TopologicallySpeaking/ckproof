@@ -838,7 +838,7 @@ impl MathBuilderElement {
         match operator {
             Rule::operator_plus => "+",
             Rule::operator_minus => "-",
-            Rule::operator_asterisk => "*",
+            Rule::operator_asterisk => "\u{22C5}",
             Rule::operator_slash => "/",
 
             Rule::operator_negation => "\u{00AC}",
