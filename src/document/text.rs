@@ -262,6 +262,9 @@ impl Sublist {
 pub enum MathElement {
     Fenced(MathBlock),
 
+    SquareRoot(MathBlock),
+    Power(MathBlock, MathBlock),
+
     Operator(String),
     Symbol(String),
     Variable(String),
@@ -274,6 +277,13 @@ impl MathElement {
             Self::Fenced(math) => format!(
                 "<mo class=\"paren\">(</mo>{}<mo class=\"paren\">)</mo>",
                 math.render()
+            ),
+
+            Self::SquareRoot(math) => format!("<msqrt>{}</msqrt>", math.render()),
+            Self::Power(base, exp) => format!(
+                "<msup><mrow>{}</mrow><mrow>{}</mrow></msup>",
+                base.render(),
+                exp.render()
             ),
 
             Self::Operator(op) => format!("<mo>{}</mo>", op),

@@ -52,10 +52,21 @@ word_forbidden = {
 inline_math = _{ "\\(" ~ math_row ~ "\\)" }
 display_math = { "\\[" ~ math_row ~ display_math_end }
 display_math_end = ${ "\\]" ~ math_punct }
-math_row = !{ math_item* }
-math_item = _{ math_fenced | display_operator | var | ident | integer }
-math_fenced = _{ "(" ~ math_row ~ ")" }
 math_punct = @{ PUNCTUATION* }
+
+math_row = !{ math_item* }
+math_item = _{ math_fenced | big_operator | display_operator | var | ident | integer }
+math_fenced = _{ "(" ~ math_row ~ ")" }
+
+big_operator = {
+  "\\" ~ big_operator_kind ~ "{"
+    ~ math_row ~ ("," ~ math_row)* ~ ","?
+  ~ "}"
+}
+
+big_operator_kind = _{ operator_sqrt | operator_pow }
+operator_sqrt = { "sqrt" }
+operator_pow = { "pow" }
 
 formula = {
   prefix_list? ~ primary ~ (read_operator ~ prefix_list? ~ primary)*

@@ -1026,12 +1026,21 @@ impl<'a> AxiomBuilderEntries<'a> {
             }
         }
 
-        if self.premises.len() > 1 {
-            found_error = true;
-            errors.err(ParsingError::AxiomError(
-                axiom_ref,
-                AxiomParsingError::DuplicatePremise,
-            ));
+        match self.premises.len() {
+            0 => {}
+            1 => {
+                for hypothesis in &self.premises[0] {
+                    hypothesis.verify_structure(errors);
+                }
+            }
+
+            _ => {
+                found_error = true;
+                errors.err(ParsingError::AxiomError(
+                    axiom_ref,
+                    AxiomParsingError::DuplicatePremise,
+                ));
+            }
         }
 
         match self.assertions.len() {
@@ -1043,7 +1052,7 @@ impl<'a> AxiomBuilderEntries<'a> {
                 ));
             }
 
-            1 => {}
+            1 => self.assertions[0].verify_structure(errors),
 
             _ => {
                 found_error = true;
@@ -1498,12 +1507,21 @@ impl<'a> TheoremBuilderEntries<'a> {
             );
         }
 
-        if self.premises.len() > 1 {
-            found_error = true;
-            errors.err(ParsingError::TheoremError(
-                theorem_ref,
-                TheoremParsingError::DuplicatePremise,
-            ));
+        match self.premises.len() {
+            0 => {}
+            1 => {
+                for hypothesis in &self.premises[0] {
+                    hypothesis.verify_structure(errors);
+                }
+            }
+
+            _ => {
+                found_error = true;
+                errors.err(ParsingError::TheoremError(
+                    theorem_ref,
+                    TheoremParsingError::DuplicatePremise,
+                ));
+            }
         }
 
         match self.assertions.len() {
@@ -1515,7 +1533,7 @@ impl<'a> TheoremBuilderEntries<'a> {
                 ));
             }
 
-            1 => {}
+            1 => self.assertions[0].verify_structure(errors),
 
             _ => {
                 found_error = true;
@@ -2441,6 +2459,8 @@ impl<'a> ProofBuilderStep<'a> {
         index: &BuilderIndex<'a>,
         errors: &mut ParsingErrorContext<'a>,
     ) {
+        self.formula.verify_structure(errors);
+
         self.meta
             .verify_structure(theorem_ref, proof_ref, self, index, errors);
     }

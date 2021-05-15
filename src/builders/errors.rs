@@ -28,12 +28,21 @@ use super::system::{
     SystemBuilderChild, TheoremBuilder,
 };
 use super::text::{
-    ParagraphBuilder, QuoteBuilder, RawCitationContainerBuilder, TableBuilder, TextBuilder,
+    MathBuilderElement, ParagraphBuilder, QuoteBuilder, RawCitationContainerBuilder, TableBuilder,
+    TextBuilder,
 };
 use super::Rule;
 
 #[derive(Debug)]
-pub enum ParagraphElementParsingError {
+pub enum MathParsingError<'a> {
+    SquareRootWrongInputArity(&'a MathBuilderElement),
+    PowerWrongInputArity(&'a MathBuilderElement),
+}
+
+#[derive(Debug)]
+pub enum ParagraphElementParsingError<'a> {
+    MathError(MathParsingError<'a>),
+
     SystemReferenceIdNotFound,
     SystemChildReferenceIdNotFound,
     TagReferenceNotFound,
@@ -46,9 +55,9 @@ pub enum ParagraphElementParsingError {
 }
 
 #[derive(Debug)]
-pub enum ParagraphParsingError {
+pub enum ParagraphParsingError<'a> {
     // TODO: Reference directory to the element instead of using its index.
-    ElementError(usize, ParagraphElementParsingError),
+    ElementError(usize, ParagraphElementParsingError<'a>),
 
     UnclosedUnicornVomit,
     UnclosedEm,
@@ -79,18 +88,20 @@ pub enum RawCitationParsingError<'a> {
 
 #[derive(Debug)]
 pub enum TextParsingError<'a> {
-    ParagraphError(ParagraphParsingError),
     RawCitationError(RawCitationParsingError<'a>),
+    SublistError(MathParsingError<'a>),
+    ParagraphError(ParagraphParsingError<'a>),
+    DisplayMathError(MathParsingError<'a>),
 }
 
 #[derive(Debug)]
-pub enum BookParsingError {
-    TaglineError(ParagraphParsingError),
+pub enum BookParsingError<'a> {
+    TaglineError(ParagraphParsingError<'a>),
 }
 
 #[derive(Debug)]
-pub enum ChapterParsingError {
-    TaglineError(ParagraphParsingError),
+pub enum ChapterParsingError<'a> {
+    TaglineError(ParagraphParsingError<'a>),
 }
 
 #[derive(Debug)]
@@ -109,7 +120,7 @@ pub enum SystemParsingError<'a> {
     DuplicateTagline,
     DuplicateDescription,
 
-    TaglineParsingError(ParagraphParsingError),
+    TaglineParsingError(ParagraphParsingError<'a>),
     DescriptionParsingError(&'a TextBuilder<'a>, TextParsingError<'a>),
 }
 
@@ -136,7 +147,7 @@ pub enum TypeParsingError<'a> {
     DuplicateTagline,
     DuplicateDescription,
 
-    TaglineParsingError(ParagraphParsingError),
+    TaglineParsingError(ParagraphParsingError<'a>),
     DescriptionParsingError(&'a TextBuilder<'a>, TextParsingError<'a>),
 }
 
@@ -159,7 +170,7 @@ pub enum SymbolParsingError<'a> {
     DuplicateReads,
     DuplicateDisplays,
 
-    TaglineParsingError(ParagraphParsingError),
+    TaglineParsingError(ParagraphParsingError<'a>),
     DescriptionParsingError(&'a TextBuilder<'a>, TextParsingError<'a>),
     TypeSignatureError(TypeSignatureParsingError<'a>),
 }
@@ -168,14 +179,16 @@ pub enum SymbolParsingError<'a> {
 pub enum DefinitionParsingError<'a> {
     MissingName,
     MissingTagline,
+    MissingExpansion,
     DuplicateName,
     DuplicateTagline,
     DuplicateDescription,
     DuplicateInputs,
     DuplicateReads,
     DuplicateDisplays,
+    DuplicateExpansion,
 
-    TaglineParsingError(ParagraphParsingError),
+    TaglineParsingError(ParagraphParsingError<'a>),
     DescriptionParsingError(&'a TextBuilder<'a>, TextParsingError<'a>),
 
     VariableError(&'a VariableBuilder<'a>, VariableParsingError<'a>),
@@ -245,7 +258,7 @@ pub enum AxiomParsingError<'a> {
     DuplicatePremise,
     DuplicateAssertion,
 
-    TaglineParsingError(ParagraphParsingError),
+    TaglineParsingError(ParagraphParsingError<'a>),
     DescriptionParsingError(&'a TextBuilder<'a>, TextParsingError<'a>),
     FlagListError(FlagListParsingError<'a>),
 
@@ -265,7 +278,7 @@ pub enum TheoremParsingError<'a> {
     DuplicatePremise,
     DuplicateAssertion,
 
-    TaglineParsingError(ParagraphParsingError),
+    TaglineParsingError(ParagraphParsingError<'a>),
     DescriptionParsingError(&'a TextBuilder<'a>, TextParsingError<'a>),
     FlagListError(FlagListParsingError<'a>),
 
@@ -305,8 +318,8 @@ pub enum ProofParsingError<'a> {
 
 #[derive(Debug)]
 pub enum TableParsingError<'a> {
-    CellError(&'a ParagraphBuilder<'a>, ParagraphParsingError),
-    CaptionError(ParagraphParsingError),
+    CellError(&'a ParagraphBuilder<'a>, ParagraphParsingError<'a>),
+    CaptionError(ParagraphParsingError<'a>),
 }
 
 #[derive(Debug)]
@@ -326,8 +339,8 @@ pub enum ParsingError<'a> {
     PestError(PestError<Rule>),
     UrlError(UrlError),
 
-    BookError(&'a BookBuilder<'a>, BookParsingError),
-    ChapterError(&'a ChapterBuilder<'a>, ChapterParsingError),
+    BookError(&'a BookBuilder<'a>, BookParsingError<'a>),
+    ChapterError(&'a ChapterBuilder<'a>, ChapterParsingError<'a>),
     BibliographyError(&'a BibliographyBuilderEntry, BibliographyParsingError<'a>),
 
     SystemError(&'a SystemBuilder<'a>, SystemParsingError<'a>),

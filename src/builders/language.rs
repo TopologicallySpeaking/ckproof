@@ -31,9 +31,9 @@ use crate::document::language::{
 
 use super::bibliography::BibliographyBuilderEntry;
 use super::errors::{
-    DefinitionParsingError, FormulaParsingError, ParsingError, ParsingErrorContext,
-    ReadableParsingError, SymbolParsingError, TypeParsingError, TypeSignatureParsingError,
-    VariableParsingError,
+    DefinitionParsingError, FormulaParsingError, MathParsingError, ParsingError,
+    ParsingErrorContext, ReadableParsingError, SymbolParsingError, TypeParsingError,
+    TypeSignatureParsingError, VariableParsingError,
 };
 use super::index::{BuilderIndex, LocalBuilderIndex};
 use super::system::{DeductableBuilder, SystemBuilder};
@@ -1470,6 +1470,28 @@ impl<'a> DefinitionBuilderEntries<'a> {
             ));
         }
 
+        match self.expansions.len() {
+            0 => {
+                found_error = true;
+                errors.err(ParsingError::DefinitionError(
+                    definition_ref,
+                    DefinitionParsingError::MissingExpansion,
+                ));
+            }
+
+            1 => {
+                self.expansions[0].verify_structure(errors);
+            }
+
+            _ => {
+                found_error = true;
+                errors.err(ParsingError::DefinitionError(
+                    definition_ref,
+                    DefinitionParsingError::DuplicateExpansion,
+                ));
+            }
+        }
+
         self.verified.set(!found_error);
     }
 
@@ -2551,6 +2573,10 @@ impl<'a> DisplayFormulaBuilder<'a> {
         let formula = FormulaBuilder::from_pest(pair);
 
         DisplayFormulaBuilder { display, formula }
+    }
+
+    pub fn verify_structure(&'a self, errors: &mut ParsingErrorContext<'a>) {
+        self.display.verify_structure(errors, |_| unreachable!());
     }
 
     pub fn build<F>(

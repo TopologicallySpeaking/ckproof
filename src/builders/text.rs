@@ -34,9 +34,9 @@ use crate::map_ident;
 
 use super::bibliography::BibliographyBuilderEntry;
 use super::errors::{
-    ParagraphElementParsingError, ParagraphParsingError, ParsingError, ParsingErrorContext,
-    QuoteParsingError, QuoteValueParsingError, RawCitationContainerParsingError,
-    RawCitationParsingError, TableParsingError, TextParsingError,
+    MathParsingError, ParagraphElementParsingError, ParagraphParsingError, ParsingError,
+    ParsingErrorContext, QuoteParsingError, QuoteValueParsingError,
+    RawCitationContainerParsingError, RawCitationParsingError, TableParsingError, TextParsingError,
 };
 use super::index::BuilderIndex;
 use super::system::{ProofBuilderStep, SystemBuilder, SystemBuilderChild};
@@ -106,7 +106,7 @@ impl<'a> CitationBuilder<'a> {
         generate_error: F,
     ) -> bool
     where
-        F: Fn(ParagraphElementParsingError) -> ParsingError<'a>,
+        F: Fn(ParagraphElementParsingError<'a>) -> ParsingError<'a>,
     {
         match index.search_bib_ref(&self.bib_key) {
             Some(bib_ref) => {
@@ -696,6 +696,17 @@ impl SublistBuilderItem {
         }
     }
 
+    fn verify_structure<'a, F>(
+        &'a self,
+        errors: &mut ParsingErrorContext<'a>,
+        generate_error: F,
+    ) -> bool
+    where
+        F: Fn(MathParsingError<'a>) -> ParsingError<'a> + Copy,
+    {
+        self.replacement.verify_structure(errors, generate_error)
+    }
+
     // TODO: Remove.
     fn finish(&self) -> SublistItem {
         let var_id = self.var_id.clone();
@@ -705,7 +716,6 @@ impl SublistBuilderItem {
     }
 }
 
-// TODO: This could skip the building step and go straight to a Sublist.
 #[derive(Debug)]
 pub struct SublistBuilder {
     items: Vec<SublistBuilderItem>,
@@ -723,6 +733,19 @@ impl SublistBuilder {
         SublistBuilder { items }
     }
 
+    fn verify_structure<'a, F>(
+        &'a self,
+        errors: &mut ParsingErrorContext<'a>,
+        generate_error: F,
+    ) -> bool
+    where
+        F: Fn(MathParsingError<'a>) -> ParsingError<'a> + Copy,
+    {
+        self.items
+            .iter()
+            .all(|item| item.verify_structure(errors, generate_error))
+    }
+
     // TODO: Remove.
     fn finish(&self) -> Sublist {
         let items = self.items.iter().map(SublistBuilderItem::finish).collect();
@@ -732,8 +755,77 @@ impl SublistBuilder {
 }
 
 #[derive(Debug)]
+pub enum BigOperatorKind {
+    SquareRoot,
+    Power,
+}
+
+impl BigOperatorKind {
+    fn from_pest(pair: Pair<Rule>) -> BigOperatorKind {
+        match pair.as_rule() {
+            Rule::operator_sqrt => Self::SquareRoot,
+            Rule::operator_pow => Self::Power,
+
+            _ => unreachable!(),
+        }
+    }
+
+    fn verify_structure<'a, F>(
+        &self,
+        element: &'a MathBuilderElement,
+        inputs: &'a [MathBuilder],
+        errors: &mut ParsingErrorContext<'a>,
+        generate_error: F,
+    ) -> bool
+    where
+        F: Fn(MathParsingError<'a>) -> ParsingError + Copy,
+    {
+        if inputs.len() == self.arity() {
+            inputs
+                .iter()
+                .all(|input| input.verify_structure(errors, generate_error))
+        } else {
+            match self {
+                Self::SquareRoot => {
+                    errors.err(generate_error(MathParsingError::SquareRootWrongInputArity(
+                        element,
+                    )));
+                }
+
+                Self::Power => {
+                    errors.err(generate_error(MathParsingError::PowerWrongInputArity(
+                        element,
+                    )));
+                }
+            }
+            false
+        }
+    }
+
+    // TODO: Remove.
+    fn finish(&self, inputs: &[MathBuilder]) -> MathElement {
+        assert_eq!(inputs.len(), self.arity());
+
+        match self {
+            Self::SquareRoot => MathElement::SquareRoot(inputs[0].finish()),
+
+            Self::Power => MathElement::Power(inputs[0].finish(), inputs[1].finish()),
+        }
+    }
+
+    fn arity(&self) -> usize {
+        match self {
+            Self::SquareRoot => 1,
+            Self::Power => 2,
+        }
+    }
+}
+
+#[derive(Debug)]
 pub enum MathBuilderElement {
     Fenced(MathBuilder),
+
+    BigOperator(BigOperatorKind, Vec<MathBuilder>),
 
     Operator(String),
     Symbol(String),
@@ -769,6 +861,14 @@ impl MathBuilderElement {
         match pair.as_rule() {
             Rule::math_row => Self::Fenced(MathBuilder::from_pest(pair)),
 
+            Rule::big_operator => {
+                let mut inner = pair.into_inner();
+                let kind = BigOperatorKind::from_pest(inner.next().unwrap());
+                let inputs = inner.map(MathBuilder::from_pest).collect();
+
+                Self::BigOperator(kind, inputs)
+            }
+
             Rule::display_operator => {
                 let operator = pair.into_inner().next().unwrap().as_rule();
                 let mapped_operator = Self::map_operator(operator);
@@ -803,10 +903,31 @@ impl MathBuilderElement {
         }
     }
 
+    fn verify_structure<'a, F>(
+        &'a self,
+        errors: &mut ParsingErrorContext<'a>,
+        generate_error: F,
+    ) -> bool
+    where
+        F: Fn(MathParsingError<'a>) -> ParsingError<'a> + Copy,
+    {
+        match self {
+            Self::Fenced(builder) => builder.verify_structure(errors, generate_error),
+
+            Self::BigOperator(kind, inputs) => {
+                kind.verify_structure(self, inputs, errors, generate_error)
+            }
+
+            _ => true,
+        }
+    }
+
     // TODO: Remove.
     fn finish(&self) -> MathElement {
         match self {
             Self::Fenced(builder) => MathElement::Fenced(builder.finish()),
+
+            Self::BigOperator(kind, inputs) => kind.finish(inputs),
 
             Self::Operator(operator) => MathElement::Operator(operator.clone()),
             Self::Symbol(symbol) => MathElement::Symbol(symbol.clone()),
@@ -816,10 +937,11 @@ impl MathBuilderElement {
     }
 }
 
-// TODO: This could skip the building step and go straight to a MathBlock.
 #[derive(Debug)]
 pub struct MathBuilder {
     elements: Vec<MathBuilderElement>,
+
+    verified: Cell<bool>,
 }
 
 impl MathBuilder {
@@ -831,7 +953,11 @@ impl MathBuilder {
             .map(MathBuilderElement::from_pest)
             .collect();
 
-        MathBuilder { elements }
+        MathBuilder {
+            elements,
+
+            verified: Cell::new(false),
+        }
     }
 
     pub fn from_pest_formula(pair: Pair<Rule>) -> MathBuilder {
@@ -850,11 +976,34 @@ impl MathBuilder {
             })
             .collect();
 
-        MathBuilder { elements }
+        MathBuilder {
+            elements,
+
+            verified: Cell::new(false),
+        }
+    }
+
+    pub fn verify_structure<'a, F>(
+        &'a self,
+        errors: &mut ParsingErrorContext<'a>,
+        generate_error: F,
+    ) -> bool
+    where
+        F: Fn(MathParsingError<'a>) -> ParsingError + Copy,
+    {
+        let success = self
+            .elements
+            .iter()
+            .all(|element| element.verify_structure(errors, generate_error));
+
+        self.verified.set(success);
+        success
     }
 
     // TODO: Remove.
     pub fn finish(&self) -> MathBlock {
+        assert!(self.verified.get());
+
         let elements = self
             .elements
             .iter()
@@ -865,7 +1014,6 @@ impl MathBuilder {
     }
 }
 
-// TODO: This could skip the building step and go straight to a DisplayMathBlock.
 #[derive(Debug)]
 pub struct DisplayMathBuilder {
     math: MathBuilder,
@@ -887,6 +1035,17 @@ impl DisplayMathBuilder {
             .to_owned();
 
         DisplayMathBuilder { math, end }
+    }
+
+    fn verify_structure<'a, F>(
+        &'a self,
+        errors: &mut ParsingErrorContext<'a>,
+        generate_error: F,
+    ) -> bool
+    where
+        F: Fn(MathParsingError<'a>) -> ParsingError<'a> + Copy,
+    {
+        self.math.verify_structure(errors, generate_error)
     }
 
     // TODO: Remove.
@@ -926,7 +1085,7 @@ impl<'a> SystemReferenceBuilder<'a> {
         generate_error: F,
     ) -> bool
     where
-        F: Fn(ParagraphElementParsingError) -> ParsingError<'a>,
+        F: Fn(ParagraphElementParsingError<'a>) -> ParsingError<'a>,
     {
         match index.search_system(&self.id) {
             Some(system_ref) => {
@@ -990,7 +1149,7 @@ impl<'a> SystemChildReferenceBuilder<'a> {
         generate_error: F,
     ) -> bool
     where
-        F: Fn(ParagraphElementParsingError) -> ParsingError<'a>,
+        F: Fn(ParagraphElementParsingError<'a>) -> ParsingError<'a>,
     {
         match index.search_system_child(&self.system_id, &self.child_id) {
             Some(child_ref) => {
@@ -1053,7 +1212,7 @@ impl<'a> TagReferenceBuilder<'a> {
         generate_error: F,
     ) -> bool
     where
-        F: Fn(ParagraphElementParsingError) -> ParsingError<'a>,
+        F: Fn(ParagraphElementParsingError<'a>) -> ParsingError<'a>,
     {
         match tags.get(self.tag.as_str()) {
             Some(step_ref) => {
@@ -1143,7 +1302,7 @@ impl<'a> ReferenceBuilder<'a> {
         generate_error: F,
     ) -> bool
     where
-        F: Fn(ParagraphElementParsingError) -> ParsingError<'a>,
+        F: Fn(ParagraphElementParsingError<'a>) -> ParsingError<'a>,
     {
         match self {
             Self::System(r) => r.verify_structure(index, errors, generate_error),
@@ -1160,7 +1319,7 @@ impl<'a> ReferenceBuilder<'a> {
         generate_error: F,
     ) -> bool
     where
-        F: Fn(ParagraphElementParsingError) -> ParsingError<'a>,
+        F: Fn(ParagraphElementParsingError<'a>) -> ParsingError<'a>,
     {
         match self {
             Self::System(r) => r.verify_structure(index, errors, generate_error),
@@ -1192,7 +1351,7 @@ impl ParagraphFormattingState {
         generate_error: F,
     ) -> bool
     where
-        F: Fn(ParagraphElementParsingError) -> ParsingError<'a>,
+        F: Fn(ParagraphElementParsingError<'a>) -> ParsingError<'a>,
     {
         match self {
             Self::None => {
@@ -1215,7 +1374,7 @@ impl ParagraphFormattingState {
         generate_error: F,
     ) -> bool
     where
-        F: Fn(ParagraphElementParsingError) -> ParsingError<'a>,
+        F: Fn(ParagraphElementParsingError<'a>) -> ParsingError<'a>,
     {
         match self {
             Self::Unicorn => {
@@ -1234,7 +1393,7 @@ impl ParagraphFormattingState {
 
     fn em_begin<'a, F>(&mut self, errors: &mut ParsingErrorContext<'a>, generate_error: F) -> bool
     where
-        F: Fn(ParagraphElementParsingError) -> ParsingError<'a>,
+        F: Fn(ParagraphElementParsingError<'a>) -> ParsingError<'a>,
     {
         match self {
             Self::None => {
@@ -1253,7 +1412,7 @@ impl ParagraphFormattingState {
 
     fn em_end<'a, F>(&mut self, errors: &mut ParsingErrorContext<'a>, generate_error: F) -> bool
     where
-        F: Fn(ParagraphElementParsingError) -> ParsingError<'a>,
+        F: Fn(ParagraphElementParsingError<'a>) -> ParsingError<'a>,
     {
         match self {
             Self::Em => {
@@ -1272,7 +1431,7 @@ impl ParagraphFormattingState {
 
     fn verify<'a, F>(self, errors: &mut ParsingErrorContext<'a>, generate_error: F) -> bool
     where
-        F: Fn(ParagraphParsingError) -> ParsingError<'a>,
+        F: Fn(ParagraphParsingError<'a>) -> ParsingError<'a>,
     {
         match self {
             Self::None => true,
@@ -1321,18 +1480,20 @@ impl<'a> ParagraphBuilderElement<'a> {
     }
 
     fn verify_structure<F>(
-        &self,
+        &'a self,
         index: &BuilderIndex<'a>,
         state: &mut ParagraphFormattingState,
         errors: &mut ParsingErrorContext<'a>,
         generate_error: F,
     ) -> bool
     where
-        F: Fn(ParagraphElementParsingError) -> ParsingError<'a>,
+        F: Fn(ParagraphElementParsingError<'a>) -> ParsingError<'a>,
     {
         match self {
             Self::Reference(r) => r.verify_structure(index, errors, generate_error),
-            Self::InlineMath(_) => true,
+            Self::InlineMath(math) => math.verify_structure(errors, |e| {
+                generate_error(ParagraphElementParsingError::MathError(e))
+            }),
             Self::Citation(citation) => citation.verify_structure(index, errors, generate_error),
 
             Self::UnicornVomitBegin => state.unicorn_begin(errors, generate_error),
@@ -1345,7 +1506,7 @@ impl<'a> ParagraphBuilderElement<'a> {
     }
 
     fn verify_structure_with_tags<F>(
-        &self,
+        &'a self,
         index: &BuilderIndex<'a>,
         tags: &HashMap<&str, &'a ProofBuilderStep<'a>>,
         state: &mut ParagraphFormattingState,
@@ -1353,11 +1514,13 @@ impl<'a> ParagraphBuilderElement<'a> {
         generate_error: F,
     ) -> bool
     where
-        F: Fn(ParagraphElementParsingError) -> ParsingError<'a>,
+        F: Fn(ParagraphElementParsingError<'a>) -> ParsingError<'a>,
     {
         match self {
             Self::Reference(r) => r.verify_structure_with_tags(index, tags, errors, generate_error),
-            Self::InlineMath(_) => true,
+            Self::InlineMath(math) => math.verify_structure(errors, |e| {
+                generate_error(ParagraphElementParsingError::MathError(e))
+            }),
             Self::Citation(citation) => citation.verify_structure(index, errors, generate_error),
 
             Self::UnicornVomitBegin => state.unicorn_begin(errors, generate_error),
@@ -1428,13 +1591,13 @@ impl<'a> ParagraphBuilder<'a> {
     }
 
     pub fn verify_structure<F>(
-        &self,
+        &'a self,
         index: &BuilderIndex<'a>,
         errors: &mut ParsingErrorContext<'a>,
         generate_error: F,
     ) -> bool
     where
-        F: Fn(ParagraphParsingError) -> ParsingError<'a>,
+        F: Fn(ParagraphParsingError<'a>) -> ParsingError<'a>,
     {
         assert!(!self.verified.get());
 
@@ -1451,14 +1614,14 @@ impl<'a> ParagraphBuilder<'a> {
     }
 
     pub fn verify_structure_with_tags<F>(
-        &self,
+        &'a self,
         index: &BuilderIndex<'a>,
         tags: &HashMap<&str, &'a ProofBuilderStep<'a>>,
         errors: &mut ParsingErrorContext<'a>,
         generate_error: F,
     ) -> bool
     where
-        F: Fn(ParagraphParsingError) -> ParsingError<'a>,
+        F: Fn(ParagraphParsingError<'a>) -> ParsingError<'a>,
     {
         assert!(!self.verified.get());
 
@@ -2029,11 +2192,15 @@ impl<'a> TextBuilder<'a> {
             Self::RawCitation(citation) => citation.verify_structure(errors, |e| {
                 generate_error(TextParsingError::RawCitationError(e))
             }),
+            Self::Sublist(sublist) => sublist.verify_structure(errors, |e| {
+                generate_error(TextParsingError::SublistError(e))
+            }),
             Self::Paragraph(paragraph) => paragraph.verify_structure(index, errors, |e| {
                 generate_error(TextParsingError::ParagraphError(e))
             }),
-
-            Self::Sublist(_) | Self::DisplayMath(_) => true,
+            Self::DisplayMath(math) => math.verify_structure(errors, |e| {
+                generate_error(TextParsingError::DisplayMathError(e))
+            }),
         }
     }
 
@@ -2051,13 +2218,17 @@ impl<'a> TextBuilder<'a> {
             Self::RawCitation(citation) => citation.verify_structure(errors, |e| {
                 generate_error(TextParsingError::RawCitationError(e))
             }),
+            Self::Sublist(sublist) => sublist.verify_structure(errors, |e| {
+                generate_error(TextParsingError::SublistError(e))
+            }),
             Self::Paragraph(paragraph) => {
                 paragraph.verify_structure_with_tags(index, tags, errors, |e| {
                     generate_error(TextParsingError::ParagraphError(e))
                 })
             }
-
-            Self::Sublist(_) | Self::DisplayMath(_) => true,
+            Self::DisplayMath(math) => math.verify_structure(errors, |e| {
+                generate_error(TextParsingError::DisplayMathError(e))
+            }),
         }
     }
 
