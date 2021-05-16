@@ -78,10 +78,10 @@ primary_paren = { "(" ~ formula ~ ")" }
 
 read_operator = { read_operator_silent }
 read_operator_silent = _{
-  operator_negation |operator_equiv | operator_implies
+  operator_negation | operator_equiv | operator_implies
   | operator_and | operator_or
   | operator_plus | operator_minus | operator_asterisk | operator_slash
-  | operator_lt | operator_eq | operator_gt
+  | operator_lt | operator_eq | operator_gt | operator_twiddle
 }
 operator_plus = { "+" }
 operator_minus = { "-" }
@@ -95,6 +95,7 @@ operator_or = { "|" }
 operator_lt = { "<" }
 operator_eq = { "=" }
 operator_gt = { ">" }
+operator_twiddle = { "~" }
 
 display_operator = { display_operator_silent }
 display_operator_silent = _{ read_operator_silent | operator_bang }

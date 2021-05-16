@@ -851,6 +851,8 @@ impl MathBuilderElement {
             Rule::operator_eq => "=",
             Rule::operator_gt => ">",
 
+            Rule::operator_twiddle => "~",
+
             Rule::operator_bang => "!",
 
             _ => unreachable!(),
