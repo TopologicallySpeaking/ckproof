@@ -40,6 +40,7 @@ rdquo = { "\"" }
 lsquo = { "`" }
 rsquo = { "`'" }
 ellipsis = { "..." }
+separator = { "\\," }
 
 word = @{ (!word_forbidden ~ ANY)+ }
 word_forbidden = {
@@ -55,7 +56,12 @@ display_math_end = ${ "\\]" ~ math_punct }
 math_punct = @{ PUNCTUATION* }
 
 math_row = !{ math_item* }
-math_item = _{ math_fenced | big_operator | display_operator | var | ident | integer }
+math_item = _{
+  math_fenced | big_operator | display_operator
+  | var | ident | integer
+  | math_row_punct
+}
+math_row_punct = _{ ellipsis | separator }
 math_fenced = _{ "(" ~ math_row ~ ")" }
 
 big_operator = {

@@ -828,6 +828,7 @@ pub enum MathBuilderElement {
     BigOperator(BigOperatorKind, Vec<MathBuilder>),
 
     Operator(String),
+    Separator,
     Symbol(String),
     Variable(String),
     Number(String),
@@ -883,6 +884,9 @@ impl MathBuilderElement {
             }
             Rule::integer => Self::Number(pair.as_str().to_owned()),
 
+            Rule::ellipsis => Self::Operator("\u{2026}".to_owned()),
+            Rule::separator => Self::Separator,
+
             _ => unreachable!(),
         }
     }
@@ -932,6 +936,7 @@ impl MathBuilderElement {
             Self::BigOperator(kind, inputs) => kind.finish(inputs),
 
             Self::Operator(operator) => MathElement::Operator(operator.clone()),
+            Self::Separator => MathElement::Separator,
             Self::Symbol(symbol) => MathElement::Symbol(symbol.clone()),
             Self::Variable(variable) => MathElement::Variable(variable.clone()),
             Self::Number(number) => MathElement::Number(number.clone()),
