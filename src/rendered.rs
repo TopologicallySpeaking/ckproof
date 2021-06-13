@@ -206,6 +206,7 @@ impl AxiomRendered {
 
 #[derive(Deserialize, Serialize, Debug)]
 pub struct TheoremRendered {
+    kind: String,
     id: String,
     system_id: String,
     name: String,
@@ -218,6 +219,7 @@ pub struct TheoremRendered {
 
 impl TheoremRendered {
     pub fn new(
+        kind: String,
         id: String,
         system_id: String,
         name: String,
@@ -228,6 +230,7 @@ impl TheoremRendered {
         assertion: String,
     ) -> TheoremRendered {
         TheoremRendered {
+            kind,
             id,
             system_id,
             name,

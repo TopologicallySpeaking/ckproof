@@ -22,7 +22,7 @@ use pest::iterators::{Pair, Pairs};
 
 use crate::document::deduction::{
     AxiomBlock, ProofBlock, ProofBlockElement, ProofBlockJustification,
-    ProofBlockSmallJustification, ProofBlockSmallStep, ProofBlockStep, TheoremBlock,
+    ProofBlockSmallJustification, ProofBlockSmallStep, ProofBlockStep, TheoremBlock, TheoremKind,
 };
 use crate::document::directory::{
     AxiomBlockRef, BlockReference, ProofBlockRef, ProofBlockStepRef, SystemBlockRef,
@@ -1303,6 +1303,17 @@ impl<'a> std::fmt::Debug for AxiomBuilder<'a> {
     }
 }
 
+impl TheoremKind {
+    fn from_pest(pair: Pair<Rule>) -> Self {
+        match pair.as_rule() {
+            Rule::theorem_lemma => Self::Lemma,
+            Rule::theorem_theorem => Self::Theorem,
+
+            _ => unreachable!(),
+        }
+    }
+}
+
 struct TheoremBuilderEntries<'a> {
     names: Vec<String>,
     taglines: Vec<ParagraphBuilder<'a>>,
@@ -1635,6 +1646,7 @@ impl<'a> TheoremBuilderEntries<'a> {
 }
 
 pub struct TheoremBuilder<'a> {
+    kind: TheoremKind,
     id: String,
     system_id: String,
     serial: usize,
@@ -1656,12 +1668,15 @@ impl<'a> TheoremBuilder<'a> {
         assert_eq!(pair.as_rule(), Rule::theorem_block);
 
         let mut inner = pair.into_inner();
+        let head = inner.next().unwrap();
         let id = inner.next().unwrap().as_str().to_owned();
         let system_id = inner.next().unwrap().as_str().to_owned();
 
+        let kind = TheoremKind::from_pest(head.into_inner().next().unwrap());
         let entries = TheoremBuilderEntries::from_pest(inner);
 
         TheoremBuilder {
+            kind,
             id,
             system_id,
             serial,
@@ -1729,6 +1744,7 @@ impl<'a> TheoremBuilder<'a> {
 
     // TODO: Remove.
     pub fn finish(&'a self) -> TheoremBlock {
+        let kind = self.kind;
         let id = self.id.clone();
         let name = self.entries.name().to_owned();
         let system = self.system_ref.get().unwrap().get_ref();
@@ -1755,6 +1771,7 @@ impl<'a> TheoremBuilder<'a> {
         let assertion = self.entries.assertion().finish();
 
         TheoremBlock::new(
+            kind,
             id,
             name,
             system,

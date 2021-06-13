@@ -277,10 +277,16 @@ axiom_entry = _{
 }
 
 theorem_block = {
-  "\\Theorem" ~ ident ~ ":" ~ ident ~ "{"
+  theorem_head ~ ident ~ ":" ~ ident ~ "{"
     ~ theorem_entry*
   ~ "}"
 }
+
+theorem_head = ${ "\\" ~ theorem_kind }
+theorem_kind = _{ theorem_lemma | theorem_theorem }
+theorem_lemma = { "Lemma" }
+theorem_theorem = { "Theorem" }
+
 theorem_entry = _{
   block_name | block_tagline | block_description
   | block_flags | block_var_declaration | premise | assertion

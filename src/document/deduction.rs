@@ -126,7 +126,23 @@ impl AxiomBlock {
     }
 }
 
+#[derive(Clone, Copy)]
+pub enum TheoremKind {
+    Lemma,
+    Theorem,
+}
+
+impl TheoremKind {
+    fn render(&self) -> &str {
+        match self {
+            Self::Lemma => "Lemma",
+            Self::Theorem => "Theorem",
+        }
+    }
+}
+
 pub struct TheoremBlock {
+    kind: TheoremKind,
     id: String,
     name: String,
     system: SystemBlockRef,
@@ -141,6 +157,7 @@ pub struct TheoremBlock {
 
 impl TheoremBlock {
     pub fn new(
+        kind: TheoremKind,
         id: String,
         name: String,
         system: SystemBlockRef,
@@ -152,6 +169,7 @@ impl TheoremBlock {
         assertion: DisplayFormulaBlock,
     ) -> TheoremBlock {
         TheoremBlock {
+            kind,
             id,
             name,
             system,
@@ -183,6 +201,7 @@ impl TheoremBlock {
     }
 
     pub fn render(&self, directory: &BlockDirectory) -> TheoremRendered {
+        let kind = self.kind.render().to_owned();
         let id = self.id.clone();
         let name = self.name.clone();
         let tagline = self.tagline.render(directory);
@@ -203,6 +222,7 @@ impl TheoremBlock {
         let system_name = system.name().to_owned();
 
         TheoremRendered::new(
+            kind,
             id,
             system_id,
             name,
