@@ -31,9 +31,9 @@ use crate::document::language::{
 
 use super::bibliography::BibliographyBuilderEntry;
 use super::errors::{
-    DefinitionParsingError, FormulaParsingError, MathParsingError, ParsingError,
-    ParsingErrorContext, ReadableParsingError, SymbolParsingError, TypeParsingError,
-    TypeSignatureParsingError, VariableParsingError,
+    DefinitionParsingError, FormulaParsingError, ParsingError, ParsingErrorContext,
+    ReadableParsingError, SymbolParsingError, TypeParsingError, TypeSignatureParsingError,
+    VariableParsingError,
 };
 use super::index::{BuilderIndex, LocalBuilderIndex};
 use super::system::{DeductableBuilder, SystemBuilder};
