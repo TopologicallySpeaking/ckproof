@@ -16,9 +16,9 @@
 use url::Url;
 
 use crate::rendered::{
-    DisplayMathRendered, HeadingRendered, MlaContainerRendered, MlaRendered, QuoteRendered,
-    QuoteValueRendered, SublistItemRendered, TableRendered, TableRenderedRow, TextRendered,
-    TodoRendered,
+    DisplayMathRendered, HeadingRendered, ListRendered, MlaContainerRendered, MlaRendered,
+    QuoteRendered, QuoteValueRendered, SublistItemRendered, TableRendered, TableRenderedRow,
+    TextRendered, TodoRendered,
 };
 
 use super::directory::{BlockDirectory, BlockReference, LocalBibliographyRef, ProofBlockRef};
@@ -443,6 +443,28 @@ impl Text {
                 TextRendered::Paragraph(paragraph.render_with_proof_steps(directory, proof_ref))
             }
         }
+    }
+}
+
+pub struct ListBlock {
+    ordered: bool,
+    items: Vec<Paragraph>,
+}
+
+impl ListBlock {
+    pub fn new(ordered: bool, items: Vec<Paragraph>) -> ListBlock {
+        ListBlock { ordered, items }
+    }
+
+    pub fn render(&self, directory: &BlockDirectory) -> ListRendered {
+        let ordered = self.ordered;
+        let items = self
+            .items
+            .iter()
+            .map(|paragraph| paragraph.render(directory))
+            .collect();
+
+        ListRendered::new(ordered, items)
     }
 }
 

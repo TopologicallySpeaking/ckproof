@@ -21,14 +21,14 @@ use pest::iterators::{Pair, Pairs};
 use url::Url;
 
 use crate::document::directory::{
-    BlockReference, HeadingBlockRef, LocalBibliographyRef, QuoteBlockRef, TableBlockRef,
-    TextBlockRef, TodoBlockRef,
+    BlockReference, HeadingBlockRef, ListBlockRef, LocalBibliographyRef, QuoteBlockRef,
+    TableBlockRef, TextBlockRef, TodoBlockRef,
 };
 use crate::document::text::{
     BareElement, BareText, Citation, DisplayMathBlock, HeadingBlock, HeadingLevel, Hyperlink,
-    MathBlock, MathElement, Mla, MlaContainer, Paragraph, ParagraphElement, QuoteBlock, QuoteValue,
-    SubHeadingBlock, Sublist, SublistItem, TableBlock, TableBlockRow, Text, TextBlock, TodoBlock,
-    Unformatted, UnformattedElement,
+    ListBlock, MathBlock, MathElement, Mla, MlaContainer, Paragraph, ParagraphElement, QuoteBlock,
+    QuoteValue, SubHeadingBlock, Sublist, SublistItem, TableBlock, TableBlockRow, Text, TextBlock,
+    TodoBlock, Unformatted, UnformattedElement,
 };
 use crate::map_ident;
 
@@ -1669,6 +1669,67 @@ impl<'a> ParagraphBuilder<'a> {
             .collect();
 
         Paragraph::new(elements)
+    }
+}
+
+#[derive(Debug)]
+pub struct ListBuilder<'a> {
+    ordered: bool,
+    items: Vec<ParagraphBuilder<'a>>,
+
+    count: OnceCell<usize>,
+}
+
+impl<'a> ListBuilder<'a> {
+    pub fn from_pest(pair: Pair<Rule>, ordered: bool) -> Self {
+        let items = pair.into_inner().map(ParagraphBuilder::from_pest).collect();
+
+        ListBuilder {
+            ordered,
+            items,
+
+            count: OnceCell::new(),
+        }
+    }
+
+    pub fn verify_structure(
+        &'a self,
+        index: &BuilderIndex<'a>,
+        errors: &mut ParsingErrorContext<'a>,
+    ) {
+        for item in &self.items {
+            item.verify_structure(index, errors, |e| {
+                ParsingError::ListItemError(self, item, e)
+            });
+        }
+    }
+
+    pub fn bib_refs(&'a self) -> Box<dyn Iterator<Item = &BibliographyBuilderEntry> + '_> {
+        Box::new(self.items.iter().flat_map(ParagraphBuilder::bib_refs))
+    }
+
+    pub fn set_local_bib_refs(&self, index: &HashMap<&BibliographyBuilderEntry, usize>) {
+        for item in &self.items {
+            item.set_local_bib_refs(index);
+        }
+    }
+
+    // TODO: Remove.
+    pub fn count(&self, count: usize) {
+        self.count.set(count).unwrap();
+    }
+
+    // TODO: Remove.
+    pub fn get_ref(&self) -> ListBlockRef {
+        ListBlockRef::new(*self.count.get().unwrap())
+    }
+
+    // TODO: Remove.
+    pub fn finish(&self) -> ListBlock {
+        let ordered = self.ordered;
+        let items = self.items.iter().map(ParagraphBuilder::finish).collect();
+
+        ListBlock::new(ordered, items)
     }
 }
 

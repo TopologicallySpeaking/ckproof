@@ -300,6 +300,18 @@ impl ProofRendered {
 }
 
 #[derive(Deserialize, Serialize, Debug)]
+pub struct ListRendered {
+    ordered: bool,
+    items: Vec<String>,
+}
+
+impl ListRendered {
+    pub fn new(ordered: bool, items: Vec<String>) -> ListRendered {
+        ListRendered { ordered, items }
+    }
+}
+
+#[derive(Deserialize, Serialize, Debug)]
 pub struct TableRenderedRow {
     cells: Vec<String>,
 }
@@ -486,6 +498,7 @@ pub enum BlockRendered {
     Axiom(AxiomRendered),
     Theorem(TheoremRendered),
     Proof(ProofRendered),
+    List(ListRendered),
     Table(TableRendered),
     Quote(QuoteRendered),
     Heading(Vec<HeadingRendered>),

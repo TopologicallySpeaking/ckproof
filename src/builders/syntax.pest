@@ -13,6 +13,8 @@
 // You should have received a copy of the GNU Affero General Public License along with ckproof. If
 // not, see <https://www.gnu.org/licenses/>.
 
+// TODO: Clean up this file. It's getting very messy.
+
 ident = @{ (LETTER | "_")+ }
 var = ${ "'" ~ ident }
 tag = ${ "#" ~ tag_contents }
@@ -315,6 +317,24 @@ macro_justification_kind = _{
 macro_justification_by_definition = { "def" }
 macro_justification_by_substitution = { "sub" }
 
+list_item = _{
+  "<" ~ "li" ~ ">"
+    ~ oneline
+  ~ "<" ~ "/" ~ "li" ~ ">"
+}
+
+ol_block = {
+  "<" ~ "ol" ~ ">"
+    ~ list_item*
+  ~ "<" ~ "/" ~ "ol" ~ ">"
+}
+
+ul_block = {
+  "<" ~ "ul" ~ ">"
+    ~ list_item*
+  ~ "<" ~ "/" ~ "ul" ~ ">"
+}
+
 table_head = { "<" ~ "head" ~ ">" ~ table_row* ~ "<" ~ "/" ~ "head" ~ ">" }
 table_body = { "<" ~ "body" ~ ">" ~ table_row* ~ "<" ~ "/" ~ "body" ~ ">" }
 table_foot = { "<" ~ "foot" ~ ">" ~ table_row* ~ "<" ~ "/" ~ "foot" ~ ">" }
@@ -422,7 +442,7 @@ document = { SOI ~ document_block* ~ EOI }
 document_block = _{
   system_block | type_block | symbol_block | definition_block
   | axiom_block | theorem_block | proof_block
-  | table_block | quote_block | heading_block | todo_block
+  | ul_block | ol_block | table_block | quote_block | heading_block | todo_block
   | text_block
 }
 

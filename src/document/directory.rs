@@ -21,7 +21,9 @@ use crate::rendered::{BlockRendered, MlaRendered};
 
 use super::deduction::{AxiomBlock, ProofBlock, TheoremBlock};
 use super::language::{DefinitionBlock, SymbolBlock, SystemBlock, TypeBlock};
-use super::text::{BareText, HeadingBlock, Mla, QuoteBlock, TableBlock, TextBlock, TodoBlock};
+use super::text::{
+    BareText, HeadingBlock, ListBlock, Mla, QuoteBlock, TableBlock, TextBlock, TodoBlock,
+};
 
 #[derive(Clone, Copy, Debug)]
 pub struct SystemBlockRef(usize);
@@ -129,6 +131,15 @@ pub struct ProofBlockStepRef(usize);
 impl ProofBlockStepRef {
     pub fn new(i: usize) -> ProofBlockStepRef {
         ProofBlockStepRef(i)
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct ListBlockRef(usize);
+
+impl ListBlockRef {
+    pub fn new(i: usize) -> ListBlockRef {
+        ListBlockRef(i)
     }
 }
 
@@ -369,6 +380,7 @@ pub enum Block {
     Theorem(TheoremBlockRef),
     Proof(ProofBlockRef),
 
+    List(ListBlockRef),
     Table(TableBlockRef),
     Quote(QuoteBlockRef),
     Heading(HeadingBlockRef),
@@ -412,6 +424,11 @@ impl Block {
             Self::Proof(proof_ref) => {
                 let proof = directory[*proof_ref].render(directory);
                 BlockRendered::Proof(proof)
+            }
+
+            Self::List(list_ref) => {
+                let list = directory[*list_ref].render(directory);
+                BlockRendered::List(list)
             }
 
             Self::Table(table_ref) => {
@@ -523,6 +540,7 @@ pub struct BlockDirectory {
     theorems: Vec<TheoremBlock>,
     proofs: Vec<ProofBlock>,
 
+    lists: Vec<ListBlock>,
     tables: Vec<TableBlock>,
     quotes: Vec<QuoteBlock>,
     headings: Vec<HeadingBlock>,
@@ -541,6 +559,7 @@ impl BlockDirectory {
         axioms: Vec<AxiomBlock>,
         theorems: Vec<TheoremBlock>,
         proofs: Vec<ProofBlock>,
+        lists: Vec<ListBlock>,
         tables: Vec<TableBlock>,
         quotes: Vec<QuoteBlock>,
         headings: Vec<HeadingBlock>,
@@ -557,6 +576,7 @@ impl BlockDirectory {
             theorems,
             proofs,
 
+            lists,
             tables,
             quotes,
             headings,
@@ -653,6 +673,14 @@ impl Index<ProofBlockRef> for BlockDirectory {
 
     fn index(&self, proof_ref: ProofBlockRef) -> &Self::Output {
         &self.proofs[proof_ref.0]
+    }
+}
+
+impl Index<ListBlockRef> for BlockDirectory {
+    type Output = ListBlock;
+
+    fn index(&self, list_ref: ListBlockRef) -> &Self::Output {
+        &self.lists[list_ref.0]
     }
 }
 

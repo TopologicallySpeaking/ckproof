@@ -24,7 +24,9 @@ use crate::document::deduction::{AxiomBlock, ProofBlock, TheoremBlock};
 use crate::document::directory::Block;
 use crate::document::language::{DefinitionBlock, SymbolBlock, SystemBlock, TypeBlock};
 use crate::document::structure::{Book, Chapter, Page};
-use crate::document::text::{HeadingBlock, QuoteBlock, TableBlock, TextBlock, TodoBlock};
+use crate::document::text::{
+    HeadingBlock, ListBlock, QuoteBlock, TableBlock, TextBlock, TodoBlock,
+};
 
 use super::bibliography::{BibliographyBuilderEntry, LocalBibliographyBuilder};
 use super::errors::{BookParsingError, ChapterParsingError, ParsingError, ParsingErrorContext};
@@ -34,7 +36,8 @@ use super::system::{
     AxiomBuilder, ProofBuilder, SystemBuilder, SystemBuilderChild, TheoremBuilder,
 };
 use super::text::{
-    HeadingBuilder, ParagraphBuilder, QuoteBuilder, TableBuilder, TextBlockBuilder, TodoBuilder,
+    HeadingBuilder, ListBuilder, ParagraphBuilder, QuoteBuilder, TableBuilder, TextBlockBuilder,
+    TodoBuilder,
 };
 use super::{BlockCounter, DocumentParser, Rule};
 
@@ -47,6 +50,7 @@ pub enum BlockBuilder<'a> {
     Theorem(TheoremBuilder<'a>),
     Proof(ProofBuilder<'a>),
 
+    List(ListBuilder<'a>),
     Table(TableBuilder<'a>),
     Quote(QuoteBuilder<'a>),
     Todo(TodoBuilder<'a>),
@@ -69,6 +73,9 @@ impl<'a> BlockBuilder<'a> {
             Rule::axiom_block => Self::Axiom(AxiomBuilder::from_pest(pair, curr_serial)),
             Rule::theorem_block => Self::Theorem(TheoremBuilder::from_pest(pair, curr_serial)),
             Rule::proof_block => Self::Proof(ProofBuilder::from_pest(pair, curr_serial)),
+
+            Rule::ul_block => Self::List(ListBuilder::from_pest(pair, false)),
+            Rule::ol_block => Self::List(ListBuilder::from_pest(pair, true)),
 
             Rule::table_block => Self::Table(TableBuilder::from_pest(pair)),
             Rule::quote_block => Self::Quote(QuoteBuilder::from_pest(pair)),
@@ -113,6 +120,7 @@ impl<'a> BlockBuilder<'a> {
             Self::Theorem(theorem_ref) => theorem_ref.verify_structure(index, errors),
             Self::Proof(proof_ref) => proof_ref.verify_structure(index, errors),
 
+            Self::List(list_ref) => list_ref.verify_structure(index, errors),
             Self::Table(table_ref) => table_ref.verify_structure(index, errors),
             Self::Quote(quote_ref) => quote_ref.verify_structure(index, errors),
             Self::Todo(todo_ref) => todo_ref.verify_structure(index, errors),
@@ -160,6 +168,7 @@ impl<'a> BlockBuilder<'a> {
             Self::Theorem(theorem_ref) => theorem_ref.bib_refs(),
             Self::Proof(proof_ref) => proof_ref.bib_refs(),
 
+            Self::List(list_ref) => list_ref.bib_refs(),
             Self::Table(table_ref) => table_ref.bib_refs(),
             Self::Quote(quote_ref) => quote_ref.bib_refs(),
             Self::Todo(todo_ref) => todo_ref.bib_refs(),
@@ -178,6 +187,7 @@ impl<'a> BlockBuilder<'a> {
             Self::Theorem(theorem_ref) => theorem_ref.set_local_bib_refs(index),
             Self::Proof(proof_ref) => proof_ref.set_local_bib_refs(index),
 
+            Self::List(list_ref) => list_ref.set_local_bib_refs(index),
             Self::Table(table_ref) => table_ref.set_local_bib_refs(index),
             Self::Quote(quote_ref) => quote_ref.set_local_bib_refs(index),
             Self::Todo(todo_ref) => todo_ref.set_local_bib_refs(index),
@@ -230,6 +240,7 @@ impl<'a> BlockBuilder<'a> {
                 proof_ref.set_href(book_id, chapter_id, page_id);
             }
 
+            Self::List(list_ref) => list_ref.count(counter.list()),
             Self::Table(table_ref) => table_ref.count(counter.table()),
             Self::Quote(quote_ref) => quote_ref.count(counter.quote()),
             Self::Todo(todo_ref) => todo_ref.count(counter.todo()),
@@ -249,6 +260,7 @@ impl<'a> BlockBuilder<'a> {
             Self::Theorem(theorem_ref) => Block::Theorem(theorem_ref.get_ref()),
             Self::Proof(proof_ref) => Block::Proof(proof_ref.get_ref()),
 
+            Self::List(list_ref) => Block::List(list_ref.get_ref()),
             Self::Table(table_ref) => Block::Table(table_ref.get_ref()),
             Self::Quote(quote_ref) => Block::Quote(quote_ref.get_ref()),
             Self::Todo(todo_ref) => Block::Todo(todo_ref.get_ref()),
@@ -267,6 +279,7 @@ impl<'a> BlockBuilder<'a> {
         axioms: &mut Vec<AxiomBlock>,
         theorems: &mut Vec<TheoremBlock>,
         proofs: &mut Vec<ProofBlock>,
+        lists: &mut Vec<ListBlock>,
         tables: &mut Vec<TableBlock>,
         quotes: &mut Vec<QuoteBlock>,
         todos: &mut Vec<TodoBlock>,
@@ -282,6 +295,7 @@ impl<'a> BlockBuilder<'a> {
             Self::Theorem(theorem_ref) => theorems.push(theorem_ref.finish()),
             Self::Proof(proof_ref) => proofs.push(proof_ref.finish()),
 
+            Self::List(list_ref) => lists.push(list_ref.finish()),
             Self::Table(table_ref) => tables.push(table_ref.finish()),
             Self::Quote(quote_ref) => quotes.push(quote_ref.finish()),
             Self::Todo(todo_ref) => todos.push(todo_ref.finish()),
@@ -422,6 +436,7 @@ impl<'a> PageBuilder<'a> {
         axioms: &mut Vec<AxiomBlock>,
         theorems: &mut Vec<TheoremBlock>,
         proofs: &mut Vec<ProofBlock>,
+        lists: &mut Vec<ListBlock>,
         tables: &mut Vec<TableBlock>,
         quotes: &mut Vec<QuoteBlock>,
         todos: &mut Vec<TodoBlock>,
@@ -437,6 +452,7 @@ impl<'a> PageBuilder<'a> {
                 axioms,
                 theorems,
                 proofs,
+                lists,
                 tables,
                 quotes,
                 todos,
@@ -555,6 +571,7 @@ impl<'a> ChapterBuilder<'a> {
         axioms: &mut Vec<AxiomBlock>,
         theorems: &mut Vec<TheoremBlock>,
         proofs: &mut Vec<ProofBlock>,
+        lists: &mut Vec<ListBlock>,
         tables: &mut Vec<TableBlock>,
         quotes: &mut Vec<QuoteBlock>,
         todos: &mut Vec<TodoBlock>,
@@ -570,6 +587,7 @@ impl<'a> ChapterBuilder<'a> {
                 axioms,
                 theorems,
                 proofs,
+                lists,
                 tables,
                 quotes,
                 todos,
@@ -708,6 +726,7 @@ impl<'a> BookBuilder<'a> {
         axioms: &mut Vec<AxiomBlock>,
         theorems: &mut Vec<TheoremBlock>,
         proofs: &mut Vec<ProofBlock>,
+        lists: &mut Vec<ListBlock>,
         tables: &mut Vec<TableBlock>,
         quotes: &mut Vec<QuoteBlock>,
         todos: &mut Vec<TodoBlock>,
@@ -723,6 +742,7 @@ impl<'a> BookBuilder<'a> {
                 axioms,
                 theorems,
                 proofs,
+                lists,
                 tables,
                 quotes,
                 todos,

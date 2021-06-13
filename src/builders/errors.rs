@@ -28,8 +28,8 @@ use super::system::{
     SystemBuilderChild, TheoremBuilder,
 };
 use super::text::{
-    MathBuilderElement, ParagraphBuilder, QuoteBuilder, RawCitationContainerBuilder, TableBuilder,
-    TextBuilder,
+    ListBuilder, MathBuilderElement, ParagraphBuilder, QuoteBuilder, RawCitationContainerBuilder,
+    TableBuilder, TextBuilder,
 };
 use super::Rule;
 
@@ -354,6 +354,11 @@ pub enum ParsingError<'a> {
     TheoremError(&'a TheoremBuilder<'a>, TheoremParsingError<'a>),
     ProofError(&'a ProofBuilder<'a>, ProofParsingError<'a>),
 
+    ListItemError(
+        &'a ListBuilder<'a>,
+        &'a ParagraphBuilder<'a>,
+        ParagraphParsingError<'a>,
+    ),
     TableError(&'a TableBuilder<'a>, TableParsingError<'a>),
     QuoteError(&'a QuoteBuilder<'a>, QuoteParsingError),
     TextError(&'a TextBuilder<'a>, TextParsingError<'a>),

@@ -55,6 +55,7 @@ pub struct BlockCounter {
     theorems: usize,
     proofs: usize,
 
+    lists: usize,
     tables: usize,
     quotes: usize,
     todos: usize,
@@ -102,6 +103,12 @@ impl BlockCounter {
     fn proof(&mut self) -> usize {
         let ret = self.proofs;
         self.proofs += 1;
+        ret
+    }
+
+    fn list(&mut self) -> usize {
+        let ret = self.lists;
+        self.lists += 1;
         ret
     }
 
@@ -208,6 +215,7 @@ impl<'a> ManifestBuilder<'a> {
         let mut axioms = Vec::new();
         let mut theorems = Vec::new();
         let mut proofs = Vec::new();
+        let mut lists = Vec::new();
         let mut tables = Vec::new();
         let mut quotes = Vec::new();
         let mut todos = Vec::new();
@@ -223,6 +231,7 @@ impl<'a> ManifestBuilder<'a> {
                 &mut axioms,
                 &mut theorems,
                 &mut proofs,
+                &mut lists,
                 &mut tables,
                 &mut quotes,
                 &mut todos,
@@ -246,6 +255,7 @@ impl<'a> ManifestBuilder<'a> {
             axioms,
             theorems,
             proofs,
+            lists,
             tables,
             quotes,
             headings,
