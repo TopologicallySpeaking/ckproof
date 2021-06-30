@@ -24,6 +24,7 @@ use crate::document::directory::{
     BlockReference, HeadingBlockRef, ListBlockRef, LocalBibliographyRef, QuoteBlockRef,
     TableBlockRef, TextBlockRef, TodoBlockRef,
 };
+use crate::document::structure::BlockLocation;
 use crate::document::text::{
     BareElement, BareText, Citation, DisplayMathBlock, HeadingBlock, HeadingLevel, Hyperlink,
     ListBlock, MathBlock, MathElement, Mla, MlaContainer, Paragraph, ParagraphElement, QuoteBlock,
@@ -1676,17 +1677,19 @@ impl<'a> ParagraphBuilder<'a> {
 pub struct ListBuilder<'a> {
     ordered: bool,
     items: Vec<ParagraphBuilder<'a>>,
+    location: BlockLocation,
 
     count: OnceCell<usize>,
 }
 
 impl<'a> ListBuilder<'a> {
-    pub fn from_pest(pair: Pair<Rule>, ordered: bool) -> Self {
+    pub fn from_pest(pair: Pair<Rule>, ordered: bool, location: BlockLocation) -> Self {
         let items = pair.into_inner().map(ParagraphBuilder::from_pest).collect();
 
         ListBuilder {
             ordered,
             items,
+            location,
 
             count: OnceCell::new(),
         }
@@ -1779,6 +1782,8 @@ impl<'a> TableBuilderRow<'a> {
 
 #[derive(Debug)]
 pub struct TableBuilder<'a> {
+    location: BlockLocation,
+
     head: Option<Vec<TableBuilderRow<'a>>>,
     body: Option<Vec<TableBuilderRow<'a>>>,
     foot: Option<Vec<TableBuilderRow<'a>>>,
@@ -1790,7 +1795,7 @@ pub struct TableBuilder<'a> {
 }
 
 impl<'a> TableBuilder<'a> {
-    pub fn from_pest(pair: Pair<Rule>) -> Self {
+    pub fn from_pest(pair: Pair<Rule>, location: BlockLocation) -> Self {
         assert_eq!(pair.as_rule(), Rule::table_block);
 
         let mut head = None;
@@ -1830,6 +1835,8 @@ impl<'a> TableBuilder<'a> {
         }
 
         TableBuilder {
+            location,
+
             head,
             body,
             foot,
@@ -1982,6 +1989,8 @@ impl<'a> QuoteValueBuilder<'a> {
 
 #[derive(Debug)]
 pub struct QuoteBuilder<'a> {
+    location: BlockLocation,
+
     original: Option<QuoteValueBuilder<'a>>,
     value: QuoteValueBuilder<'a>,
 
@@ -1990,7 +1999,7 @@ pub struct QuoteBuilder<'a> {
 }
 
 impl<'a> QuoteBuilder<'a> {
-    pub fn from_pest(pair: Pair<Rule>) -> Self {
+    pub fn from_pest(pair: Pair<Rule>, location: BlockLocation) -> Self {
         assert_eq!(pair.as_rule(), Rule::quote_block);
 
         let mut inner = pair.into_inner();
@@ -2008,6 +2017,8 @@ impl<'a> QuoteBuilder<'a> {
         let value = QuoteValueBuilder::from_pest(curr);
 
         QuoteBuilder {
+            location,
+
             original,
             value,
 
@@ -2066,6 +2077,8 @@ impl<'a> QuoteBuilder<'a> {
 }
 
 pub struct TodoBuilder<'a> {
+    location: BlockLocation,
+
     elements: Vec<TextBuilder<'a>>,
 
     // TODO: Remove.
@@ -2073,10 +2086,12 @@ pub struct TodoBuilder<'a> {
 }
 
 impl<'a> TodoBuilder<'a> {
-    pub fn from_pest(pair: Pair<Rule>) -> Self {
+    pub fn from_pest(pair: Pair<Rule>, location: BlockLocation) -> Self {
         let elements = pair.into_inner().map(TextBuilder::from_pest).collect();
 
         TodoBuilder {
+            location,
+
             elements,
 
             count: OnceCell::new(),
@@ -2171,13 +2186,15 @@ impl SubHeadingBuilder {
 }
 
 pub struct HeadingBuilder {
+    location: BlockLocation,
+
     subheadings: Vec<SubHeadingBuilder>,
 
     count: OnceCell<usize>,
 }
 
 impl HeadingBuilder {
-    pub fn from_pest(pair: Pair<Rule>) -> HeadingBuilder {
+    pub fn from_pest(pair: Pair<Rule>, location: BlockLocation) -> HeadingBuilder {
         assert_eq!(pair.as_rule(), Rule::heading_block);
 
         let subheadings = pair
@@ -2186,6 +2203,8 @@ impl HeadingBuilder {
             .collect();
 
         HeadingBuilder {
+            location,
+
             subheadings,
 
             count: OnceCell::new(),
@@ -2326,17 +2345,23 @@ impl<'a> TextBuilder<'a> {
     }
 }
 
-// TODO: Remove.
 #[derive(Debug)]
 pub struct TextBlockBuilder<'a> {
+    location: BlockLocation,
+
     text: TextBuilder<'a>,
+
+    // TODO: Remove.
     count: OnceCell<usize>,
 }
 
 impl<'a> TextBlockBuilder<'a> {
-    pub fn from_pest(pair: Pair<Rule>) -> Self {
+    pub fn from_pest(pair: Pair<Rule>, location: BlockLocation) -> Self {
         TextBlockBuilder {
+            location,
+
             text: TextBuilder::from_pest(pair),
+
             count: OnceCell::new(),
         }
     }

@@ -19,6 +19,7 @@ use std::path::{Path, PathBuf};
 use pest::Parser;
 
 use crate::document::directory::BlockDirectory;
+use crate::document::structure::BlockLocation;
 use crate::document::Document;
 
 pub mod errors;
@@ -172,7 +173,7 @@ impl<'a> ManifestBuilder<'a> {
             }
         };
 
-        let mut serial = 0;
+        let mut location = BlockLocation::new();
         manifest_pair
             .into_inner()
             .filter_map(|pair| match pair.as_rule() {
@@ -180,7 +181,7 @@ impl<'a> ManifestBuilder<'a> {
                 _ => Some(BookBuilder::from_pest(
                     pair,
                     &self.library_path,
-                    &mut serial,
+                    &mut location,
                     errors,
                 )),
             })

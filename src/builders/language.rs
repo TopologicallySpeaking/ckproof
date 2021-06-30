@@ -28,6 +28,7 @@ use crate::document::language::{
     DefinitionBlock, Display, DisplayFormulaBlock, DisplayStyle, FormulaBlock, SymbolBlock,
     TypeBlock, TypeSignatureBlock, VariableBlock,
 };
+use crate::document::structure::BlockLocation;
 
 use super::bibliography::BibliographyBuilderEntry;
 use super::errors::{
@@ -210,7 +211,7 @@ impl<'a> TypeBuilderEntries<'a> {
 pub struct TypeBuilder<'a> {
     id: String,
     system_id: String,
-    serial: usize,
+    location: BlockLocation,
 
     system_ref: OnceCell<&'a SystemBuilder<'a>>,
     entries: TypeBuilderEntries<'a>,
@@ -223,7 +224,7 @@ pub struct TypeBuilder<'a> {
 }
 
 impl<'a> TypeBuilder<'a> {
-    pub fn from_pest(pair: Pair<Rule>, serial: usize) -> Self {
+    pub fn from_pest(pair: Pair<Rule>, location: BlockLocation) -> Self {
         assert_eq!(pair.as_rule(), Rule::type_block);
 
         let mut inner = pair.into_inner();
@@ -234,7 +235,7 @@ impl<'a> TypeBuilder<'a> {
         TypeBuilder {
             id,
             system_id,
-            serial,
+            location,
 
             system_ref: OnceCell::new(),
             entries,
@@ -306,7 +307,7 @@ impl<'a> TypeBuilder<'a> {
     }
 
     pub fn serial(&self) -> usize {
-        self.serial
+        self.location.serial()
     }
 }
 
@@ -936,7 +937,7 @@ impl<'a> SymbolBuilderEntries<'a> {
             1 => {
                 let success = self.type_signatures[0].verify_structure(
                     &symbol_ref.system_id,
-                    symbol_ref.serial,
+                    symbol_ref.serial(),
                     index,
                     errors,
                     |e| {
@@ -1041,7 +1042,7 @@ impl<'a> SymbolBuilderEntries<'a> {
 pub struct SymbolBuilder<'a> {
     id: String,
     system_id: String,
-    serial: usize,
+    location: BlockLocation,
 
     system_ref: OnceCell<&'a SystemBuilder<'a>>,
     entries: SymbolBuilderEntries<'a>,
@@ -1056,7 +1057,7 @@ pub struct SymbolBuilder<'a> {
 }
 
 impl<'a> SymbolBuilder<'a> {
-    pub fn from_pest(pair: Pair<Rule>, serial: usize) -> Self {
+    pub fn from_pest(pair: Pair<Rule>, location: BlockLocation) -> Self {
         assert_eq!(pair.as_rule(), Rule::symbol_block);
 
         let mut inner = pair.into_inner();
@@ -1068,7 +1069,7 @@ impl<'a> SymbolBuilder<'a> {
         SymbolBuilder {
             id,
             system_id,
-            serial,
+            location,
 
             system_ref: OnceCell::new(),
             entries,
@@ -1231,6 +1232,10 @@ impl<'a> SymbolBuilder<'a> {
             read,
             inputs: self.entries.type_signature().inputs().collect(),
         })
+    }
+
+    pub fn serial(&self) -> usize {
+        self.location.serial()
     }
 }
 
@@ -1432,7 +1437,7 @@ impl<'a> DefinitionBuilderEntries<'a> {
                 for var in &self.inputs[0] {
                     var.verify_structure(
                         &definition_ref.system_id,
-                        definition_ref.serial,
+                        definition_ref.serial(),
                         index,
                         errors,
                         |e| {
@@ -1594,7 +1599,7 @@ impl<'a> DefinitionBuilderEntries<'a> {
 pub struct DefinitionBuilder<'a> {
     id: String,
     system_id: String,
-    serial: usize,
+    location: BlockLocation,
 
     system_ref: OnceCell<&'a SystemBuilder<'a>>,
     type_signature: OnceCell<TypeSignatureBuilder<'a>>,
@@ -1611,7 +1616,7 @@ pub struct DefinitionBuilder<'a> {
 }
 
 impl<'a> DefinitionBuilder<'a> {
-    pub fn from_pest(pair: Pair<Rule>, serial: usize) -> Self {
+    pub fn from_pest(pair: Pair<Rule>, location: BlockLocation) -> Self {
         assert_eq!(pair.as_rule(), Rule::definition_block);
 
         let mut inner = pair.into_inner();
@@ -1623,7 +1628,7 @@ impl<'a> DefinitionBuilder<'a> {
         DefinitionBuilder {
             id,
             system_id,
-            serial,
+            location,
 
             system_ref: OnceCell::new(),
             type_signature: OnceCell::new(),
@@ -1817,6 +1822,10 @@ impl<'a> DefinitionBuilder<'a> {
                 .map(|var| var.type_signature())
                 .collect(),
         })
+    }
+
+    pub fn serial(&self) -> usize {
+        self.location.serial()
     }
 }
 

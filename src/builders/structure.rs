@@ -23,7 +23,7 @@ use pest::Parser;
 use crate::document::deduction::{AxiomBlock, ProofBlock, TheoremBlock};
 use crate::document::directory::Block;
 use crate::document::language::{DefinitionBlock, SymbolBlock, SystemBlock, TypeBlock};
-use crate::document::structure::{Book, Chapter, Page};
+use crate::document::structure::{BlockLocation, Book, Chapter, Page};
 use crate::document::text::{
     HeadingBlock, ListBlock, QuoteBlock, TableBlock, TextBlock, TodoBlock,
 };
@@ -59,29 +59,28 @@ pub enum BlockBuilder<'a> {
 }
 
 impl<'a> BlockBuilder<'a> {
-    fn from_pest(pair: Pair<Rule>, serial: &mut usize) -> Self {
-        let curr_serial = *serial;
-        *serial += 1;
+    fn from_pest(pair: Pair<Rule>, location: &mut BlockLocation) -> Self {
+        let location = location.next_block();
 
         match pair.as_rule() {
-            Rule::system_block => Self::System(SystemBuilder::from_pest(pair)),
-            Rule::type_block => Self::Type(TypeBuilder::from_pest(pair, curr_serial)),
-            Rule::symbol_block => Self::Symbol(SymbolBuilder::from_pest(pair, curr_serial)),
+            Rule::system_block => Self::System(SystemBuilder::from_pest(pair, location)),
+            Rule::type_block => Self::Type(TypeBuilder::from_pest(pair, location)),
+            Rule::symbol_block => Self::Symbol(SymbolBuilder::from_pest(pair, location)),
             Rule::definition_block => {
-                Self::Definition(DefinitionBuilder::from_pest(pair, curr_serial))
+                Self::Definition(DefinitionBuilder::from_pest(pair, location))
             }
-            Rule::axiom_block => Self::Axiom(AxiomBuilder::from_pest(pair, curr_serial)),
-            Rule::theorem_block => Self::Theorem(TheoremBuilder::from_pest(pair, curr_serial)),
-            Rule::proof_block => Self::Proof(ProofBuilder::from_pest(pair, curr_serial)),
+            Rule::axiom_block => Self::Axiom(AxiomBuilder::from_pest(pair, location)),
+            Rule::theorem_block => Self::Theorem(TheoremBuilder::from_pest(pair, location)),
+            Rule::proof_block => Self::Proof(ProofBuilder::from_pest(pair, location)),
 
-            Rule::ul_block => Self::List(ListBuilder::from_pest(pair, false)),
-            Rule::ol_block => Self::List(ListBuilder::from_pest(pair, true)),
+            Rule::ul_block => Self::List(ListBuilder::from_pest(pair, false, location)),
+            Rule::ol_block => Self::List(ListBuilder::from_pest(pair, true, location)),
 
-            Rule::table_block => Self::Table(TableBuilder::from_pest(pair)),
-            Rule::quote_block => Self::Quote(QuoteBuilder::from_pest(pair)),
-            Rule::heading_block => Self::Heading(HeadingBuilder::from_pest(pair)),
-            Rule::todo_block => Self::Todo(TodoBuilder::from_pest(pair)),
-            Rule::text_block => Self::Text(TextBlockBuilder::from_pest(pair)),
+            Rule::table_block => Self::Table(TableBuilder::from_pest(pair, location)),
+            Rule::quote_block => Self::Quote(QuoteBuilder::from_pest(pair, location)),
+            Rule::todo_block => Self::Todo(TodoBuilder::from_pest(pair, location)),
+            Rule::heading_block => Self::Heading(HeadingBuilder::from_pest(pair, location)),
+            Rule::text_block => Self::Text(TextBlockBuilder::from_pest(pair, location)),
 
             _ => unreachable!(),
         }
@@ -319,7 +318,7 @@ impl<'a> PageBuilder<'a> {
         library_path: &Path,
         book_id: &str,
         chapter_id: &str,
-        serial: &mut usize,
+        location: &mut BlockLocation,
         errors: &mut ParsingErrorContext,
     ) -> Self {
         assert_eq!(pair.as_rule(), Rule::manifest_page);
@@ -372,9 +371,11 @@ impl<'a> PageBuilder<'a> {
             .filter_map(|pair| match pair.as_rule() {
                 Rule::EOI => None,
 
-                _ => Some(BlockBuilder::from_pest(pair, serial)),
+                _ => Some(BlockBuilder::from_pest(pair, location)),
             })
             .collect();
+
+        location.next_page();
 
         PageBuilder {
             id,
@@ -490,7 +491,7 @@ impl<'a> ChapterBuilder<'a> {
         pair: Pair<Rule>,
         library_path: &Path,
         book_id: &str,
-        serial: &mut usize,
+        location: &mut BlockLocation,
         errors: &mut ParsingErrorContext,
     ) -> Self {
         assert_eq!(pair.as_rule(), Rule::manifest_chapter);
@@ -504,8 +505,10 @@ impl<'a> ChapterBuilder<'a> {
         let tagline = ParagraphBuilder::from_pest(inner.next().unwrap());
 
         let pages = inner
-            .map(|pair| PageBuilder::from_pest(pair, library_path, book_id, &id, serial, errors))
+            .map(|pair| PageBuilder::from_pest(pair, library_path, book_id, &id, location, errors))
             .collect();
+
+        location.next_chapter();
 
         ChapterBuilder {
             id,
@@ -631,7 +634,7 @@ impl<'a> BookBuilder<'a> {
     pub fn from_pest(
         pair: Pair<Rule>,
         library_path: &Path,
-        serial: &mut usize,
+        location: &mut BlockLocation,
         errors: &mut ParsingErrorContext,
     ) -> Self {
         assert_eq!(pair.as_rule(), Rule::manifest_book);
@@ -645,8 +648,10 @@ impl<'a> BookBuilder<'a> {
         let tagline = ParagraphBuilder::from_pest(inner.next().unwrap());
 
         let chapters = inner
-            .map(|pair| ChapterBuilder::from_pest(pair, library_path, &id, serial, errors))
+            .map(|pair| ChapterBuilder::from_pest(pair, library_path, &id, location, errors))
             .collect();
+
+        location.next_book();
 
         BookBuilder {
             id,

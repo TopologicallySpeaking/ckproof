@@ -20,6 +20,59 @@ use crate::rendered::{BookRendered, ChapterRendered, DocumentRendered, PageRende
 use super::directory::{Block, BlockDirectory, LocalBibliography};
 use super::text::Paragraph;
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct BlockLocation {
+    block: usize,
+    page: usize,
+    chapter: usize,
+    book: usize,
+
+    serial: usize,
+}
+
+impl BlockLocation {
+    pub fn new() -> Self {
+        BlockLocation {
+            block: 0,
+            page: 0,
+            chapter: 0,
+            book: 0,
+
+            serial: 0,
+        }
+    }
+
+    pub fn next_block(&mut self) -> Self {
+        let ret = *self;
+        self.block += 1;
+        self.serial += 1;
+
+        ret
+    }
+
+    pub fn next_page(&mut self) {
+        self.page += 1;
+        self.block = 0;
+    }
+
+    pub fn next_chapter(&mut self) {
+        self.chapter += 1;
+        self.page = 0;
+        self.block = 0;
+    }
+
+    pub fn next_book(&mut self) {
+        self.book += 1;
+        self.chapter = 0;
+        self.page = 0;
+        self.block = 0;
+    }
+
+    pub fn serial(&self) -> usize {
+        self.serial
+    }
+}
+
 pub struct Page {
     id: String,
     name: String,
@@ -238,5 +291,69 @@ impl Document {
             .collect();
 
         DocumentRendered::new(books)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::BlockLocation;
+
+    #[test]
+    fn block_location() {
+        let mut location = BlockLocation::new();
+
+        assert_eq!(
+            location.next_block(),
+            BlockLocation {
+                block: 0,
+                page: 0,
+                chapter: 0,
+                book: 0,
+
+                serial: 0,
+            }
+        );
+
+        location.next_page();
+        assert_eq!(
+            location.next_block(),
+            BlockLocation {
+                block: 0,
+                page: 1,
+                chapter: 0,
+                book: 0,
+
+                serial: 1,
+            }
+        );
+
+        location.next_chapter();
+        location.next_page();
+        assert_eq!(
+            location.next_block(),
+            BlockLocation {
+                block: 0,
+                page: 1,
+                chapter: 1,
+                book: 0,
+
+                serial: 2,
+            }
+        );
+
+        location.next_book();
+        location.next_chapter();
+        location.next_page();
+        assert_eq!(
+            location.next_block(),
+            BlockLocation {
+                block: 0,
+                page: 1,
+                chapter: 1,
+                book: 1,
+
+                serial: 3,
+            }
+        );
     }
 }

@@ -29,6 +29,7 @@ use crate::document::directory::{
     TheoremBlockRef,
 };
 use crate::document::language::SystemBlock;
+use crate::document::structure::BlockLocation;
 
 use super::bibliography::BibliographyBuilderEntry;
 use super::errors::{
@@ -214,6 +215,7 @@ impl<'a> SystemBuilderEntries<'a> {
 
 pub struct SystemBuilder<'a> {
     id: String,
+    location: BlockLocation,
 
     entries: SystemBuilderEntries<'a>,
 
@@ -225,7 +227,7 @@ pub struct SystemBuilder<'a> {
 }
 
 impl<'a> SystemBuilder<'a> {
-    pub fn from_pest(pair: Pair<Rule>) -> Self {
+    pub fn from_pest(pair: Pair<Rule>, location: BlockLocation) -> Self {
         assert_eq!(pair.as_rule(), Rule::system_block);
 
         let mut inner = pair.into_inner();
@@ -234,6 +236,8 @@ impl<'a> SystemBuilder<'a> {
 
         SystemBuilder {
             id,
+            location,
+
             entries,
 
             count: OnceCell::new(),
@@ -1016,10 +1020,13 @@ impl<'a> AxiomBuilderEntries<'a> {
         }
 
         for var in &self.vars {
-            let success =
-                var.verify_structure(&axiom_ref.system_id, axiom_ref.serial, index, errors, |e| {
-                    ParsingError::AxiomError(axiom_ref, AxiomParsingError::VariableError(var, e))
-                });
+            let success = var.verify_structure(
+                &axiom_ref.system_id,
+                axiom_ref.serial(),
+                index,
+                errors,
+                |e| ParsingError::AxiomError(axiom_ref, AxiomParsingError::VariableError(var, e)),
+            );
 
             if !success {
                 found_error = true
@@ -1153,7 +1160,7 @@ impl<'a> AxiomBuilderEntries<'a> {
 pub struct AxiomBuilder<'a> {
     id: String,
     system_id: String,
-    serial: usize,
+    location: BlockLocation,
 
     system_ref: OnceCell<&'a SystemBuilder<'a>>,
     entries: AxiomBuilderEntries<'a>,
@@ -1166,7 +1173,7 @@ pub struct AxiomBuilder<'a> {
 }
 
 impl<'a> AxiomBuilder<'a> {
-    pub fn from_pest(pair: Pair<Rule>, serial: usize) -> Self {
+    pub fn from_pest(pair: Pair<Rule>, location: BlockLocation) -> Self {
         assert_eq!(pair.as_rule(), Rule::axiom_block);
 
         let mut inner = pair.into_inner();
@@ -1178,7 +1185,7 @@ impl<'a> AxiomBuilder<'a> {
         AxiomBuilder {
             id,
             system_id,
-            serial,
+            location,
 
             system_ref: OnceCell::new(),
             entries,
@@ -1294,6 +1301,10 @@ impl<'a> AxiomBuilder<'a> {
 
     pub fn assertion(&'a self) -> &DisplayFormulaBuilder {
         self.entries.assertion()
+    }
+
+    pub fn serial(&self) -> usize {
+        self.location.serial()
     }
 }
 
@@ -1506,7 +1517,7 @@ impl<'a> TheoremBuilderEntries<'a> {
         for var in &self.vars {
             var.verify_structure(
                 &theorem_ref.system_id,
-                theorem_ref.serial,
+                theorem_ref.serial(),
                 index,
                 errors,
                 |e| {
@@ -1649,7 +1660,7 @@ pub struct TheoremBuilder<'a> {
     kind: TheoremKind,
     id: String,
     system_id: String,
-    serial: usize,
+    location: BlockLocation,
 
     system_ref: OnceCell<&'a SystemBuilder<'a>>,
     entries: TheoremBuilderEntries<'a>,
@@ -1664,7 +1675,7 @@ pub struct TheoremBuilder<'a> {
 }
 
 impl<'a> TheoremBuilder<'a> {
-    pub fn from_pest(pair: Pair<Rule>, serial: usize) -> Self {
+    pub fn from_pest(pair: Pair<Rule>, location: BlockLocation) -> Self {
         assert_eq!(pair.as_rule(), Rule::theorem_block);
 
         let mut inner = pair.into_inner();
@@ -1679,7 +1690,7 @@ impl<'a> TheoremBuilder<'a> {
             kind,
             id,
             system_id,
-            serial,
+            location,
 
             system_ref: OnceCell::new(),
             entries,
@@ -1804,6 +1815,10 @@ impl<'a> TheoremBuilder<'a> {
         self.entries.assertion()
     }
 
+    pub fn serial(&self) -> usize {
+        self.location.serial()
+    }
+
     fn add_proof(&self, proof_ref: &'a ProofBuilder<'a>) {
         let mut proofs = self.proofs.borrow_mut();
         proofs.push(proof_ref);
@@ -1908,7 +1923,7 @@ impl<'a> SystemChildJustificationBuilder<'a> {
                     }
                 };
 
-                if proof_ref.serial < first_proof.serial {
+                if proof_ref.serial() < first_proof.serial() {
                     errors.err(ParsingError::ProofError(
                         proof_ref,
                         ProofParsingError::StepError(
@@ -1918,7 +1933,7 @@ impl<'a> SystemChildJustificationBuilder<'a> {
                     ));
 
                     false
-                } else if proof_ref.serial == first_proof.serial {
+                } else if proof_ref.serial() == first_proof.serial() {
                     errors.err(ParsingError::ProofError(
                         proof_ref,
                         ProofParsingError::StepError(
@@ -2664,7 +2679,7 @@ impl<'a> ProofBuilderElement<'a> {
 pub struct ProofBuilder<'a> {
     system_id: String,
     theorem_id: String,
-    serial: usize,
+    location: BlockLocation,
 
     elements: Vec<ProofBuilderElement<'a>>,
 
@@ -2675,7 +2690,7 @@ pub struct ProofBuilder<'a> {
 }
 
 impl<'a> ProofBuilder<'a> {
-    pub fn from_pest(pair: Pair<Rule>, serial: usize) -> Self {
+    pub fn from_pest(pair: Pair<Rule>, location: BlockLocation) -> Self {
         assert_eq!(pair.as_rule(), Rule::proof_block);
 
         let mut inner = pair.into_inner();
@@ -2690,7 +2705,7 @@ impl<'a> ProofBuilder<'a> {
         ProofBuilder {
             system_id,
             theorem_id,
-            serial,
+            location,
 
             elements,
 
@@ -2762,6 +2777,10 @@ impl<'a> ProofBuilder<'a> {
         for (i, element) in self.elements.iter().enumerate() {
             element.build_formulas(self, &self.elements[..i], &local_index, errors);
         }
+    }
+
+    pub fn serial(&self) -> usize {
+        self.location.serial()
     }
 
     // TODO: Remove.
