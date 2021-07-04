@@ -20,8 +20,8 @@ use std::path::{Path, PathBuf};
 use pest::iterators::Pair;
 use pest::Parser;
 
-use crate::document::directory::{Bibliography, BibliographyRef, LocalBibliography};
-use crate::document::text::Mla;
+use crate::document::bibliography::{Bibliography, LocalBibliography, LocalBibliographyEntry};
+use crate::document::text::RawCitation;
 
 use super::errors::{BibliographyParsingError, ParsingError, ParsingErrorContext};
 use super::index::BuilderIndex;
@@ -35,12 +35,11 @@ pub struct BibliographyBuilderEntry {
 
     raw_citation: RawCitationBuilder,
 
-    // TODO: Remove.
-    count: usize,
+    index: usize,
 }
 
 impl BibliographyBuilderEntry {
-    fn from_pest(pair: Pair<Rule>, count: usize) -> Self {
+    fn from_pest(pair: Pair<Rule>, index: usize) -> Self {
         assert_eq!(pair.as_rule(), Rule::bib_entry);
 
         let mut inner = pair.into_inner();
@@ -51,7 +50,7 @@ impl BibliographyBuilderEntry {
             id,
             raw_citation,
 
-            count,
+            index,
         }
     }
 
@@ -61,17 +60,12 @@ impl BibliographyBuilderEntry {
         });
     }
 
-    fn finish(&self) -> Mla {
-        self.raw_citation.finish()
-    }
-
     pub fn id(&self) -> &str {
         &self.id
     }
 
-    // TODO: Remove.
-    fn get_ref(&self) -> BibliographyRef {
-        BibliographyRef::new(self.count)
+    fn finish(&self) -> RawCitation {
+        self.raw_citation.finish()
     }
 }
 
@@ -179,8 +173,12 @@ impl<'a> LocalBibliographyBuilder<'a> {
         LocalBibliographyBuilder { entries }
     }
 
-    pub fn finish(&self) -> LocalBibliography {
-        let entries = self.entries.iter().map(|entry| entry.get_ref()).collect();
+    pub fn finish<'b>(&self) -> LocalBibliography<'b> {
+        let entries = self
+            .entries
+            .iter()
+            .map(|entry| LocalBibliographyEntry::new(entry.index))
+            .collect();
 
         LocalBibliography::new(entries)
     }

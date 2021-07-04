@@ -21,7 +21,10 @@ fn main() {
     let args: Vec<String> = env::args().collect();
 
     let builder = ManifestBuilder::from_lib(&args[1]);
+
     let document = builder.build().unwrap();
+    document.crosslink();
+
     let checkable = document.checkable();
     let checking_errors = checkable.check();
     if checking_errors.error_found() {

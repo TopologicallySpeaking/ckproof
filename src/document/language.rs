@@ -13,124 +13,90 @@
 // You should have received a copy of the GNU Affero General Public License along with ckproof. If
 // not, see <https://www.gnu.org/licenses/>.
 
+use std::lazy::OnceCell;
+
 use crate::map_ident;
+use crate::rendered::{DefinitionRendered, Denoted, DenotedStyle, SymbolRendered, TypeRendered};
 
 use crate::deduction::directory::{
     DefinitionRef, LocalCheckableDirectory, SymbolRef, SystemRef, TypeRef, VariableRef,
 };
 use crate::deduction::language::{Definition, Formula, Symbol, Type, TypeSignature, Variable};
-use crate::deduction::system::System;
 
-use crate::rendered::{
-    DefinitionRendered, Denoted, DenotedStyle, SymbolRendered, SystemRendered, TypeRendered,
-};
-
-use super::directory::{
-    BlockDirectory, DefinitionBlockRef, SymbolBlockRef, SystemBlockRef, TypeBlockRef,
-    VariableBlockRef,
-};
+use super::structure::{DefinitionBlockRef, SymbolBlockRef, SystemBlockRef, TypeBlockRef};
 use super::text::{MathBlock, MathElement, Paragraph, Text};
+use super::Document;
 
-pub struct SystemBlock {
+pub struct TypeBlock<'a> {
     id: String,
     name: String,
-    href: String,
-    tagline: Paragraph,
-    description: Vec<Text>,
+
+    system_ref: SystemBlockRef<'a>,
+
+    tagline: Paragraph<'a>,
+    description: Vec<Text<'a>>,
+
+    // TODO: Remove.
+    count: OnceCell<usize>,
 }
 
-impl SystemBlock {
+impl<'a> TypeBlock<'a> {
     pub fn new(
         id: String,
         name: String,
-        href: String,
-        tagline: Paragraph,
-        description: Vec<Text>,
-    ) -> SystemBlock {
-        SystemBlock {
-            id,
-            name,
-            href,
-            tagline,
-            description,
-        }
-    }
-
-    pub fn checkable(&self) -> System {
-        System::new(self.id.clone())
-    }
-
-    pub fn render(&self, directory: &BlockDirectory) -> SystemRendered {
-        let id = self.id.clone();
-        let name = self.name.clone();
-        let tagline = self.tagline.render(directory);
-        let description = self
-            .description
-            .iter()
-            .map(|text| text.render(directory))
-            .collect();
-
-        SystemRendered::new(id, name, tagline, description)
-    }
-
-    pub fn id(&self) -> &str {
-        &self.id
-    }
-
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
-    pub fn href(&self) -> &str {
-        &self.href
-    }
-}
-
-pub struct TypeBlock {
-    id: String,
-    name: String,
-    href: String,
-    system: SystemBlockRef,
-    tagline: Paragraph,
-    description: Vec<Text>,
-}
-
-impl TypeBlock {
-    pub fn new(
-        id: String,
-        name: String,
-        href: String,
-        system: SystemBlockRef,
-        tagline: Paragraph,
-        description: Vec<Text>,
-    ) -> TypeBlock {
+        system_ref: SystemBlockRef<'a>,
+        tagline: Paragraph<'a>,
+        description: Vec<Text<'a>>,
+    ) -> Self {
         TypeBlock {
             id,
             name,
-            href,
-            system,
+
+            system_ref,
+
             tagline,
             description,
+
+            count: OnceCell::new(),
         }
     }
 
-    pub fn checkable(&self) -> Type {
-        Type::new(self.id.clone(), SystemRef::new(self.system.get()))
+    pub fn crosslink(&'a self, document: &'a Document<'a>) {
+        self.system_ref.crosslink(document);
+
+        self.tagline.crosslink(document);
+        for text in &self.description {
+            text.crosslink(document);
+        }
     }
 
-    pub fn render(&self, directory: &BlockDirectory) -> TypeRendered {
+    // TODO: Remove.
+    pub fn count(&self, count: usize) {
+        self.count.set(count).unwrap()
+    }
+
+    // TODO: Remove.
+    pub fn index(&self) -> usize {
+        *self.count.get().unwrap()
+    }
+
+    // TODO: Remove.
+    pub fn checkable(&self) -> Type {
+        let id = self.id.clone();
+        let system_ref = SystemRef::new(self.system_ref.index());
+
+        Type::new(id, system_ref)
+    }
+
+    // TODO: Remove.
+    pub fn render(&self) -> TypeRendered {
         let id = self.id.clone();
         let name = self.name.clone();
-        let tagline = self.tagline.render(directory);
-        let description = self
-            .description
-            .iter()
-            .map(|text| text.render(directory))
-            .collect();
+        let tagline = self.tagline.render();
+        let description = self.description.iter().map(Text::render).collect();
 
-        let system = &directory[self.system];
-        let system_id = system.id.clone();
-        let system_name = system.name.clone();
+        let system_id = self.system_ref.id().to_owned();
+        let system_name = self.system_ref.name().to_owned();
 
         TypeRendered::new(id, system_id, name, system_name, tagline, description)
     }
@@ -138,63 +104,57 @@ impl TypeBlock {
     pub fn id(&self) -> &str {
         &self.id
     }
+}
 
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
-    pub fn href(&self) -> &str {
-        &self.href
+impl<'a> std::fmt::Debug for TypeBlock<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        todo!()
     }
 }
 
-pub enum TypeSignatureBlock {
-    Ground(TypeBlockRef),
-    Compound(Box<TypeSignatureBlock>, Box<TypeSignatureBlock>),
+pub enum TypeSignatureBlock<'a> {
+    Ground(TypeBlockRef<'a>),
+    Compound(Box<TypeSignatureBlock<'a>>, Box<TypeSignatureBlock<'a>>),
 }
 
-impl TypeSignatureBlock {
-    pub fn checkable(&self) -> TypeSignature {
+impl<'a> TypeSignatureBlock<'a> {
+    fn crosslink(&'a self, document: &'a Document<'a>) {
         match self {
-            Self::Ground(type_ref) => TypeSignature::Ground(TypeRef::new(type_ref.get())),
+            Self::Ground(type_ref) => type_ref.crosslink(document),
+            Self::Compound(left, right) => {
+                left.crosslink(document);
+                right.crosslink(document);
+            }
+        }
+    }
+
+    fn checkable(&self) -> TypeSignature {
+        match self {
+            Self::Ground(type_ref) => TypeSignature::Ground(TypeRef::new(type_ref.index())),
             Self::Compound(input, output) => {
                 TypeSignature::Compound(Box::new(input.checkable()), Box::new(output.checkable()))
             }
         }
     }
 
-    pub fn is_ground(&self) -> bool {
-        match self {
-            Self::Ground(_) => true,
-            Self::Compound(_, _) => false,
-        }
-    }
-
-    pub fn is_compound(&self) -> bool {
+    fn is_compound(&self) -> bool {
         match self {
             Self::Ground(_) => false,
             Self::Compound(_, _) => true,
         }
     }
 
-    pub fn render(&self, directory: &BlockDirectory) -> String {
+    // TODO: Remove.
+    pub fn render(&self) -> String {
         // TODO: Render without so many parentheses.
         match self {
-            Self::Ground(type_ref) => directory[*type_ref].id.to_owned(),
+            Self::Ground(type_ref) => type_ref.id().to_owned(),
 
             Self::Compound(input, output) => {
                 if input.is_compound() {
-                    format!(
-                        "({}) \u{2192} {}",
-                        input.render(directory),
-                        output.render(directory)
-                    )
+                    format!("({}) \u{2192} {}", input.render(), output.render())
                 } else {
-                    format!(
-                        "{} \u{2192} {}",
-                        input.render(directory),
-                        output.render(directory)
-                    )
+                    format!("{} \u{2192} {}", input.render(), output.render())
                 }
             }
         }
@@ -258,66 +218,95 @@ impl Display {
     }
 }
 
-pub struct SymbolBlock {
+pub struct SymbolBlock<'a> {
     id: String,
     name: String,
-    href: String,
-    system: SystemBlockRef,
-    tagline: Paragraph,
-    description: Vec<Text>,
 
-    type_signature: TypeSignatureBlock,
+    system_ref: SystemBlockRef<'a>,
+
+    tagline: Paragraph<'a>,
+    description: Vec<Text<'a>>,
+
+    type_signature: TypeSignatureBlock<'a>,
     display: Display,
+
+    // TODO: Remove.
+    count: OnceCell<usize>,
+
+    // TODO: Remove.
+    href: String,
 }
 
-impl SymbolBlock {
+impl<'a> SymbolBlock<'a> {
     pub fn new(
         id: String,
         name: String,
-        href: String,
-        system: SystemBlockRef,
-        tagline: Paragraph,
-        description: Vec<Text>,
-
-        type_signature: TypeSignatureBlock,
+        system_ref: SystemBlockRef<'a>,
+        tagline: Paragraph<'a>,
+        description: Vec<Text<'a>>,
+        type_signature: TypeSignatureBlock<'a>,
         display: Display,
-    ) -> SymbolBlock {
+        href: String,
+    ) -> Self {
         SymbolBlock {
             id,
             name,
-            href,
-            system,
+
+            system_ref,
+
             tagline,
             description,
 
             type_signature,
             display,
+
+            count: OnceCell::new(),
+
+            href,
         }
     }
 
-    pub fn checkable(&self) -> Symbol {
-        let id = self.id.clone();
-        let system = SystemRef::new(self.system.get());
-        let type_signature = self.type_signature.checkable();
+    pub fn crosslink(&'a self, document: &'a Document<'a>) {
+        self.system_ref.crosslink(document);
 
-        Symbol::new(id, system, type_signature)
+        self.tagline.crosslink(document);
+        for text in &self.description {
+            text.crosslink(document);
+        }
+
+        self.type_signature.crosslink(document);
     }
 
-    pub fn render(&self, directory: &BlockDirectory) -> SymbolRendered {
+    // TODO: Remove.
+    pub fn count(&self, count: usize) {
+        self.count.set(count).unwrap()
+    }
+
+    // TODO: Remove.
+    pub fn index(&self) -> usize {
+        *self.count.get().unwrap()
+    }
+
+    // TODO: Remove.
+    pub fn checkable(&self) -> Symbol {
+        let id = self.id.clone();
+        let system_ref = SystemRef::new(self.system_ref.index());
+        let type_signature = self.type_signature.checkable();
+
+        Symbol::new(id, system_ref, type_signature)
+    }
+
+    // TODO: Remove.
+    pub fn render(&self) -> SymbolRendered {
         let id = self.id.clone();
         let name = self.name.clone();
-        let tagline = self.tagline.render(directory);
-        let description = self
-            .description
-            .iter()
-            .map(|text| text.render(directory))
-            .collect();
+        let tagline = self.tagline.render();
+        let description = self.description.iter().map(Text::render).collect();
         let denoted = self.display.render();
-        let type_signature = self.type_signature.render(directory);
+        let type_signature = self.type_signature.render();
 
-        let system = &directory[self.system];
-        let system_id = system.id.clone();
-        let system_name = system.name.clone();
+        let system_id = self.system_ref.id().to_owned();
+        let system_name = self.system_ref.name().to_owned();
 
         SymbolRendered::new(
             id,
@@ -331,73 +320,114 @@ impl SymbolBlock {
         )
     }
 
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
     pub fn href(&self) -> &str {
         &self.href
     }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
 }
 
-pub struct DefinitionBlock {
+impl<'a> std::fmt::Debug for SymbolBlock<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        todo!()
+    }
+}
+
+pub struct DefinitionBlock<'a> {
     id: String,
     name: String,
-    href: String,
-    system: SystemBlockRef,
-    tagline: Paragraph,
-    description: Vec<Text>,
 
-    type_signature: TypeSignatureBlock,
-    inputs: Vec<VariableBlock>,
+    system_ref: SystemBlockRef<'a>,
+
+    tagline: Paragraph<'a>,
+    description: Vec<Text<'a>>,
+
+    type_signature: TypeSignatureBlock<'a>,
     display: Display,
-    expanded: DisplayFormulaBlock,
+    inputs: Vec<VariableBlock<'a>>,
+    expanded: DisplayFormulaBlock<'a>,
+
+    // TODO: Remove.
+    count: OnceCell<usize>,
+
+    // TODO: Remove.
+    href: String,
 }
 
-impl DefinitionBlock {
+impl<'a> DefinitionBlock<'a> {
     pub fn new(
         id: String,
         name: String,
-        href: String,
-        system: SystemBlockRef,
-        tagline: Paragraph,
-        description: Vec<Text>,
-        type_signature: TypeSignatureBlock,
-        inputs: Vec<VariableBlock>,
+        system_ref: SystemBlockRef<'a>,
+        tagline: Paragraph<'a>,
+        description: Vec<Text<'a>>,
+        type_signature: TypeSignatureBlock<'a>,
         display: Display,
-        expanded: DisplayFormulaBlock,
-    ) -> DefinitionBlock {
+        inputs: Vec<VariableBlock<'a>>,
+        expanded: DisplayFormulaBlock<'a>,
+        href: String,
+    ) -> Self {
         DefinitionBlock {
             id,
             name,
-            href,
-            system,
+
+            system_ref,
+
             tagline,
             description,
 
             type_signature,
-            inputs,
             display,
+            inputs,
             expanded,
+
+            count: OnceCell::new(),
+
+            href,
         }
     }
 
+    pub fn crosslink(&'a self, document: &'a Document<'a>) {
+        self.system_ref.crosslink(document);
+
+        self.tagline.crosslink(document);
+        for text in &self.description {
+            text.crosslink(document);
+        }
+
+        self.type_signature.crosslink(document);
+        for input in &self.inputs {
+            input.crosslink(document);
+        }
+        self.expanded.crosslink(document, &self.inputs);
+    }
+
+    // TODO: Remove.
+    pub fn count(&self, count: usize) {
+        self.count.set(count).unwrap()
+    }
+
+    // TODO: Remove.
+    pub fn index(&self) -> usize {
+        *self.count.get().unwrap()
+    }
+
+    // TODO: Remove.
     pub fn checkable(&self) -> Definition {
         let id = self.id.clone();
-        let system = SystemRef::new(self.system.get());
-
-        let vars = self.inputs.iter().map(VariableBlock::checkable).collect();
-        let local_directory = LocalCheckableDirectory::new(vars);
-        let inputs = (0..self.inputs.len())
-            .map(|i| VariableRef::new(i))
-            .collect();
-
+        let system_ref = SystemRef::new(self.system_ref.index());
+        let local_directory = LocalCheckableDirectory::new(
+            self.inputs.iter().map(VariableBlock::checkable).collect(),
+        );
+        let inputs = (0..self.inputs.len()).map(VariableRef::new).collect();
         let type_signature = self.type_signature.checkable();
         let expanded = self.expanded.checkable();
 
         Definition::new(
             id,
-            system,
+            system_ref,
             local_directory,
             inputs,
             type_signature,
@@ -405,26 +435,22 @@ impl DefinitionBlock {
         )
     }
 
-    pub fn render(&self, directory: &BlockDirectory) -> DefinitionRendered {
+    // TODO: Remove.
+    pub fn render(&self) -> DefinitionRendered {
         let id = self.id.clone();
         let name = self.name.clone();
-        let tagline = self.tagline.render(directory);
-        let description = self
-            .description
-            .iter()
-            .map(|text| text.render(directory))
-            .collect();
+        let tagline = self.tagline.render();
+        let description = self.description.iter().map(Text::render).collect();
         let denoted = self.display.render();
-        let type_signature = self.type_signature.render(directory);
+        let type_signature = self.type_signature.render();
         let expanded = self.expanded.render();
         let example = self
             .display
             .example(self.inputs.iter().map(|var| var.id.as_ref()))
             .render();
 
-        let system = &directory[self.system];
-        let system_id = system.id.clone();
-        let system_name = system.name.clone();
+        let system_id = self.system_ref.id().to_owned();
+        let system_name = self.system_ref.name().to_owned();
 
         DefinitionRendered::new(
             id,
@@ -440,25 +466,36 @@ impl DefinitionBlock {
         )
     }
 
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
     pub fn href(&self) -> &str {
         &self.href
     }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
 }
 
-pub struct VariableBlock {
+impl<'a> std::fmt::Debug for DefinitionBlock<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        todo!()
+    }
+}
+
+pub struct VariableBlock<'a> {
     id: String,
-    type_signature: TypeSignatureBlock,
+    type_signature: TypeSignatureBlock<'a>,
 }
 
-impl VariableBlock {
-    pub fn new(id: String, type_signature: TypeSignatureBlock) -> VariableBlock {
+impl<'a> VariableBlock<'a> {
+    pub fn new(id: String, type_signature: TypeSignatureBlock<'a>) -> Self {
         VariableBlock { id, type_signature }
     }
 
+    pub fn crosslink(&'a self, document: &'a Document<'a>) {
+        self.type_signature.crosslink(document);
+    }
+
+    // TODO: Remove.
     pub fn checkable(&self) -> Variable {
         let id = self.id.clone();
         let type_signature = self.type_signature.checkable();
@@ -467,47 +504,97 @@ impl VariableBlock {
     }
 }
 
-#[derive(Debug)]
-pub enum FormulaBlock {
-    Symbol(SymbolBlockRef),
-    Variable(VariableBlockRef),
-
-    Application(Box<FormulaBlock>, Box<FormulaBlock>),
-
-    Definition(DefinitionBlockRef, Vec<FormulaBlock>),
+impl<'a> std::fmt::Debug for VariableBlock<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        todo!()
+    }
 }
 
-impl FormulaBlock {
-    pub(super) fn checkable(&self) -> Formula {
-        match self {
-            Self::Symbol(symbol_ref) => Formula::Symbol(SymbolRef::new(symbol_ref.get())),
-            Self::Variable(variable_ref) => Formula::Variable(VariableRef::new(variable_ref.get())),
+pub struct VariableBlockRef<'a> {
+    index: usize,
+    var: OnceCell<&'a VariableBlock<'a>>,
+}
 
-            Self::Application(function, input) => {
-                Formula::Application(Box::new(function.checkable()), Box::new(input.checkable()))
+impl<'a> VariableBlockRef<'a> {
+    pub fn new(index: usize) -> Self {
+        VariableBlockRef {
+            index,
+            var: OnceCell::new(),
+        }
+    }
+
+    fn crosslink(&'a self, vars: &'a [VariableBlock<'a>]) {
+        self.var.set(&vars[self.index]).unwrap();
+    }
+}
+
+pub enum FormulaBlock<'a> {
+    Symbol(SymbolBlockRef<'a>),
+    Variable(VariableBlockRef<'a>),
+
+    Application(Box<FormulaBlock<'a>>, Box<FormulaBlock<'a>>),
+
+    Definition(DefinitionBlockRef<'a>, Vec<FormulaBlock<'a>>),
+}
+
+impl<'a> FormulaBlock<'a> {
+    pub fn crosslink(&'a self, document: &'a Document<'a>, vars: &'a [VariableBlock<'a>]) {
+        match self {
+            Self::Symbol(symbol_ref) => symbol_ref.crosslink(document),
+            Self::Variable(variable_ref) => variable_ref.crosslink(vars),
+
+            Self::Application(left, right) => {
+                left.crosslink(document, vars);
+                right.crosslink(document, vars);
             }
+
+            Self::Definition(definition_ref, inputs) => {
+                definition_ref.crosslink(document);
+                for input in inputs {
+                    input.crosslink(document, vars);
+                }
+            }
+        }
+    }
+
+    // TODO: Remove.
+    pub fn checkable(&self) -> Formula {
+        match self {
+            Self::Symbol(symbol_ref) => Formula::Symbol(SymbolRef::new(symbol_ref.index())),
+            Self::Variable(variable_ref) => Formula::Variable(VariableRef::new(variable_ref.index)),
+
+            Self::Application(left, right) => {
+                Formula::Application(Box::new(left.checkable()), Box::new(right.checkable()))
+            }
+
             Self::Definition(definition_ref, inputs) => Formula::Definition(
-                DefinitionRef::new(definition_ref.get()),
-                inputs.iter().map(FormulaBlock::checkable).collect(),
+                DefinitionRef::new(definition_ref.index()),
+                inputs.iter().map(Self::checkable).collect(),
             ),
         }
     }
 }
 
-pub struct DisplayFormulaBlock {
+pub struct DisplayFormulaBlock<'a> {
     display: MathBlock,
-    contents: FormulaBlock,
+    contents: FormulaBlock<'a>,
 }
 
-impl DisplayFormulaBlock {
-    pub fn new(display: MathBlock, contents: FormulaBlock) -> DisplayFormulaBlock {
+impl<'a> DisplayFormulaBlock<'a> {
+    pub fn new(display: MathBlock, contents: FormulaBlock<'a>) -> Self {
         DisplayFormulaBlock { display, contents }
     }
 
+    pub fn crosslink(&'a self, document: &'a Document<'a>, vars: &'a [VariableBlock<'a>]) {
+        self.contents.crosslink(document, vars);
+    }
+
+    // TODO: Remove.
     pub fn checkable(&self) -> Formula {
         self.contents.checkable()
     }
 
+    // TODO: Remove.
     pub fn render(&self) -> String {
         self.display.render()
     }

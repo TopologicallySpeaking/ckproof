@@ -20,15 +20,12 @@ use std::lazy::OnceCell;
 use pest::iterators::{Pair, Pairs};
 use url::Url;
 
-use crate::document::directory::{
-    BlockReference, HeadingBlockRef, ListBlockRef, LocalBibliographyRef, QuoteBlockRef,
-    TableBlockRef, TextBlockRef, TodoBlockRef,
-};
-use crate::document::structure::BlockLocation;
+use crate::document::structure::{BlockLocation, BlockRef};
+use crate::document::system::ProofBlockStepRef;
 use crate::document::text::{
-    BareElement, BareText, Citation, DisplayMathBlock, HeadingBlock, HeadingLevel, Hyperlink,
-    ListBlock, MathBlock, MathElement, Mla, MlaContainer, Paragraph, ParagraphElement, QuoteBlock,
-    QuoteValue, SubHeadingBlock, Sublist, SublistItem, TableBlock, TableBlockRow, Text, TextBlock,
+    BareElement, BareText, DisplayMathBlock, HeadingBlock, HeadingLevel, Hyperlink, ListBlock,
+    MathBlock, MathElement, Paragraph, ParagraphElement, QuoteBlock, QuoteValue, RawCitation,
+    RawCitationContainer, SubHeadingBlock, Sublist, SublistItem, TableBlock, TableBlockRow, Text,
     TodoBlock, Unformatted, UnformattedElement,
 };
 use crate::map_ident;
@@ -133,10 +130,8 @@ impl<'a> CitationBuilder<'a> {
         self.local_bib_index.set(local_bib_index).unwrap();
     }
 
-    // TODO: Remove.
-    fn finish(&self) -> Citation {
-        let local_bib_ref = LocalBibliographyRef::new(*self.local_bib_index.get().unwrap());
-        Citation::new(local_bib_ref)
+    fn finish<'b>(&self) -> ParagraphElement<'b> {
+        ParagraphElement::Citation(*self.local_bib_index.get().unwrap())
     }
 }
 
@@ -178,7 +173,6 @@ impl HyperlinkBuilder {
         }
     }
 
-    // TODO: Remove.
     fn finish(&self) -> Hyperlink {
         let url = self.url_parsed.get().unwrap().clone();
         let contents = self.contents.clone();
@@ -210,11 +204,10 @@ impl UnformattedBuilderElement {
         }
     }
 
-    // TODO: Remove.
     fn finish(&self) -> UnformattedElement {
         match self {
             Self::Hyperlink(hyperlink) => UnformattedElement::Hyperlink(hyperlink.finish()),
-            Self::BareElement(element) => UnformattedElement::BareElement(element.clone()),
+            Self::BareElement(bare) => UnformattedElement::BareElement(bare.clone()),
         }
     }
 }
@@ -248,7 +241,6 @@ impl UnformattedBuilder {
         success
     }
 
-    // TODO: Remove.
     fn finish(&self) -> Unformatted {
         let elements = self
             .elements
@@ -496,8 +488,7 @@ impl RawCitationContainerBuilder {
         !found_error
     }
 
-    // TODO: Remove
-    fn finish(&self) -> MlaContainer {
+    fn finish(&self) -> RawCitationContainer {
         let container_title = self.container_title().map(UnformattedBuilder::finish);
         let other_contributors = self.other_contributors().map(UnformattedBuilder::finish);
         let version = self.version().map(UnformattedBuilder::finish);
@@ -506,7 +497,7 @@ impl RawCitationContainerBuilder {
         let publication_date = self.publication_date().map(UnformattedBuilder::finish);
         let location = self.location().map(UnformattedBuilder::finish);
 
-        MlaContainer::new(
+        RawCitationContainer::new(
             container_title,
             other_contributors,
             version,
@@ -651,8 +642,7 @@ impl RawCitationBuilder {
         !found_error
     }
 
-    // TODO: Remove
-    pub fn finish(&self) -> Mla {
+    pub fn finish(&self) -> RawCitation {
         let author = self.author().map(UnformattedBuilder::finish);
         let title = self.title().finish();
         let containers = self
@@ -661,7 +651,7 @@ impl RawCitationBuilder {
             .map(RawCitationContainerBuilder::finish)
             .collect();
 
-        Mla::new(author, title, containers)
+        RawCitation::new(author, title, containers)
     }
 
     fn author(&self) -> Option<&UnformattedBuilder> {
@@ -708,7 +698,6 @@ impl SublistBuilderItem {
         self.replacement.verify_structure(errors, generate_error)
     }
 
-    // TODO: Remove.
     fn finish(&self) -> SublistItem {
         let var_id = self.var_id.clone();
         let replacement = self.replacement.finish();
@@ -747,7 +736,6 @@ impl SublistBuilder {
             .all(|item| item.verify_structure(errors, generate_error))
     }
 
-    // TODO: Remove.
     fn finish(&self) -> Sublist {
         let items = self.items.iter().map(SublistBuilderItem::finish).collect();
 
@@ -803,21 +791,19 @@ impl BigOperatorKind {
         }
     }
 
-    // TODO: Remove.
+    fn arity(&self) -> usize {
+        match self {
+            Self::SquareRoot => 1,
+            Self::Power => 2,
+        }
+    }
+
     fn finish(&self, inputs: &[MathBuilder]) -> MathElement {
         assert_eq!(inputs.len(), self.arity());
 
         match self {
             Self::SquareRoot => MathElement::SquareRoot(inputs[0].finish()),
-
             Self::Power => MathElement::Power(inputs[0].finish(), inputs[1].finish()),
-        }
-    }
-
-    fn arity(&self) -> usize {
-        match self {
-            Self::SquareRoot => 1,
-            Self::Power => 2,
         }
     }
 }
@@ -929,18 +915,17 @@ impl MathBuilderElement {
         }
     }
 
-    // TODO: Remove.
     fn finish(&self) -> MathElement {
         match self {
             Self::Fenced(builder) => MathElement::Fenced(builder.finish()),
 
             Self::BigOperator(kind, inputs) => kind.finish(inputs),
 
-            Self::Operator(operator) => MathElement::Operator(operator.clone()),
+            Self::Operator(o) => MathElement::Operator(o.clone()),
             Self::Separator => MathElement::Separator,
-            Self::Symbol(symbol) => MathElement::Symbol(symbol.clone()),
-            Self::Variable(variable) => MathElement::Variable(variable.clone()),
-            Self::Number(number) => MathElement::Number(number.clone()),
+            Self::Symbol(s) => MathElement::Symbol(s.clone()),
+            Self::Variable(v) => MathElement::Variable(v.clone()),
+            Self::Number(n) => MathElement::Number(n.clone()),
         }
     }
 }
@@ -1008,10 +993,8 @@ impl MathBuilder {
         success
     }
 
-    // TODO: Remove.
     pub fn finish(&self) -> MathBlock {
         assert!(self.verified.get());
-
         let elements = self
             .elements
             .iter()
@@ -1056,7 +1039,6 @@ impl DisplayMathBuilder {
         self.math.verify_structure(errors, generate_error)
     }
 
-    // TODO: Remove.
     fn finish(&self) -> DisplayMathBlock {
         let math = self.math.finish();
         let end = self.end.clone();
@@ -1110,10 +1092,10 @@ impl<'a> SystemReferenceBuilder<'a> {
         }
     }
 
-    // TODO: Remove.
-    fn finish(&self) -> ParagraphElement {
-        let r = BlockReference::System(self.system_ref.get().unwrap().get_ref());
+    fn finish<'b>(&self) -> ParagraphElement<'b> {
         let text = self.text.clone();
+        let location = self.system_ref.get().unwrap().location();
+        let r = BlockRef::new(location);
 
         ParagraphElement::Reference(text, r)
     }
@@ -1174,10 +1156,9 @@ impl<'a> SystemChildReferenceBuilder<'a> {
         }
     }
 
-    // TODO: Remove.
-    fn finish(&self) -> ParagraphElement {
-        let r = self.child_ref.get().unwrap().get_ref();
+    fn finish<'b>(&self) -> ParagraphElement<'b> {
         let text = self.text.clone();
+        let r = self.child_ref.get().unwrap().finish();
 
         ParagraphElement::Reference(text, r)
     }
@@ -1237,11 +1218,13 @@ impl<'a> TagReferenceBuilder<'a> {
         }
     }
 
-    fn finish(&self) -> ParagraphElement {
-        let r = BlockReference::ProofStep(self.step_ref.get().unwrap().get_ref());
+    fn finish<'b>(&self) -> ParagraphElement<'b> {
         let text = self.text.clone();
 
-        ParagraphElement::Reference(text, r)
+        let index = self.step_ref.get().unwrap().index();
+        let step_ref = ProofBlockStepRef::new(index);
+
+        ParagraphElement::Tag(text, step_ref)
     }
 }
 
@@ -1336,8 +1319,7 @@ impl<'a> ReferenceBuilder<'a> {
         }
     }
 
-    // TODO: Remove.
-    fn finish(&self) -> ParagraphElement {
+    fn finish<'b>(&self) -> ParagraphElement<'b> {
         match self {
             Self::System(r) => r.finish(),
             Self::SystemChild(r) => r.finish(),
@@ -1554,18 +1536,18 @@ impl<'a> ParagraphBuilderElement<'a> {
         }
     }
 
-    fn finish(&self) -> ParagraphElement {
+    fn finish<'b>(&self) -> ParagraphElement<'b> {
         match self {
             Self::Reference(r) => r.finish(),
             Self::InlineMath(math) => ParagraphElement::InlineMath(math.finish()),
-            Self::Citation(citation) => ParagraphElement::Citation(citation.finish()),
+            Self::Citation(citation) => citation.finish(),
 
             Self::UnicornVomitBegin => ParagraphElement::UnicornVomitBegin,
             Self::UnicornVomitEnd => ParagraphElement::UnicornVomitEnd,
             Self::EmBegin => ParagraphElement::EmBegin,
             Self::EmEnd => ParagraphElement::EmEnd,
 
-            Self::Unformatted(unformatted) => ParagraphElement::Unformatted(unformatted.finish()),
+            Self::Unformatted(element) => ParagraphElement::Unformatted(element.finish()),
         }
     }
 }
@@ -1660,8 +1642,7 @@ impl<'a> ParagraphBuilder<'a> {
         }
     }
 
-    // TODO: Remove.
-    pub fn finish(&self) -> Paragraph {
+    pub fn finish<'b>(&self) -> Paragraph<'b> {
         assert!(self.verified.get());
         let elements = self
             .elements
@@ -1678,8 +1659,6 @@ pub struct ListBuilder<'a> {
     ordered: bool,
     items: Vec<ParagraphBuilder<'a>>,
     location: BlockLocation,
-
-    count: OnceCell<usize>,
 }
 
 impl<'a> ListBuilder<'a> {
@@ -1690,8 +1669,6 @@ impl<'a> ListBuilder<'a> {
             ordered,
             items,
             location,
-
-            count: OnceCell::new(),
         }
     }
 
@@ -1717,18 +1694,7 @@ impl<'a> ListBuilder<'a> {
         }
     }
 
-    // TODO: Remove.
-    pub fn count(&self, count: usize) {
-        self.count.set(count).unwrap();
-    }
-
-    // TODO: Remove.
-    pub fn get_ref(&self) -> ListBlockRef {
-        ListBlockRef::new(*self.count.get().unwrap())
-    }
-
-    // TODO: Remove.
-    pub fn finish(&self) -> ListBlock {
+    pub fn finish<'b>(&self) -> ListBlock<'b> {
         let ordered = self.ordered;
         let items = self.items.iter().map(ParagraphBuilder::finish).collect();
 
@@ -1773,7 +1739,7 @@ impl<'a> TableBuilderRow<'a> {
         }
     }
 
-    fn finish(&self) -> TableBlockRow {
+    fn finish<'b>(&self) -> TableBlockRow<'b> {
         let cells = self.cells.iter().map(ParagraphBuilder::finish).collect();
 
         TableBlockRow::new(cells)
@@ -1789,9 +1755,6 @@ pub struct TableBuilder<'a> {
     foot: Option<Vec<TableBuilderRow<'a>>>,
 
     caption: Option<ParagraphBuilder<'a>>,
-
-    // TODO: Remove.
-    count: OnceCell<usize>,
 }
 
 impl<'a> TableBuilder<'a> {
@@ -1842,8 +1805,6 @@ impl<'a> TableBuilder<'a> {
             foot,
 
             caption,
-
-            count: OnceCell::new(),
         }
     }
 
@@ -1897,30 +1858,19 @@ impl<'a> TableBuilder<'a> {
         }
     }
 
-    // TODO: Remove.
-    pub fn count(&self, count: usize) {
-        self.count.set(count).unwrap();
-    }
-
-    // TODO: Remove.
-    pub fn get_ref(&self) -> TableBlockRef {
-        TableBlockRef::new(*self.count.get().unwrap())
-    }
-
-    // TODO: Remove.
-    pub fn finish(&self) -> TableBlock {
+    pub fn finish<'b>(&self) -> TableBlock<'b> {
         let head = self
             .head
             .as_ref()
-            .map(|rows| rows.iter().map(TableBuilderRow::finish).collect());
+            .map(|row| row.iter().map(TableBuilderRow::finish).collect());
         let body = self
             .body
             .as_ref()
-            .map(|rows| rows.iter().map(TableBuilderRow::finish).collect());
+            .map(|row| row.iter().map(TableBuilderRow::finish).collect());
         let foot = self
             .foot
             .as_ref()
-            .map(|rows| rows.iter().map(TableBuilderRow::finish).collect());
+            .map(|row| row.iter().map(TableBuilderRow::finish).collect());
 
         let caption = self.caption.as_ref().map(ParagraphBuilder::finish);
 
@@ -1934,7 +1884,7 @@ struct QuoteValueBuilder<'a> {
     quote: UnformattedBuilder,
 
     bib_ref: OnceCell<&'a BibliographyBuilderEntry>,
-    local_bib_index: OnceCell<usize>,
+    local_bib_ref: OnceCell<usize>,
 }
 
 impl<'a> QuoteValueBuilder<'a> {
@@ -1950,7 +1900,7 @@ impl<'a> QuoteValueBuilder<'a> {
             quote,
 
             bib_ref: OnceCell::new(),
-            local_bib_index: OnceCell::new(),
+            local_bib_ref: OnceCell::new(),
         }
     }
 
@@ -1975,15 +1925,14 @@ impl<'a> QuoteValueBuilder<'a> {
 
     fn set_local_bib_ref(&self, index: &HashMap<&BibliographyBuilderEntry, usize>) {
         let local_bib_ref = *index.get(self.bib_ref.get().unwrap()).unwrap();
-        self.local_bib_index.set(local_bib_ref).unwrap();
+        self.local_bib_ref.set(local_bib_ref).unwrap();
     }
 
-    // TODO: Remove.
     fn finish(&self) -> QuoteValue {
         let quote = self.quote.finish();
-        let local_bib_index = *self.local_bib_index.get().unwrap();
+        let local_bib_ref = *self.local_bib_ref.get().unwrap();
 
-        QuoteValue::new(quote, LocalBibliographyRef::new(local_bib_index))
+        QuoteValue::new(quote, local_bib_ref)
     }
 }
 
@@ -1993,9 +1942,6 @@ pub struct QuoteBuilder<'a> {
 
     original: Option<QuoteValueBuilder<'a>>,
     value: QuoteValueBuilder<'a>,
-
-    // TODO: Remove.
-    count: OnceCell<usize>,
 }
 
 impl<'a> QuoteBuilder<'a> {
@@ -2021,8 +1967,6 @@ impl<'a> QuoteBuilder<'a> {
 
             original,
             value,
-
-            count: OnceCell::new(),
         }
     }
 
@@ -2057,18 +2001,7 @@ impl<'a> QuoteBuilder<'a> {
         self.value.set_local_bib_ref(index);
     }
 
-    // TODO: Remove.
-    pub fn count(&self, count: usize) {
-        self.count.set(count).unwrap();
-    }
-
-    // TODO: Remove.
-    pub fn get_ref(&self) -> QuoteBlockRef {
-        QuoteBlockRef::new(*self.count.get().unwrap())
-    }
-
-    // TODO: Remove.
-    pub fn finish(&self) -> QuoteBlock {
+    pub fn finish<'b>(&self) -> QuoteBlock {
         let original = self.original.as_ref().map(QuoteValueBuilder::finish);
         let value = self.value.finish();
 
@@ -2077,25 +2010,14 @@ impl<'a> QuoteBuilder<'a> {
 }
 
 pub struct TodoBuilder<'a> {
-    location: BlockLocation,
-
     elements: Vec<TextBuilder<'a>>,
-
-    // TODO: Remove.
-    count: OnceCell<usize>,
 }
 
 impl<'a> TodoBuilder<'a> {
-    pub fn from_pest(pair: Pair<Rule>, location: BlockLocation) -> Self {
+    pub fn from_pest(pair: Pair<Rule>) -> Self {
         let elements = pair.into_inner().map(TextBuilder::from_pest).collect();
 
-        TodoBuilder {
-            location,
-
-            elements,
-
-            count: OnceCell::new(),
-        }
+        TodoBuilder { elements }
     }
 
     pub fn verify_structure(
@@ -2118,18 +2040,7 @@ impl<'a> TodoBuilder<'a> {
         }
     }
 
-    // TODO: Remove.
-    pub fn count(&self, count: usize) {
-        self.count.set(count).unwrap();
-    }
-
-    // TODO: Remove.
-    pub fn get_ref(&self) -> TodoBlockRef {
-        TodoBlockRef::new(*self.count.get().unwrap())
-    }
-
-    // TODO: Remove.
-    pub fn finish(&self) -> TodoBlock {
+    pub fn finish<'b>(&self) -> TodoBlock<'b> {
         let elements = self.elements.iter().map(TextBuilder::finish).collect();
 
         TodoBlock::new(elements)
@@ -2172,7 +2083,6 @@ impl SubHeadingBuilder {
         }
     }
 
-    // TODO: Remove.
     fn finish(&self) -> SubHeadingBlock {
         let level = self.level;
         let contents = self
@@ -2186,15 +2096,11 @@ impl SubHeadingBuilder {
 }
 
 pub struct HeadingBuilder {
-    location: BlockLocation,
-
     subheadings: Vec<SubHeadingBuilder>,
-
-    count: OnceCell<usize>,
 }
 
 impl HeadingBuilder {
-    pub fn from_pest(pair: Pair<Rule>, location: BlockLocation) -> HeadingBuilder {
+    pub fn from_pest(pair: Pair<Rule>) -> HeadingBuilder {
         assert_eq!(pair.as_rule(), Rule::heading_block);
 
         let subheadings = pair
@@ -2202,13 +2108,7 @@ impl HeadingBuilder {
             .map(SubHeadingBuilder::from_pest)
             .collect();
 
-        HeadingBuilder {
-            location,
-
-            subheadings,
-
-            count: OnceCell::new(),
-        }
+        HeadingBuilder { subheadings }
     }
 
     pub fn verify_structure(&self, errors: &mut ParsingErrorContext) {
@@ -2221,17 +2121,6 @@ impl HeadingBuilder {
         Box::new(std::iter::empty())
     }
 
-    // TODO: Remove.
-    pub fn count(&self, count: usize) {
-        self.count.set(count).unwrap();
-    }
-
-    // TODO: Remove.
-    pub fn get_ref(&self) -> HeadingBlockRef {
-        HeadingBlockRef::new(*self.count.get().unwrap())
-    }
-
-    // TODO: Remove.
     pub fn finish(&self) -> HeadingBlock {
         let subheadings = self
             .subheadings
@@ -2334,12 +2223,11 @@ impl<'a> TextBuilder<'a> {
         }
     }
 
-    // TODO: Remove.
-    pub fn finish(&self) -> Text {
+    pub fn finish<'b>(&self) -> Text<'b> {
         match self {
-            Self::RawCitation(raw_citation) => Text::Mla(raw_citation.finish()),
+            Self::RawCitation(citation) => Text::RawCitation(citation.finish()),
             Self::Sublist(sublist) => Text::Sublist(sublist.finish()),
-            Self::DisplayMath(display_math) => Text::DisplayMath(display_math.finish()),
+            Self::DisplayMath(math) => Text::DisplayMath(math.finish()),
             Self::Paragraph(paragraph) => Text::Paragraph(paragraph.finish()),
         }
     }
@@ -2350,9 +2238,6 @@ pub struct TextBlockBuilder<'a> {
     location: BlockLocation,
 
     text: TextBuilder<'a>,
-
-    // TODO: Remove.
-    count: OnceCell<usize>,
 }
 
 impl<'a> TextBlockBuilder<'a> {
@@ -2361,8 +2246,6 @@ impl<'a> TextBlockBuilder<'a> {
             location,
 
             text: TextBuilder::from_pest(pair),
-
-            count: OnceCell::new(),
         }
     }
 
@@ -2390,15 +2273,7 @@ impl<'a> TextBlockBuilder<'a> {
         &self.text
     }
 
-    pub fn count(&self, count: usize) {
-        self.count.set(count).unwrap();
-    }
-
-    pub fn get_ref(&self) -> TextBlockRef {
-        TextBlockRef::new(*self.count.get().unwrap())
-    }
-
-    pub fn finish(&self) -> TextBlock {
-        TextBlock::new(self.text.finish())
+    pub fn finish<'b>(&self) -> Text<'b> {
+        self.text.finish()
     }
 }

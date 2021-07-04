@@ -498,6 +498,7 @@ pub enum BlockRendered {
     Axiom(AxiomRendered),
     Theorem(TheoremRendered),
     Proof(ProofRendered),
+
     List(ListRendered),
     Table(TableRendered),
     Quote(QuoteRendered),
@@ -522,6 +523,7 @@ pub struct PageRendered {
 
     blocks: Vec<BlockRendered>,
 
+    // TODO: This is always Some, so remove the Option.
     local_bibliography: Option<Vec<MlaRendered>>,
 }
 

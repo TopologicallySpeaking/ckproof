@@ -20,16 +20,14 @@ use std::lazy::OnceCell;
 
 use pest::iterators::{Pair, Pairs};
 
-use crate::document::deduction::{
+use crate::document::structure::{
+    AxiomBlockRef, BlockLocation, BlockRef, DeductableBlockRef, SystemBlockRef, TheoremBlockRef,
+};
+use crate::document::system::{
     AxiomBlock, ProofBlock, ProofBlockElement, ProofBlockJustification,
-    ProofBlockSmallJustification, ProofBlockSmallStep, ProofBlockStep, TheoremBlock, TheoremKind,
+    ProofBlockSmallJustification, ProofBlockSmallStep, ProofBlockStep, SystemBlock, TheoremBlock,
+    TheoremKind,
 };
-use crate::document::directory::{
-    AxiomBlockRef, BlockReference, ProofBlockRef, ProofBlockStepRef, SystemBlockRef,
-    TheoremBlockRef,
-};
-use crate::document::language::SystemBlock;
-use crate::document::structure::BlockLocation;
 
 use super::bibliography::BibliographyBuilderEntry;
 use super::errors::{
@@ -198,12 +196,12 @@ impl<'a> SystemBuilderEntries<'a> {
         &self.names[0]
     }
 
-    fn tagline(&'a self) -> &ParagraphBuilder {
+    fn tagline(&self) -> &ParagraphBuilder<'a> {
         assert!(self.verified.get());
         &self.taglines[0]
     }
 
-    fn description(&'a self) -> &[TextBuilder] {
+    fn description(&self) -> &[TextBuilder<'a>] {
         assert!(self.verified.get());
         if self.descriptions.is_empty() {
             &[]
@@ -218,9 +216,6 @@ pub struct SystemBuilder<'a> {
     location: BlockLocation,
 
     entries: SystemBuilderEntries<'a>,
-
-    // TODO: Remove.
-    count: OnceCell<usize>,
 
     // TODO: Remove.
     href: OnceCell<String>,
@@ -240,7 +235,6 @@ impl<'a> SystemBuilder<'a> {
 
             entries,
 
-            count: OnceCell::new(),
             href: OnceCell::new(),
         }
     }
@@ -266,26 +260,14 @@ impl<'a> SystemBuilder<'a> {
     }
 
     // TODO: Remove.
-    pub fn count(&self, count: usize) {
-        self.count.set(count).unwrap()
-    }
-
-    // TODO: Remove.
     pub fn set_href(&self, book_id: &str, chapter_id: &str, page_id: &str) {
         let href = format!("/{}/{}/{}#{}", book_id, chapter_id, page_id, &self.id);
         self.href.set(href).unwrap();
     }
 
-    // TODO: Remove.
-    pub fn get_ref(&self) -> SystemBlockRef {
-        SystemBlockRef::new(*self.count.get().unwrap())
-    }
-
-    // TODO: Remove.
-    pub fn finish(&'a self) -> SystemBlock {
+    pub fn finish<'b>(&self) -> SystemBlock<'b> {
         let id = self.id.clone();
         let name = self.entries.name().to_owned();
-        let href = self.href.get().unwrap().to_owned();
         let tagline = self.entries.tagline().finish();
         let description = self
             .entries
@@ -293,8 +275,13 @@ impl<'a> SystemBuilder<'a> {
             .iter()
             .map(TextBuilder::finish)
             .collect();
+        let href = self.href.get().unwrap().clone();
 
-        SystemBlock::new(id, name, href, tagline, description)
+        SystemBlock::new(id, name, tagline, description, href)
+    }
+
+    pub fn location(&self) -> BlockLocation {
+        self.location
     }
 }
 
@@ -360,16 +347,16 @@ impl<'a> SystemBuilderChild<'a> {
         }
     }
 
-    pub fn get_ref(self) -> BlockReference {
-        match self {
-            Self::Type(type_ref) => BlockReference::Type(type_ref.get_ref()),
-            Self::Symbol(symbol_ref) => BlockReference::Symbol(symbol_ref.get_ref()),
-            Self::Definition(definition_ref) => {
-                BlockReference::Definition(definition_ref.get_ref())
-            }
-            Self::Axiom(axiom_ref) => BlockReference::Axiom(axiom_ref.get_ref()),
-            Self::Theorem(theorem_ref) => BlockReference::Theorem(theorem_ref.get_ref()),
-        }
+    pub fn finish<'b>(&self) -> BlockRef<'b> {
+        let location = match self {
+            Self::Type(type_ref) => type_ref.location(),
+            Self::Symbol(symbol_ref) => symbol_ref.location(),
+            Self::Definition(definition_ref) => definition_ref.location(),
+            Self::Axiom(axiom_ref) => axiom_ref.location(),
+            Self::Theorem(theorem_ref) => theorem_ref.location(),
+        };
+
+        BlockRef::new(location)
     }
 }
 
@@ -881,7 +868,7 @@ impl<'a> AxiomBuilderEntries<'a> {
 
                     flag_lists.push(flag_list);
                 }
-                Rule::var_declaration => vars.push(VariableBuilder::from_pest(pair)),
+                Rule::var_declaration => vars.push(VariableBuilder::from_pest(pair, vars.len())),
                 Rule::premise => {
                     let premise = pair
                         .into_inner()
@@ -1118,12 +1105,12 @@ impl<'a> AxiomBuilderEntries<'a> {
         &self.names[0]
     }
 
-    fn tagline(&'a self) -> &ParagraphBuilder {
+    fn tagline(&self) -> &ParagraphBuilder<'a> {
         assert!(self.verified.get());
         &self.taglines[0]
     }
 
-    fn description(&'a self) -> &[TextBuilder] {
+    fn description(&self) -> &[TextBuilder<'a>] {
         assert!(self.verified.get());
         if self.descriptions.is_empty() {
             &[]
@@ -1137,12 +1124,12 @@ impl<'a> AxiomBuilderEntries<'a> {
         self.flag_lists.get(0)
     }
 
-    fn vars(&'a self) -> &[VariableBuilder] {
+    fn vars(&self) -> &[VariableBuilder<'a>] {
         assert!(self.verified.get());
         &self.vars
     }
 
-    fn premise(&'a self) -> &[DisplayFormulaBuilder] {
+    fn premise(&self) -> &[DisplayFormulaBuilder<'a>] {
         assert!(self.verified.get());
         if self.premises.is_empty() {
             &[]
@@ -1151,7 +1138,7 @@ impl<'a> AxiomBuilderEntries<'a> {
         }
     }
 
-    fn assertion(&'a self) -> &DisplayFormulaBuilder {
+    fn assertion(&self) -> &DisplayFormulaBuilder<'a> {
         assert!(self.verified.get());
         &self.assertions[0]
     }
@@ -1164,9 +1151,6 @@ pub struct AxiomBuilder<'a> {
 
     system_ref: OnceCell<&'a SystemBuilder<'a>>,
     entries: AxiomBuilderEntries<'a>,
-
-    // TODO: Remove.
-    count: OnceCell<usize>,
 
     // TODO: Remove.
     href: OnceCell<String>,
@@ -1190,7 +1174,6 @@ impl<'a> AxiomBuilder<'a> {
             system_ref: OnceCell::new(),
             entries,
 
-            count: OnceCell::new(),
             href: OnceCell::new(),
         }
     }
@@ -1224,34 +1207,21 @@ impl<'a> AxiomBuilder<'a> {
     }
 
     // TODO: Remove.
-    pub fn count(&'a self, count: usize) {
-        self.count.set(count).unwrap();
-
-        for (i, var) in self.entries.vars().iter().enumerate() {
-            var.count(i);
-        }
-    }
-
-    // TODO: Remove.
-    pub fn get_ref(&self) -> AxiomBlockRef {
-        AxiomBlockRef::new(*self.count.get().unwrap())
-    }
-
-    // TODO: Remove.
     pub fn set_href(&self, book_id: &str, chapter_id: &str, page_id: &str) {
         let href = format!(
             "/{}/{}/{}#{}_{}",
             book_id, chapter_id, page_id, &self.system_id, &self.id
         );
-        self.href.set(href).unwrap()
+        self.href.set(href).unwrap();
     }
 
-    // TODO: Remove.
-    pub fn finish(&'a self) -> AxiomBlock {
+    pub fn finish<'b>(&self) -> AxiomBlock<'b> {
         let id = self.id.clone();
         let name = self.entries.name().to_owned();
-        let system = self.system_ref.get().unwrap().get_ref();
-        let href = self.href.get().unwrap().to_owned();
+
+        let system_location = self.system_ref.get().unwrap().location();
+        let system_ref = SystemBlockRef::new(system_location);
+
         let tagline = self.entries.tagline().finish();
         let description = self
             .entries
@@ -1274,16 +1244,18 @@ impl<'a> AxiomBuilder<'a> {
             .collect();
         let assertion = self.entries.assertion().finish();
 
+        let href = self.href.get().unwrap().to_owned();
+
         AxiomBlock::new(
             id,
             name,
-            system,
-            href,
+            system_ref,
             tagline,
             description,
             vars,
             premise,
             assertion,
+            href,
         )
     }
 
@@ -1305,6 +1277,10 @@ impl<'a> AxiomBuilder<'a> {
 
     pub fn serial(&self) -> usize {
         self.location.serial()
+    }
+
+    pub fn location(&self) -> BlockLocation {
+        self.location
     }
 }
 
@@ -1373,7 +1349,7 @@ impl<'a> TheoremBuilderEntries<'a> {
 
                     flag_lists.push(flag_list);
                 }
-                Rule::var_declaration => vars.push(VariableBuilder::from_pest(pair)),
+                Rule::var_declaration => vars.push(VariableBuilder::from_pest(pair, vars.len())),
                 Rule::premise => {
                     let premise = pair
                         .into_inner()
@@ -1617,12 +1593,12 @@ impl<'a> TheoremBuilderEntries<'a> {
         &self.names[0]
     }
 
-    fn tagline(&'a self) -> &ParagraphBuilder {
+    fn tagline(&self) -> &ParagraphBuilder<'a> {
         assert!(self.verified.get());
         &self.taglines[0]
     }
 
-    fn description(&'a self) -> &[TextBuilder] {
+    fn description(&self) -> &[TextBuilder<'a>] {
         assert!(self.verified.get());
         if self.descriptions.is_empty() {
             &[]
@@ -1636,12 +1612,12 @@ impl<'a> TheoremBuilderEntries<'a> {
         self.flag_lists.get(0)
     }
 
-    fn vars(&'a self) -> &[VariableBuilder] {
+    fn vars(&self) -> &[VariableBuilder<'a>] {
         assert!(self.verified.get());
         &self.vars
     }
 
-    fn premise(&'a self) -> &[DisplayFormulaBuilder] {
+    fn premise(&self) -> &[DisplayFormulaBuilder<'a>] {
         assert!(self.verified.get());
         if self.premises.is_empty() {
             &[]
@@ -1650,7 +1626,7 @@ impl<'a> TheoremBuilderEntries<'a> {
         }
     }
 
-    fn assertion(&'a self) -> &DisplayFormulaBuilder {
+    fn assertion(&self) -> &DisplayFormulaBuilder<'a> {
         assert!(self.verified.get());
         &self.assertions[0]
     }
@@ -1666,9 +1642,6 @@ pub struct TheoremBuilder<'a> {
     entries: TheoremBuilderEntries<'a>,
 
     proofs: RefCell<Vec<&'a ProofBuilder<'a>>>,
-
-    // TODO: Remove.
-    count: OnceCell<usize>,
 
     // TODO: Remove.
     href: OnceCell<String>,
@@ -1697,7 +1670,6 @@ impl<'a> TheoremBuilder<'a> {
 
             proofs: RefCell::new(Vec::new()),
 
-            count: OnceCell::new(),
             href: OnceCell::new(),
         }
     }
@@ -1731,20 +1703,6 @@ impl<'a> TheoremBuilder<'a> {
     }
 
     // TODO: Remove.
-    pub fn count(&'a self, count: usize) {
-        self.count.set(count).unwrap();
-
-        for (i, var) in self.entries.vars().iter().enumerate() {
-            var.count(i);
-        }
-    }
-
-    // TODO: Remove.
-    pub fn get_ref(&self) -> TheoremBlockRef {
-        TheoremBlockRef::new(*self.count.get().unwrap())
-    }
-
-    // TODO: Remove.
     pub fn set_href(&self, book_id: &str, chapter_id: &str, page_id: &str) {
         let href = format!(
             "/{}/{}/{}#{}_{}",
@@ -1753,13 +1711,14 @@ impl<'a> TheoremBuilder<'a> {
         self.href.set(href).unwrap();
     }
 
-    // TODO: Remove.
-    pub fn finish(&'a self) -> TheoremBlock {
+    pub fn finish<'b>(&self) -> TheoremBlock<'b> {
         let kind = self.kind;
         let id = self.id.clone();
         let name = self.entries.name().to_owned();
-        let system = self.system_ref.get().unwrap().get_ref();
-        let href = self.href.get().unwrap().to_owned();
+
+        let system_location = self.system_ref.get().unwrap().location();
+        let system_ref = SystemBlockRef::new(system_location);
+
         let tagline = self.entries.tagline().finish();
         let description = self
             .entries
@@ -1775,23 +1734,26 @@ impl<'a> TheoremBuilder<'a> {
             .map(VariableBuilder::finish)
             .collect();
         let premise = self
+            .entries
             .premise()
             .iter()
             .map(DisplayFormulaBuilder::finish)
             .collect();
         let assertion = self.entries.assertion().finish();
 
+        let href = self.href.get().unwrap().clone();
+
         TheoremBlock::new(
             kind,
             id,
             name,
-            system,
-            href,
+            system_ref,
             tagline,
             description,
             vars,
             premise,
             assertion,
+            href,
         )
     }
 
@@ -1828,6 +1790,10 @@ impl<'a> TheoremBuilder<'a> {
         let proofs = self.proofs.borrow();
         proofs.get(0).copied()
     }
+
+    fn location(&self) -> BlockLocation {
+        self.location
+    }
 }
 
 impl<'a> std::fmt::Debug for TheoremBuilder<'a> {
@@ -1854,6 +1820,24 @@ impl<'a> DeductableBuilder<'a> {
         match self {
             Self::Axiom(axiom_ref) => axiom_ref.assertion(),
             Self::Theorem(theorem_ref) => theorem_ref.assertion(),
+        }
+    }
+
+    fn finish<'b>(self) -> DeductableBlockRef<'b> {
+        match self {
+            Self::Axiom(axiom) => {
+                let axiom_location = axiom.location();
+                let axiom_ref = AxiomBlockRef::new(axiom_location);
+
+                DeductableBlockRef::Axiom(axiom_ref)
+            }
+
+            Self::Theorem(theorem) => {
+                let theorem_location = theorem.location();
+                let theorem_ref = TheoremBlockRef::new(theorem_location);
+
+                DeductableBlockRef::Theorem(theorem_ref)
+            }
         }
     }
 }
@@ -1968,10 +1952,10 @@ impl<'a> SystemChildJustificationBuilder<'a> {
     ) -> Option<Vec<ProofBuilderSmallStep>> {
         let justification = match *self.child.get().unwrap() {
             SystemBuilderChild::Axiom(axiom_ref) => {
-                ProofBuilderSmallJustification::Axiom(axiom_ref)
+                ProofBuilderSmallJustification::Deductable(DeductableBuilder::Axiom(axiom_ref))
             }
             SystemBuilderChild::Theorem(theorem_ref) => {
-                ProofBuilderSmallJustification::Theorem(theorem_ref)
+                ProofBuilderSmallJustification::Deductable(DeductableBuilder::Theorem(theorem_ref))
             }
 
             _ => unreachable!(),
@@ -1983,13 +1967,19 @@ impl<'a> SystemChildJustificationBuilder<'a> {
         }])
     }
 
-    fn finish(&self) -> ProofBlockJustification {
-        match self.child.get().unwrap() {
-            SystemBuilderChild::Axiom(axiom_ref) => {
-                ProofBlockJustification::Axiom(axiom_ref.get_ref())
+    fn finish<'b>(&self) -> ProofBlockJustification<'b> {
+        match *self.child.get().unwrap() {
+            SystemBuilderChild::Axiom(axiom) => {
+                let axiom_location = axiom.location();
+                let axiom_ref = AxiomBlockRef::new(axiom_location);
+
+                ProofBlockJustification::Deductable(DeductableBlockRef::Axiom(axiom_ref))
             }
-            SystemBuilderChild::Theorem(theorem_ref) => {
-                ProofBlockJustification::Theorem(theorem_ref.get_ref())
+            SystemBuilderChild::Theorem(theorem) => {
+                let theorem_location = theorem.location();
+                let theorem_ref = TheoremBlockRef::new(theorem_location);
+
+                ProofBlockJustification::Deductable(DeductableBlockRef::Theorem(theorem_ref))
             }
 
             _ => unreachable!(),
@@ -2042,7 +2032,7 @@ impl MacroJustificationBuilder {
         {
             let deductable_ref = relation.get_symmetric().unwrap();
             let ret = Some(ProofBuilderSmallStep {
-                justification: ProofBuilderSmallJustification::from_deductable(deductable_ref),
+                justification: ProofBuilderSmallJustification::Deductable(deductable_ref),
                 formula,
             });
 
@@ -2052,7 +2042,7 @@ impl MacroJustificationBuilder {
         else if left == right {
             let deductable_ref = relation.get_reflexive().unwrap();
             let ret = Some(ProofBuilderSmallStep {
-                justification: ProofBuilderSmallJustification::from_deductable(deductable_ref),
+                justification: ProofBuilderSmallJustification::Deductable(deductable_ref),
                 formula,
             });
 
@@ -2080,9 +2070,7 @@ impl MacroJustificationBuilder {
             if let Some(deductable_ref) = left_function.get_function(relation) {
                 Box::new(
                     input_steps.chain(std::iter::once(Some(ProofBuilderSmallStep {
-                        justification: ProofBuilderSmallJustification::from_deductable(
-                            deductable_ref,
-                        ),
+                        justification: ProofBuilderSmallJustification::Deductable(deductable_ref),
                         formula,
                     }))),
                 )
@@ -2126,10 +2114,10 @@ impl MacroJustificationBuilder {
         }
     }
 
-    fn finish(&self) -> ProofBlockJustification {
+    fn finish<'b>(&self) -> ProofBlockJustification<'b> {
         match self {
-            Self::Definition => ProofBlockJustification::Definition,
             Self::Substitution => ProofBlockJustification::Substitution,
+            Self::Definition => ProofBlockJustification::Definition,
         }
     }
 }
@@ -2220,11 +2208,10 @@ impl<'a> ProofJustificationBuilder<'a> {
         }
     }
 
-    // TODO: Remove.
-    fn finish(&self) -> ProofBlockJustification {
+    fn finish<'b>(&self) -> ProofBlockJustification<'b> {
         match self {
-            Self::SystemChild(justification) => justification.finish(),
-            Self::Macro(justification) => justification.finish(),
+            Self::SystemChild(builder) => builder.finish(),
+            Self::Macro(builder) => builder.finish(),
             Self::Hypothesis(id) => ProofBlockJustification::Hypothesis(*id),
         }
     }
@@ -2379,7 +2366,7 @@ impl<'a> ProofBuilderMeta<'a> {
             .build_small_steps(formula, prev_steps, errors)
     }
 
-    fn justification(&'a self) -> &ProofJustificationBuilder {
+    fn justification(&self) -> &ProofJustificationBuilder<'a> {
         assert!(self.justification_verified.get());
         &self.justifications[0]
     }
@@ -2387,27 +2374,17 @@ impl<'a> ProofBuilderMeta<'a> {
 
 #[derive(Debug)]
 enum ProofBuilderSmallJustification<'a> {
-    Axiom(&'a AxiomBuilder<'a>),
-    Theorem(&'a TheoremBuilder<'a>),
+    Deductable(DeductableBuilder<'a>),
     Hypothesis(usize),
 
     Definition,
 }
 
 impl<'a> ProofBuilderSmallJustification<'a> {
-    fn from_deductable(deductable_ref: DeductableBuilder<'a>) -> Self {
-        match deductable_ref {
-            DeductableBuilder::Axiom(axiom_ref) => Self::Axiom(axiom_ref),
-            DeductableBuilder::Theorem(theorem_ref) => Self::Theorem(theorem_ref),
-        }
-    }
-
-    // TODO: Remove.
-    fn finish(&self) -> ProofBlockSmallJustification {
+    fn finish<'b>(&self) -> ProofBlockSmallJustification<'b> {
         match self {
-            Self::Axiom(axiom_ref) => ProofBlockSmallJustification::Axiom(axiom_ref.get_ref()),
-            Self::Theorem(theorem_ref) => {
-                ProofBlockSmallJustification::Theorem(theorem_ref.get_ref())
+            Self::Deductable(deductable) => {
+                ProofBlockSmallJustification::Deductable(deductable.finish())
             }
             Self::Hypothesis(id) => ProofBlockSmallJustification::Hypothesis(*id),
 
@@ -2423,8 +2400,7 @@ struct ProofBuilderSmallStep<'a> {
 }
 
 impl<'a> ProofBuilderSmallStep<'a> {
-    // TODO: Remove.
-    fn finish(&self) -> ProofBlockSmallStep {
+    fn finish<'b>(&self) -> ProofBlockSmallStep<'b> {
         let justification = self.justification.finish();
         let formula = self.formula.finish();
 
@@ -2434,6 +2410,7 @@ impl<'a> ProofBuilderSmallStep<'a> {
 
 #[derive(Debug)]
 pub struct ProofBuilderStep<'a> {
+    index: usize,
     meta: ProofBuilderMeta<'a>,
     formula: DisplayFormulaBuilder<'a>,
     end: String,
@@ -2441,17 +2418,17 @@ pub struct ProofBuilderStep<'a> {
     small_steps: OnceCell<Vec<ProofBuilderSmallStep<'a>>>,
 
     // TODO: Remove.
-    count: usize,
-
-    // TODO: Remove.
     id: OnceCell<String>,
 
     // TODO: Remove.
     href: OnceCell<String>,
+
+    // TODO: Remove.
+    tag: OnceCell<usize>,
 }
 
 impl<'a> ProofBuilderStep<'a> {
-    fn from_pest(pair: Pair<Rule>, count: usize) -> Self {
+    fn from_pest(pair: Pair<Rule>, index: usize) -> Self {
         assert_eq!(pair.as_rule(), Rule::proof_step);
 
         let mut inner = pair.into_inner();
@@ -2463,15 +2440,18 @@ impl<'a> ProofBuilderStep<'a> {
         let end = end_inner.as_str().to_owned();
 
         ProofBuilderStep {
+            index,
             meta,
             formula,
             end,
 
             small_steps: OnceCell::new(),
 
-            count,
             id: OnceCell::new(),
+
             href: OnceCell::new(),
+
+            tag: OnceCell::new(),
         }
     }
 
@@ -2526,29 +2506,26 @@ impl<'a> ProofBuilderStep<'a> {
         chapter_id: &str,
         page_id: &str,
         theorem_ref: &TheoremBuilder,
+        tag: usize,
     ) {
-        // FIXME: This href is non-unique if there are two proofs of the same theorem on a single
-        // page.
+        self.tag.set(tag + 1).unwrap();
+
         let id = format!(
             "{}_{}_proof_{}",
             theorem_ref.system_id(),
             theorem_ref.id(),
-            self.count
+            tag,
         );
-        let href = format!("/{}/{}/{}#{}", book_id, chapter_id, page_id, &id);
+
+        // FIXME: This href is non-unique if there are two proofs of the same theorem on a single
+        // page.
+        let href = format!("/{}/{}/{}#{}", book_id, chapter_id, page_id, id);
+
         self.id.set(id).unwrap();
         self.href.set(href).unwrap();
     }
 
-    // TODO: Remove.
-    pub fn get_ref(&self) -> ProofBlockStepRef {
-        ProofBlockStepRef::new(self.count)
-    }
-
-    // TODO: Remove.
-    fn finish(&'a self) -> ProofBlockStep {
-        let id = self.id.get().unwrap().to_owned();
-        let href = self.href.get().unwrap().to_owned();
+    fn finish<'b>(&self) -> ProofBlockStep<'b> {
         let justification = self.meta.justification().finish();
         let small_steps = self
             .small_steps
@@ -2560,7 +2537,17 @@ impl<'a> ProofBuilderStep<'a> {
         let formula = self.formula.display().finish();
         let end = self.end.clone();
 
-        ProofBlockStep::new(id, href, justification, small_steps, formula, end)
+        let id = self.id.get().unwrap().clone();
+
+        let href = self.href.get().unwrap().clone();
+
+        let tag = *self.tag.get().unwrap();
+
+        ProofBlockStep::new(justification, small_steps, formula, end, id, href, tag)
+    }
+
+    pub fn index(&self) -> usize {
+        self.index
     }
 }
 
@@ -2571,14 +2558,10 @@ enum ProofBuilderElement<'a> {
 }
 
 impl<'a> ProofBuilderElement<'a> {
-    fn from_pest(pair: Pair<Rule>, count: &mut usize) -> Self {
+    fn from_pest(pair: Pair<Rule>, index: usize) -> Self {
         match pair.as_rule() {
             Rule::text_block => Self::Text(TextBuilder::from_pest(pair)),
-            Rule::proof_step => {
-                let curr_count = *count;
-                *count += 1;
-                Self::Step(ProofBuilderStep::from_pest(pair, curr_count))
-            }
+            Rule::proof_step => Self::Step(ProofBuilderStep::from_pest(pair, index)),
 
             _ => unreachable!(),
         }
@@ -2656,21 +2639,23 @@ impl<'a> ProofBuilderElement<'a> {
         chapter_id: &str,
         page_id: &str,
         theorem_ref: &TheoremBuilder,
+        step_counter: &mut usize,
     ) {
         match self {
             Self::Text(_) => {}
-            Self::Step(step) => step.set_href(book_id, chapter_id, page_id, theorem_ref),
+            Self::Step(step) => {
+                let curr_step_counter = *step_counter;
+                *step_counter += 1;
+
+                step.set_href(book_id, chapter_id, page_id, theorem_ref, curr_step_counter);
+            }
         }
     }
 
-    // TODO: Remove.
-    fn finish(&'a self, steps: &mut Vec<ProofBlockStep>) -> ProofBlockElement {
+    fn finish<'b>(&self) -> ProofBlockElement<'b> {
         match self {
             Self::Text(text) => ProofBlockElement::Text(text.finish()),
-            Self::Step(step) => {
-                steps.push(step.finish());
-                ProofBlockElement::Step
-            }
+            Self::Step(step) => ProofBlockElement::Step(step.finish()),
         }
     }
 }
@@ -2684,9 +2669,6 @@ pub struct ProofBuilder<'a> {
     elements: Vec<ProofBuilderElement<'a>>,
 
     theorem_ref: OnceCell<&'a TheoremBuilder<'a>>,
-
-    // TODO: Remove.
-    count: OnceCell<usize>,
 }
 
 impl<'a> ProofBuilder<'a> {
@@ -2697,9 +2679,9 @@ impl<'a> ProofBuilder<'a> {
         let theorem_id = inner.next().unwrap().as_str().to_owned();
         let system_id = inner.next().unwrap().as_str().to_owned();
 
-        let mut count = 0;
         let elements = inner
-            .map(|pair| ProofBuilderElement::from_pest(pair, &mut count))
+            .enumerate()
+            .map(|(i, pair)| ProofBuilderElement::from_pest(pair, i))
             .collect();
 
         ProofBuilder {
@@ -2710,8 +2692,6 @@ impl<'a> ProofBuilder<'a> {
             elements,
 
             theorem_ref: OnceCell::new(),
-
-            count: OnceCell::new(),
         }
     }
 
@@ -2784,34 +2764,24 @@ impl<'a> ProofBuilder<'a> {
     }
 
     // TODO: Remove.
-    pub fn count(&self, count: usize) {
-        self.count.set(count).unwrap();
-    }
-
-    // TODO: Remove.
     pub fn set_href(&self, book_id: &str, chapter_id: &str, page_id: &str) {
         let theorem_ref = self.theorem_ref.get().unwrap();
+
+        let mut step_counter = 0;
         for element in &self.elements {
-            element.set_href(book_id, chapter_id, page_id, theorem_ref);
+            element.set_href(book_id, chapter_id, page_id, theorem_ref, &mut step_counter);
         }
     }
 
-    // TODO: Remove.
-    pub fn get_ref(&self) -> ProofBlockRef {
-        ProofBlockRef::new(*self.count.get().unwrap())
-    }
-
-    // TODO: Remove.
-    pub fn finish(&'a self) -> ProofBlock {
-        let self_ref = self.get_ref();
-        let theorem_ref = self.theorem_ref.get().unwrap().get_ref();
-        let mut steps = Vec::new();
+    pub fn finish<'b>(&self) -> ProofBlock<'b> {
+        let theorem_location = self.theorem_ref.get().unwrap().location();
+        let theorem_ref = TheoremBlockRef::new(theorem_location);
         let elements = self
             .elements
             .iter()
-            .map(|element| element.finish(&mut steps))
+            .map(ProofBuilderElement::finish)
             .collect();
 
-        ProofBlock::new(self_ref, theorem_ref, steps, elements)
+        ProofBlock::new(theorem_ref, elements)
     }
 }

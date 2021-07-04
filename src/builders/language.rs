@@ -21,14 +21,13 @@ use std::lazy::OnceCell;
 
 use pest::iterators::{Pair, Pairs};
 
-use crate::document::directory::{
-    DefinitionBlockRef, SymbolBlockRef, TypeBlockRef, VariableBlockRef,
-};
 use crate::document::language::{
     DefinitionBlock, Display, DisplayFormulaBlock, DisplayStyle, FormulaBlock, SymbolBlock,
-    TypeBlock, TypeSignatureBlock, VariableBlock,
+    TypeBlock, TypeSignatureBlock, VariableBlock, VariableBlockRef,
 };
-use crate::document::structure::BlockLocation;
+use crate::document::structure::{
+    BlockLocation, DefinitionBlockRef, SymbolBlockRef, SystemBlockRef, TypeBlockRef,
+};
 
 use super::bibliography::BibliographyBuilderEntry;
 use super::errors::{
@@ -193,12 +192,12 @@ impl<'a> TypeBuilderEntries<'a> {
         &self.names[0]
     }
 
-    fn tagline(&'a self) -> &ParagraphBuilder {
+    fn tagline(&self) -> &ParagraphBuilder<'a> {
         assert!(self.verified.get());
         &self.taglines[0]
     }
 
-    fn description(&'a self) -> &[TextBuilder] {
+    fn description(&self) -> &[TextBuilder<'a>] {
         assert!(self.verified.get());
         if self.descriptions.is_empty() {
             &[]
@@ -215,12 +214,6 @@ pub struct TypeBuilder<'a> {
 
     system_ref: OnceCell<&'a SystemBuilder<'a>>,
     entries: TypeBuilderEntries<'a>,
-
-    // TODO: Remove.
-    count: OnceCell<usize>,
-
-    // TODO: Remove.
-    href: OnceCell<String>,
 }
 
 impl<'a> TypeBuilder<'a> {
@@ -239,9 +232,6 @@ impl<'a> TypeBuilder<'a> {
 
             system_ref: OnceCell::new(),
             entries,
-
-            count: OnceCell::new(),
-            href: OnceCell::new(),
         }
     }
 
@@ -265,28 +255,13 @@ impl<'a> TypeBuilder<'a> {
         self.entries.set_local_bib_refs(index);
     }
 
-    // TODO: Remove.
-    pub fn count(&self, count: usize) {
-        self.count.set(count).unwrap();
-    }
-
-    // TODO: Remove.
-    pub fn set_href(&self, book_id: &str, chapter_id: &str, page_id: &str) {
-        let href = format!("/{}/{}/{}#{}", book_id, chapter_id, page_id, &self.id);
-        self.href.set(href).unwrap();
-    }
-
-    // TODO: Remove.
-    pub fn get_ref(&self) -> TypeBlockRef {
-        TypeBlockRef::new(*self.count.get().unwrap())
-    }
-
-    // TODO: Remove.
-    pub fn finish(&'a self) -> TypeBlock {
+    pub fn finish<'b>(&self) -> TypeBlock<'b> {
         let id = self.id.clone();
         let name = self.entries.name().to_owned();
-        let href = self.href.get().unwrap().to_owned();
-        let system = self.system_ref.get().unwrap().get_ref();
+
+        let system_location = self.system_ref.get().unwrap().location();
+        let system_ref = SystemBlockRef::new(system_location);
+
         let tagline = self.entries.tagline().finish();
         let description = self
             .entries
@@ -295,7 +270,7 @@ impl<'a> TypeBuilder<'a> {
             .map(TextBuilder::finish)
             .collect();
 
-        TypeBlock::new(id, name, href, system, tagline, description)
+        TypeBlock::new(id, name, system_ref, tagline, description)
     }
 
     pub fn id(&self) -> &str {
@@ -308,6 +283,10 @@ impl<'a> TypeBuilder<'a> {
 
     pub fn serial(&self) -> usize {
         self.location.serial()
+    }
+
+    pub fn location(&self) -> BlockLocation {
+        self.location
     }
 }
 
@@ -375,6 +354,13 @@ impl<'a> TypeSignatureBuilderGround<'a> {
 
             false
         }
+    }
+
+    fn finish<'b>(&self) -> TypeSignatureBlock<'b> {
+        let type_location = self.type_ref.get().unwrap().location();
+        let type_ref = TypeBlockRef::new(type_location);
+
+        TypeSignatureBlock::Ground(type_ref)
     }
 }
 
@@ -469,12 +455,10 @@ impl<'a> TypeSignatureBuilder<'a> {
         }
     }
 
-    // TODO: Remove.
-    fn finish(&self) -> TypeSignatureBlock {
+    fn finish<'b>(&self) -> TypeSignatureBlock<'b> {
         match self {
-            Self::Ground(ground) => {
-                TypeSignatureBlock::Ground(ground.type_ref.get().unwrap().get_ref())
-            }
+            Self::Ground(ground) => ground.finish(),
+
             Self::Compound(input, output) => {
                 TypeSignatureBlock::Compound(Box::new(input.finish()), Box::new(output.finish()))
             }
@@ -1000,12 +984,12 @@ impl<'a> SymbolBuilderEntries<'a> {
         &self.names[0]
     }
 
-    fn tagline(&'a self) -> &ParagraphBuilder {
+    fn tagline(&self) -> &ParagraphBuilder<'a> {
         assert!(self.verified.get());
         &self.taglines[0]
     }
 
-    fn description(&'a self) -> &[TextBuilder] {
+    fn description(&self) -> &[TextBuilder<'a>] {
         assert!(self.verified.get());
         if self.descriptions.is_empty() {
             &[]
@@ -1014,7 +998,7 @@ impl<'a> SymbolBuilderEntries<'a> {
         }
     }
 
-    fn type_signature(&'a self) -> &TypeSignatureBuilder {
+    fn type_signature(&self) -> &TypeSignatureBuilder<'a> {
         assert!(self.verified.get());
         &self.type_signatures[0]
     }
@@ -1050,9 +1034,6 @@ pub struct SymbolBuilder<'a> {
     properties: PropertyList<'a>,
 
     // TODO: Remove.
-    count: OnceCell<usize>,
-
-    // TODO: Remove.
     href: OnceCell<String>,
 }
 
@@ -1074,10 +1055,9 @@ impl<'a> SymbolBuilder<'a> {
             system_ref: OnceCell::new(),
             entries,
 
-            count: OnceCell::new(),
-            href: OnceCell::new(),
-
             properties: PropertyList::new(),
+
+            href: OnceCell::new(),
         }
     }
 
@@ -1171,27 +1151,19 @@ impl<'a> SymbolBuilder<'a> {
     }
 
     // TODO: Remove.
-    pub fn count(&self, count: usize) {
-        self.count.set(count).unwrap();
-    }
-
-    // TODO: Remove.
-    pub fn get_ref(&self) -> SymbolBlockRef {
-        SymbolBlockRef::new(*self.count.get().unwrap())
-    }
-
-    // TODO: Remove.
     pub fn set_href(&self, book_id: &str, chapter_id: &str, page_id: &str) {
+        // FIXME: This should include the system id.
         let href = format!("/{}/{}/{}#{}", book_id, chapter_id, page_id, &self.id);
         self.href.set(href).unwrap();
     }
 
-    // TODO: Remove.
-    pub fn finish(&'a self) -> SymbolBlock {
+    pub fn finish<'b>(&self) -> SymbolBlock<'b> {
         let id = self.id.clone();
         let name = self.entries.name().to_owned();
-        let href = self.href.get().unwrap().to_owned();
-        let system = self.system_ref.get().unwrap().get_ref();
+
+        let system_location = self.system_ref.get().unwrap().location();
+        let system_ref = SystemBlockRef::new(system_location);
+
         let tagline = self.entries.tagline().finish();
         let description = self
             .entries
@@ -1203,15 +1175,17 @@ impl<'a> SymbolBuilder<'a> {
         let type_signature = self.entries.type_signature().finish();
         let display = self.entries.display();
 
+        let href = self.href.get().unwrap().clone();
+
         SymbolBlock::new(
             id,
             name,
-            href,
-            system,
+            system_ref,
             tagline,
             description,
             type_signature,
             display,
+            href,
         )
     }
 
@@ -1236,6 +1210,10 @@ impl<'a> SymbolBuilder<'a> {
 
     pub fn serial(&self) -> usize {
         self.location.serial()
+    }
+
+    pub fn location(&self) -> BlockLocation {
+        self.location
     }
 }
 
@@ -1304,7 +1282,11 @@ impl<'a> DefinitionBuilderEntries<'a> {
                 }
 
                 Rule::block_inputs => {
-                    let input = pair.into_inner().map(VariableBuilder::from_pest).collect();
+                    let input = pair
+                        .into_inner()
+                        .enumerate()
+                        .map(|(index, pair)| VariableBuilder::from_pest(pair, index))
+                        .collect();
 
                     inputs.push(input);
                 }
@@ -1552,12 +1534,12 @@ impl<'a> DefinitionBuilderEntries<'a> {
         &self.names[0]
     }
 
-    fn tagline(&'a self) -> &ParagraphBuilder {
+    fn tagline(&self) -> &ParagraphBuilder<'a> {
         assert!(self.verified.get());
         &self.taglines[0]
     }
 
-    fn description(&'a self) -> &[TextBuilder] {
+    fn description(&self) -> &[TextBuilder<'a>] {
         assert!(self.verified.get());
         if self.descriptions.is_empty() {
             &[]
@@ -1566,7 +1548,7 @@ impl<'a> DefinitionBuilderEntries<'a> {
         }
     }
 
-    fn inputs(&'a self) -> &[VariableBuilder] {
+    fn inputs(&self) -> &[VariableBuilder<'a>] {
         assert!(self.verified.get());
         &self.inputs[0]
     }
@@ -1590,7 +1572,7 @@ impl<'a> DefinitionBuilderEntries<'a> {
         }
     }
 
-    fn expanded(&'a self) -> &DisplayFormulaBuilder {
+    fn expanded(&self) -> &DisplayFormulaBuilder<'a> {
         assert!(self.verified.get());
         &self.expansions[0]
     }
@@ -1607,9 +1589,6 @@ pub struct DefinitionBuilder<'a> {
     entries: DefinitionBuilderEntries<'a>,
 
     properties: PropertyList<'a>,
-
-    // TODO: Remove.
-    count: OnceCell<usize>,
 
     // TODO: Remove.
     href: OnceCell<String>,
@@ -1637,7 +1616,6 @@ impl<'a> DefinitionBuilder<'a> {
 
             properties: PropertyList::new(),
 
-            count: OnceCell::new(),
             href: OnceCell::new(),
         }
     }
@@ -1740,15 +1718,6 @@ impl<'a> DefinitionBuilder<'a> {
     }
 
     // TODO: Remove.
-    pub fn count(&'a self, count: usize) {
-        self.count.set(count).unwrap();
-
-        for (i, input) in self.entries.inputs().iter().enumerate() {
-            input.count(i);
-        }
-    }
-
-    // TODO: Remove.
     pub fn set_href(&self, book_id: &str, chapter_id: &str, page_id: &str) {
         let href = format!(
             "/{}/{}/{}#{}_{}",
@@ -1757,17 +1726,13 @@ impl<'a> DefinitionBuilder<'a> {
         self.href.set(href).unwrap();
     }
 
-    // TODO: Remove.
-    pub fn get_ref(&self) -> DefinitionBlockRef {
-        DefinitionBlockRef::new(*self.count.get().unwrap())
-    }
-
-    // TODO: Remove.
-    pub fn finish(&'a self) -> DefinitionBlock {
+    pub fn finish<'b>(&self) -> DefinitionBlock<'b> {
         let id = self.id.clone();
         let name = self.entries.name().to_owned();
-        let href = self.href.get().unwrap().to_owned();
-        let system = self.system_ref.get().unwrap().get_ref();
+
+        let system_location = self.system_ref.get().unwrap().location();
+        let system_ref = SystemBlockRef::new(system_location);
+
         let tagline = self.entries.tagline().finish();
         let description = self
             .entries
@@ -1777,26 +1742,28 @@ impl<'a> DefinitionBuilder<'a> {
             .collect();
 
         let type_signature = self.type_signature.get().unwrap().finish();
+        let display = self.entries.display();
         let inputs = self
             .entries
             .inputs()
             .iter()
             .map(VariableBuilder::finish)
             .collect();
-        let display = self.entries.display();
         let expanded = self.entries.expanded().finish();
+
+        let href = self.href.get().unwrap().clone();
 
         DefinitionBlock::new(
             id,
             name,
-            href,
-            system,
+            system_ref,
             tagline,
             description,
             type_signature,
-            inputs,
             display,
+            inputs,
             expanded,
+            href,
         )
     }
 
@@ -1827,6 +1794,10 @@ impl<'a> DefinitionBuilder<'a> {
     pub fn serial(&self) -> usize {
         self.location.serial()
     }
+
+    pub fn location(&self) -> BlockLocation {
+        self.location
+    }
 }
 
 impl<'a> PartialEq for DefinitionBuilder<'a> {
@@ -1856,7 +1827,6 @@ pub enum ReadableBuilder<'a> {
 }
 
 impl<'a> ReadableBuilder<'a> {
-    // TODO: Remove.
     pub fn id(&self) -> &str {
         match self {
             Self::Symbol(symbol_ref) => symbol_ref.id(),
@@ -1970,14 +1940,13 @@ impl<'a> ReadableBuilder<'a> {
 #[derive(Debug)]
 pub struct VariableBuilder<'a> {
     id: String,
-    type_signature: TypeSignatureBuilder<'a>,
+    index: usize,
 
-    // TODO: Remove.
-    count: OnceCell<usize>,
+    type_signature: TypeSignatureBuilder<'a>,
 }
 
 impl<'a> VariableBuilder<'a> {
-    pub fn from_pest(pair: Pair<Rule>) -> Self {
+    pub fn from_pest(pair: Pair<Rule>, index: usize) -> Self {
         assert_eq!(pair.as_rule(), Rule::var_declaration);
 
         let mut inner = pair.into_inner();
@@ -1986,9 +1955,9 @@ impl<'a> VariableBuilder<'a> {
 
         VariableBuilder {
             id,
-            type_signature,
+            index,
 
-            count: OnceCell::new(),
+            type_signature,
         }
     }
 
@@ -2009,18 +1978,7 @@ impl<'a> VariableBuilder<'a> {
             })
     }
 
-    // TODO: Remove.
-    pub fn count(&self, count: usize) {
-        self.count.set(count).unwrap()
-    }
-
-    // TODO: Remove.
-    pub fn get_ref(&self) -> VariableBlockRef {
-        VariableBlockRef::new(*self.count.get().unwrap())
-    }
-
-    // TODO: Remove.
-    pub fn finish(&self) -> VariableBlock {
+    pub fn finish<'b>(&self) -> VariableBlock<'b> {
         let id = self.id.clone();
         let type_signature = self.type_signature.finish();
 
@@ -2029,6 +1987,10 @@ impl<'a> VariableBuilder<'a> {
 
     pub fn id(&self) -> &str {
         &self.id
+    }
+
+    pub fn index(&self) -> usize {
+        self.index
     }
 
     pub fn type_signature(&'a self) -> &TypeSignatureBuilder {
@@ -2120,9 +2082,11 @@ impl<'a> FormulaVariableBuilder<'a> {
         }
     }
 
-    // TODO: Remove.
-    fn finish(&self) -> FormulaBlock {
-        FormulaBlock::Variable(self.var_ref.get().unwrap().get_ref())
+    fn finish<'b>(&self) -> FormulaBlock<'b> {
+        let index = self.var_ref.get().unwrap().index();
+        let var_ref = VariableBlockRef::new(index);
+
+        FormulaBlock::Variable(var_ref)
     }
 
     fn type_signature(&'a self) -> &TypeSignatureBuilder {
@@ -2194,17 +2158,25 @@ impl<'a> FormulaPrefixBuilder<'a> {
         }
     }
 
-    fn finish(&self) -> FormulaBlock {
+    fn finish<'b>(&self) -> FormulaBlock<'b> {
         let inner = self.inner.finish();
 
         match self.operator_ref.get().unwrap() {
-            ReadableBuilder::Symbol(symbol_ref) => FormulaBlock::Application(
-                Box::new(FormulaBlock::Symbol(symbol_ref.get_ref())),
-                Box::new(inner),
-            ),
+            ReadableBuilder::Symbol(symbol) => {
+                let symbol_location = symbol.location();
+                let symbol_ref = SymbolBlockRef::new(symbol_location);
 
-            ReadableBuilder::Definition(definition_ref) => {
-                FormulaBlock::Definition(definition_ref.get_ref(), vec![inner])
+                FormulaBlock::Application(
+                    Box::new(FormulaBlock::Symbol(symbol_ref)),
+                    Box::new(inner),
+                )
+            }
+
+            ReadableBuilder::Definition(definition) => {
+                let definition_location = definition.location();
+                let definition_ref = DefinitionBlockRef::new(definition_location);
+
+                FormulaBlock::Definition(definition_ref, vec![inner])
             }
         }
     }
@@ -2297,6 +2269,33 @@ impl<'a> FormulaInfixBuilder<'a> {
         }
     }
 
+    fn finish<'b>(&self) -> FormulaBlock<'b> {
+        let lhs = self.lhs.finish();
+        let rhs = self.rhs.finish();
+
+        match self.operator_ref.get().unwrap() {
+            ReadableBuilder::Symbol(symbol) => {
+                let symbol_location = symbol.location();
+                let symbol_ref = SymbolBlockRef::new(symbol_location);
+
+                FormulaBlock::Application(
+                    Box::new(FormulaBlock::Application(
+                        Box::new(FormulaBlock::Symbol(symbol_ref)),
+                        Box::new(lhs),
+                    )),
+                    Box::new(rhs),
+                )
+            }
+
+            ReadableBuilder::Definition(definition) => {
+                let definition_location = definition.location();
+                let definition_ref = DefinitionBlockRef::new(definition_location);
+
+                FormulaBlock::Definition(definition_ref, vec![lhs, rhs])
+            }
+        }
+    }
+
     fn type_signature(&'a self) -> &TypeSignatureBuilder {
         self.operator_ref
             .get()
@@ -2304,26 +2303,6 @@ impl<'a> FormulaInfixBuilder<'a> {
             .type_signature()
             .applied()
             .applied()
-    }
-
-    // TODO: Remove.
-    fn finish(&self) -> FormulaBlock {
-        let lhs = self.lhs.finish();
-        let rhs = self.rhs.finish();
-
-        match self.operator_ref.get().unwrap() {
-            ReadableBuilder::Symbol(symbol_ref) => FormulaBlock::Application(
-                Box::new(FormulaBlock::Application(
-                    Box::new(FormulaBlock::Symbol(symbol_ref.get_ref())),
-                    Box::new(lhs),
-                )),
-                Box::new(rhs),
-            ),
-
-            ReadableBuilder::Definition(definition_ref) => {
-                FormulaBlock::Definition(definition_ref.get_ref(), vec![lhs, rhs])
-            }
-        }
     }
 
     fn binary(&'a self) -> Option<(ReadableBuilder, &FormulaBuilder, &FormulaBuilder)> {
@@ -2387,20 +2366,28 @@ impl<'a> FormulaReadableApplicationBuilder<'a> {
         }
     }
 
-    // TODO: Remove.
-    fn finish(&self) -> FormulaBlock {
+    fn finish<'b>(&self) -> FormulaBlock<'b> {
         match self.readable {
-            ReadableBuilder::Symbol(symbol_ref) => self
-                .inputs
-                .iter()
-                .fold(FormulaBlock::Symbol(symbol_ref.get_ref()), |curr, input| {
-                    FormulaBlock::Application(Box::new(curr), Box::new(input.finish()))
-                }),
+            ReadableBuilder::Symbol(symbol) => {
+                let symbol_location = symbol.location();
+                let symbol_ref = SymbolBlockRef::new(symbol_location);
 
-            ReadableBuilder::Definition(definition_ref) => FormulaBlock::Definition(
-                definition_ref.get_ref(),
-                self.inputs.iter().map(FormulaBuilder::finish).collect(),
-            ),
+                self.inputs
+                    .iter()
+                    .fold(FormulaBlock::Symbol(symbol_ref), |curr, input| {
+                        FormulaBlock::Application(Box::new(curr), Box::new(input.finish()))
+                    })
+            }
+
+            ReadableBuilder::Definition(definition) => {
+                let definition_location = definition.location();
+                let definition_ref = DefinitionBlockRef::new(definition_location);
+
+                FormulaBlock::Definition(
+                    definition_ref,
+                    self.inputs.iter().map(FormulaBuilder::finish).collect(),
+                )
+            }
         }
     }
 }
@@ -2487,18 +2474,6 @@ impl<'a> FormulaBuilder<'a> {
         }
     }
 
-    pub fn finish(&self) -> FormulaBlock {
-        match self {
-            Self::Symbol(_) => todo!(),
-            Self::Variable(formula) => formula.finish(),
-
-            Self::Prefix(formula) => formula.finish(),
-            Self::Infix(formula) => formula.finish(),
-
-            Self::ReadableApplication(formula) => formula.finish(),
-        }
-    }
-
     fn type_signature(&'a self) -> &TypeSignatureBuilder {
         match self {
             Self::Symbol(_) => todo!(),
@@ -2546,6 +2521,18 @@ impl<'a> FormulaBuilder<'a> {
             Self::Infix(formula) => formula.application(),
 
             _ => todo!(),
+        }
+    }
+
+    pub fn finish<'b>(&self) -> FormulaBlock<'b> {
+        match self {
+            Self::Symbol(_) => todo!(),
+            Self::Variable(formula) => formula.finish(),
+
+            Self::Prefix(formula) => formula.finish(),
+            Self::Infix(formula) => formula.finish(),
+
+            Self::ReadableApplication(formula) => formula.finish(),
         }
     }
 }
@@ -2600,7 +2587,7 @@ impl<'a> DisplayFormulaBuilder<'a> {
         self.formula.build(local_index, errors, generate_error)
     }
 
-    pub fn finish(&self) -> DisplayFormulaBlock {
+    pub fn finish<'b>(&self) -> DisplayFormulaBlock<'b> {
         let display = self.display.finish();
         let formula = self.formula.finish();
 

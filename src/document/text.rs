@@ -21,7 +21,9 @@ use crate::rendered::{
     TextRendered, TodoRendered,
 };
 
-use super::directory::{BlockDirectory, BlockReference, LocalBibliographyRef, ProofBlockRef};
+use super::structure::BlockRef;
+use super::system::{ProofBlock, ProofBlockStepRef};
+use super::Document;
 
 #[derive(Clone, Debug)]
 pub enum BareElement {
@@ -41,7 +43,8 @@ pub enum BareElement {
 }
 
 impl BareElement {
-    fn render(&self) -> &str {
+    // TODO: Remove.
+    pub fn render(&self) -> &str {
         match self {
             Self::OpenBracket => "[",
             Self::CloseBracket => "]",
@@ -66,29 +69,13 @@ pub struct BareText {
 }
 
 impl BareText {
-    pub fn new(elements: Vec<BareElement>) -> BareText {
+    pub fn new(elements: Vec<BareElement>) -> Self {
         BareText { elements }
     }
 
+    // TODO: Remove.
     pub fn render(&self) -> String {
         self.elements.iter().map(BareElement::render).collect()
-    }
-}
-
-pub struct Citation {
-    local_bib_ref: LocalBibliographyRef,
-}
-
-impl Citation {
-    pub fn new(local_bib_ref: LocalBibliographyRef) -> Citation {
-        Citation { local_bib_ref }
-    }
-
-    fn render(&self) -> String {
-        format!(
-            "<a href=\"#ref{0}\" class=\"reference\">[{0}]</a>",
-            self.local_bib_ref.get() + 1
-        )
     }
 }
 
@@ -98,10 +85,7 @@ pub struct Hyperlink {
 }
 
 impl Hyperlink {
-    pub fn new(url: Url, contents: BareText) -> Hyperlink {
-        Hyperlink { url, contents }
-    }
-
+    // TODO: Remove.
     fn render(&self) -> String {
         let contents = self.contents.render();
 
@@ -113,16 +97,23 @@ impl Hyperlink {
     }
 }
 
+impl Hyperlink {
+    pub fn new(url: Url, contents: BareText) -> Self {
+        Hyperlink { url, contents }
+    }
+}
+
 pub enum UnformattedElement {
     Hyperlink(Hyperlink),
     BareElement(BareElement),
 }
 
 impl UnformattedElement {
+    // TODO: Remove.
     fn render(&self) -> String {
         match self {
             Self::Hyperlink(hyperlink) => hyperlink.render(),
-            Self::BareElement(text) => text.render().to_owned(),
+            Self::BareElement(element) => element.render().to_owned(),
         }
     }
 }
@@ -132,10 +123,11 @@ pub struct Unformatted {
 }
 
 impl Unformatted {
-    pub fn new(elements: Vec<UnformattedElement>) -> Unformatted {
+    pub fn new(elements: Vec<UnformattedElement>) -> Self {
         Unformatted { elements }
     }
 
+    // TODO: Remove.
     fn render(&self) -> String {
         self.elements
             .iter()
@@ -144,7 +136,7 @@ impl Unformatted {
     }
 }
 
-pub struct MlaContainer {
+pub struct RawCitationContainer {
     container_title: Option<Unformatted>,
     other_contributors: Option<Unformatted>,
     version: Option<Unformatted>,
@@ -154,7 +146,7 @@ pub struct MlaContainer {
     location: Option<Unformatted>,
 }
 
-impl MlaContainer {
+impl RawCitationContainer {
     pub fn new(
         container_title: Option<Unformatted>,
         other_contributors: Option<Unformatted>,
@@ -163,8 +155,8 @@ impl MlaContainer {
         publisher: Option<Unformatted>,
         publication_date: Option<Unformatted>,
         location: Option<Unformatted>,
-    ) -> MlaContainer {
-        MlaContainer {
+    ) -> Self {
+        RawCitationContainer {
             container_title,
             other_contributors,
             version,
@@ -175,6 +167,7 @@ impl MlaContainer {
         }
     }
 
+    // TODO: Remove.
     fn render(&self) -> MlaContainerRendered {
         let container_title = self.container_title.as_ref().map(Unformatted::render);
         let other_contributors = self.other_contributors.as_ref().map(Unformatted::render);
@@ -196,31 +189,42 @@ impl MlaContainer {
     }
 }
 
-pub struct Mla {
+pub struct RawCitation {
     author: Option<Unformatted>,
     title: Unformatted,
-    containers: Vec<MlaContainer>,
+    containers: Vec<RawCitationContainer>,
 }
 
-impl Mla {
+impl RawCitation {
     pub fn new(
         author: Option<Unformatted>,
         title: Unformatted,
-        containers: Vec<MlaContainer>,
-    ) -> Mla {
-        Mla {
+        containers: Vec<RawCitationContainer>,
+    ) -> Self {
+        RawCitation {
             author,
             title,
             containers,
         }
     }
 
+    // TODO: Remove.
     pub fn render(&self) -> MlaRendered {
         let author = self.author.as_ref().map(Unformatted::render);
         let title = self.title.render();
-        let containers = self.containers.iter().map(MlaContainer::render).collect();
+        let containers = self
+            .containers
+            .iter()
+            .map(RawCitationContainer::render)
+            .collect();
 
         MlaRendered::new(author, title, containers)
+    }
+}
+
+impl std::fmt::Debug for RawCitation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        todo!()
     }
 }
 
@@ -230,13 +234,14 @@ pub struct SublistItem {
 }
 
 impl SublistItem {
-    pub fn new(var_id: String, replacement: MathBlock) -> SublistItem {
+    pub fn new(var_id: String, replacement: MathBlock) -> Self {
         SublistItem {
             var_id,
             replacement,
         }
     }
 
+    // TODO: Remove.
     fn render(&self) -> SublistItemRendered {
         let var_id = self.var_id.clone();
         let replacement = self.replacement.render();
@@ -250,10 +255,11 @@ pub struct Sublist {
 }
 
 impl Sublist {
-    pub fn new(items: Vec<SublistItem>) -> Sublist {
+    pub fn new(items: Vec<SublistItem>) -> Self {
         Sublist { items }
     }
 
+    // TODO: Remove.
     fn render(&self) -> Vec<SublistItemRendered> {
         self.items.iter().map(SublistItem::render).collect()
     }
@@ -273,6 +279,7 @@ pub enum MathElement {
 }
 
 impl MathElement {
+    // TODO: Remove.
     fn render(&self) -> String {
         match self {
             Self::Fenced(math) => format!(
@@ -301,15 +308,15 @@ pub struct MathBlock {
 }
 
 impl MathBlock {
-    pub fn new(elements: Vec<MathElement>) -> MathBlock {
+    pub fn new(elements: Vec<MathElement>) -> Self {
         MathBlock { elements }
     }
 
+    // TODO: Remove.
     pub fn render(&self) -> String {
-        Some("<mrow>".to_owned())
-            .into_iter()
+        std::iter::once("<mrow>".to_owned())
             .chain(self.elements.iter().map(MathElement::render))
-            .chain(Some("</mrow>".to_owned()))
+            .chain(std::iter::once("</mrow>".to_owned()))
             .collect()
     }
 }
@@ -324,6 +331,7 @@ impl DisplayMathBlock {
         DisplayMathBlock { math, end }
     }
 
+    // TODO: Remove.
     fn render(&self) -> DisplayMathRendered {
         let math = self.math.render();
         let end = self.end.clone();
@@ -332,10 +340,11 @@ impl DisplayMathBlock {
     }
 }
 
-pub enum ParagraphElement {
-    Reference(Option<BareText>, BlockReference),
+pub enum ParagraphElement<'a> {
+    Reference(Option<BareText>, BlockRef<'a>),
+    Tag(Option<BareText>, ProofBlockStepRef<'a>),
     InlineMath(MathBlock),
-    Citation(Citation),
+    Citation(usize),
 
     UnicornVomitBegin,
     UnicornVomitEnd,
@@ -345,12 +354,35 @@ pub enum ParagraphElement {
     Unformatted(UnformattedElement),
 }
 
-impl ParagraphElement {
-    fn render(&self, directory: &BlockDirectory) -> String {
+impl<'a> ParagraphElement<'a> {
+    fn crosslink(&'a self, document: &'a Document<'a>) {
         match self {
-            Self::Reference(text, block_ref) => block_ref.render(text.as_ref(), directory),
+            Self::Reference(_, r) => r.crosslink(document),
+            Self::Tag(_, _) => unreachable!(),
+
+            _ => {}
+        }
+    }
+
+    fn crosslink_proof(&'a self, document: &'a Document<'a>, proof_ref: &'a ProofBlock<'a>) {
+        match self {
+            Self::Reference(_, r) => r.crosslink(document),
+            Self::Tag(_, r) => r.crosslink(proof_ref),
+
+            _ => {}
+        }
+    }
+
+    // TODO: Remove.
+    fn render(&self) -> String {
+        match self {
+            Self::Reference(text, block_ref) => block_ref.render(text.as_ref()),
+            Self::Tag(text, step_ref) => step_ref.render(text.as_ref()),
             Self::InlineMath(math) => format!("<math>{}</math>", math.render()),
-            Self::Citation(citation) => citation.render(),
+            Self::Citation(citation) => format!(
+                "<a href=\"#ref{0}\" class=\"reference\">[{0}]</a>",
+                citation + 1
+            ),
 
             Self::UnicornVomitBegin => "<span class=\"unicorn\">\u{1F661}".to_owned(),
             Self::UnicornVomitEnd => "\u{1F662}</span>".to_owned(),
@@ -360,149 +392,130 @@ impl ParagraphElement {
             Self::Unformatted(element) => element.render().to_owned(),
         }
     }
-
-    fn render_with_proof_steps(
-        &self,
-        directory: &BlockDirectory,
-        proof_ref: ProofBlockRef,
-    ) -> String {
-        match self {
-            Self::Reference(text, block_ref) => {
-                block_ref.render_with_proof_steps(text.as_ref(), directory, proof_ref)
-            }
-            Self::InlineMath(math) => format!("<math>{}</math>", math.render()),
-            Self::Citation(citation) => citation.render(),
-
-            Self::UnicornVomitBegin => "<span class=\"unicorn\">\u{1F661}".to_owned(),
-            Self::UnicornVomitEnd => "\u{1F662}</span>".to_owned(),
-            Self::EmBegin => "<em>".to_owned(),
-            Self::EmEnd => "</em>".to_owned(),
-
-            Self::Unformatted(element) => element.render().to_owned(),
-        }
-    }
 }
 
-pub struct Paragraph {
-    elements: Vec<ParagraphElement>,
+pub struct Paragraph<'a> {
+    elements: Vec<ParagraphElement<'a>>,
 }
 
-impl Paragraph {
-    pub fn render(&self, directory: &BlockDirectory) -> String {
-        self.elements
-            .iter()
-            .map(|element| element.render(directory))
-            .collect()
-    }
-
-    pub fn render_with_proof_steps(
-        &self,
-        directory: &BlockDirectory,
-        proof_ref: ProofBlockRef,
-    ) -> String {
-        self.elements
-            .iter()
-            .map(|element| element.render_with_proof_steps(directory, proof_ref))
-            .collect()
-    }
-}
-
-impl Paragraph {
-    pub fn new(elements: Vec<ParagraphElement>) -> Paragraph {
+impl<'a> Paragraph<'a> {
+    pub fn new(elements: Vec<ParagraphElement<'a>>) -> Self {
         Paragraph { elements }
     }
+
+    pub fn crosslink(&'a self, document: &'a Document<'a>) {
+        for element in &self.elements {
+            element.crosslink(document);
+        }
+    }
+
+    pub fn crosslink_proof(&'a self, document: &'a Document<'a>, proof_ref: &'a ProofBlock<'a>) {
+        for element in &self.elements {
+            element.crosslink_proof(document, proof_ref);
+        }
+    }
+
+    // TODO: Remove
+    pub fn render(&self) -> String {
+        self.elements.iter().map(ParagraphElement::render).collect()
+    }
 }
 
-pub enum Text {
-    Mla(Mla),
+pub enum Text<'a> {
+    RawCitation(RawCitation),
     Sublist(Sublist),
     DisplayMath(DisplayMathBlock),
-    Paragraph(Paragraph),
+    Paragraph(Paragraph<'a>),
 }
 
-impl Text {
-    pub fn render(&self, directory: &BlockDirectory) -> TextRendered {
-        match self {
-            Self::Mla(mla) => TextRendered::Mla(mla.render()),
-            Self::Sublist(sublist) => TextRendered::Sublist(sublist.render()),
-            Self::DisplayMath(display_math) => TextRendered::DisplayMath(display_math.render()),
-            Self::Paragraph(paragraph) => TextRendered::Paragraph(paragraph.render(directory)),
+impl<'a> Text<'a> {
+    pub fn crosslink(&'a self, document: &'a Document<'a>) {
+        if let Self::Paragraph(paragraph) = self {
+            paragraph.crosslink(document);
         }
     }
 
-    pub fn render_with_proof_steps(
-        &self,
-        directory: &BlockDirectory,
-        proof_ref: ProofBlockRef,
-    ) -> TextRendered {
+    pub fn crosslink_proof(&'a self, document: &'a Document<'a>, proof_ref: &'a ProofBlock<'a>) {
+        if let Self::Paragraph(paragraph) = self {
+            paragraph.crosslink_proof(document, proof_ref);
+        }
+    }
+
+    // TODO: Remove.
+    pub fn render(&self) -> TextRendered {
         match self {
-            Self::Mla(mla) => TextRendered::Mla(mla.render()),
+            Self::RawCitation(citation) => TextRendered::Mla(citation.render()),
             Self::Sublist(sublist) => TextRendered::Sublist(sublist.render()),
             Self::DisplayMath(display_math) => TextRendered::DisplayMath(display_math.render()),
-            Self::Paragraph(paragraph) => {
-                TextRendered::Paragraph(paragraph.render_with_proof_steps(directory, proof_ref))
-            }
+            Self::Paragraph(paragraph) => TextRendered::Paragraph(paragraph.render()),
         }
     }
 }
 
-pub struct ListBlock {
+pub struct ListBlock<'a> {
     ordered: bool,
-    items: Vec<Paragraph>,
+    items: Vec<Paragraph<'a>>,
 }
 
-impl ListBlock {
-    pub fn new(ordered: bool, items: Vec<Paragraph>) -> ListBlock {
+impl<'a> ListBlock<'a> {
+    pub fn new(ordered: bool, items: Vec<Paragraph<'a>>) -> Self {
         ListBlock { ordered, items }
     }
 
-    pub fn render(&self, directory: &BlockDirectory) -> ListRendered {
+    pub fn crosslink(&'a self, document: &'a Document<'a>) {
+        for item in &self.items {
+            item.crosslink(document);
+        }
+    }
+
+    // TODO: Remove.
+    pub fn render(&self) -> ListRendered {
         let ordered = self.ordered;
-        let items = self
-            .items
-            .iter()
-            .map(|paragraph| paragraph.render(directory))
-            .collect();
+        let items = self.items.iter().map(Paragraph::render).collect();
 
         ListRendered::new(ordered, items)
     }
 }
 
-pub struct TableBlockRow {
-    cells: Vec<Paragraph>,
+pub struct TableBlockRow<'a> {
+    cells: Vec<Paragraph<'a>>,
 }
 
-impl TableBlockRow {
-    pub fn new(cells: Vec<Paragraph>) -> TableBlockRow {
+impl<'a> TableBlockRow<'a> {
+    pub fn new(cells: Vec<Paragraph<'a>>) -> Self {
         TableBlockRow { cells }
     }
 
-    fn render(&self, directory: &BlockDirectory) -> TableRenderedRow {
-        let cells = self
-            .cells
-            .iter()
-            .map(|paragraph| paragraph.render(directory))
-            .collect();
+    fn crosslink(&'a self, document: &'a Document<'a>) {
+        for cell in &self.cells {
+            cell.crosslink(document);
+        }
+    }
+
+    // TODO: Remove.
+    fn render(&self) -> TableRenderedRow {
+        let cells = self.cells.iter().map(Paragraph::render).collect();
 
         TableRenderedRow::new(cells)
     }
 }
 
-pub struct TableBlock {
-    head: Option<Vec<TableBlockRow>>,
-    body: Option<Vec<TableBlockRow>>,
-    foot: Option<Vec<TableBlockRow>>,
+pub struct TableBlock<'a> {
+    head: Option<Vec<TableBlockRow<'a>>>,
+    body: Option<Vec<TableBlockRow<'a>>>,
+    foot: Option<Vec<TableBlockRow<'a>>>,
 
-    caption: Option<Paragraph>,
+    caption: Option<Paragraph<'a>>,
 }
 
-impl TableBlock {
+impl<'a> TableBlock<'a> {
     pub fn new(
-        head: Option<Vec<TableBlockRow>>,
-        body: Option<Vec<TableBlockRow>>,
-        foot: Option<Vec<TableBlockRow>>,
-        caption: Option<Paragraph>,
-    ) -> TableBlock {
+        head: Option<Vec<TableBlockRow<'a>>>,
+        body: Option<Vec<TableBlockRow<'a>>>,
+        foot: Option<Vec<TableBlockRow<'a>>>,
+
+        caption: Option<Paragraph<'a>>,
+    ) -> Self {
         TableBlock {
             head,
             body,
@@ -512,24 +525,39 @@ impl TableBlock {
         }
     }
 
-    pub fn render(&self, directory: &BlockDirectory) -> TableRendered {
+    pub fn crosslink(&'a self, document: &'a Document<'a>) {
+        let rows = self
+            .head
+            .iter()
+            .chain(&self.body)
+            .chain(&self.foot)
+            .flatten();
+
+        for row in rows {
+            row.crosslink(document);
+        }
+
+        if let Some(caption) = &self.caption {
+            caption.crosslink(document);
+        }
+    }
+
+    // TODO: Remove.
+    pub fn render(&self) -> TableRendered {
         let head = self
             .head
             .as_ref()
-            .map(|rows| rows.iter().map(|row| row.render(directory)).collect());
+            .map(|rows| rows.iter().map(TableBlockRow::render).collect());
         let body = self
             .body
             .as_ref()
-            .map(|rows| rows.iter().map(|row| row.render(directory)).collect());
+            .map(|rows| rows.iter().map(TableBlockRow::render).collect());
         let foot = self
             .foot
             .as_ref()
-            .map(|rows| rows.iter().map(|row| row.render(directory)).collect());
+            .map(|rows| rows.iter().map(TableBlockRow::render).collect());
 
-        let caption = self
-            .caption
-            .as_ref()
-            .map(|paragraph| paragraph.render(directory));
+        let caption = self.caption.as_ref().map(Paragraph::render);
 
         TableRendered::new(head, body, foot, caption)
     }
@@ -538,21 +566,21 @@ impl TableBlock {
 pub struct QuoteValue {
     quote: Unformatted,
 
-    local_bib_ref: LocalBibliographyRef,
+    local_bib_ref: usize,
 }
 
 impl QuoteValue {
-    pub fn new(quote: Unformatted, local_bib_ref: LocalBibliographyRef) -> QuoteValue {
+    pub fn new(quote: Unformatted, local_bib_ref: usize) -> Self {
         QuoteValue {
             quote,
-
             local_bib_ref,
         }
     }
 
+    // TODO: Remove.
     fn render(&self) -> QuoteValueRendered {
         let quote = self.quote.render();
-        let local_bib_ref = self.local_bib_ref.get();
+        let local_bib_ref = self.local_bib_ref;
 
         QuoteValueRendered::new(quote, local_bib_ref)
     }
@@ -564,10 +592,11 @@ pub struct QuoteBlock {
 }
 
 impl QuoteBlock {
-    pub fn new(original: Option<QuoteValue>, value: QuoteValue) -> QuoteBlock {
+    pub fn new(original: Option<QuoteValue>, value: QuoteValue) -> Self {
         QuoteBlock { original, value }
     }
 
+    // TODO: Remove.
     pub fn render(&self) -> QuoteRendered {
         let original = self.original.as_ref().map(QuoteValue::render);
         let value = self.value.render();
@@ -584,6 +613,7 @@ pub enum HeadingLevel {
 }
 
 impl HeadingLevel {
+    // TODO: Remove.
     fn render(&self) -> usize {
         match self {
             Self::L1 => 1,
@@ -603,6 +633,7 @@ impl SubHeadingBlock {
         SubHeadingBlock { level, contents }
     }
 
+    // TODO: Remove.
     fn render(&self) -> HeadingRendered {
         let level = self.level.render();
         let content = self
@@ -624,6 +655,7 @@ impl HeadingBlock {
         HeadingBlock { subheadings }
     }
 
+    // TODO: Remove.
     pub fn render(&self) -> Vec<HeadingRendered> {
         self.subheadings
             .iter()
@@ -632,36 +664,25 @@ impl HeadingBlock {
     }
 }
 
-pub struct TodoBlock {
-    elements: Vec<Text>,
+pub struct TodoBlock<'a> {
+    elements: Vec<Text<'a>>,
 }
 
-impl TodoBlock {
-    pub fn new(elements: Vec<Text>) -> TodoBlock {
+impl<'a> TodoBlock<'a> {
+    pub fn new(elements: Vec<Text<'a>>) -> Self {
         TodoBlock { elements }
     }
 
-    pub fn render(&self, directory: &BlockDirectory) -> TodoRendered {
-        let elements = self
-            .elements
-            .iter()
-            .map(|element| element.render(directory))
-            .collect();
+    pub fn crosslink(&'a self, document: &'a Document<'a>) {
+        for element in &self.elements {
+            element.crosslink(document);
+        }
+    }
+
+    // TODO: Remove.
+    pub fn render(&self) -> TodoRendered {
+        let elements = self.elements.iter().map(Text::render).collect();
 
         TodoRendered::new(elements)
-    }
-}
-
-pub struct TextBlock {
-    text: Text,
-}
-
-impl TextBlock {
-    pub fn new(text: Text) -> TextBlock {
-        TextBlock { text }
-    }
-
-    pub fn render(&self, directory: &BlockDirectory) -> TextRendered {
-        self.text.render(directory)
     }
 }

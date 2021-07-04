@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 
 use pest::Parser;
 
-use crate::document::directory::BlockDirectory;
+use crate::document::bibliography::Bibliography;
 use crate::document::structure::BlockLocation;
 use crate::document::Document;
 
@@ -45,108 +45,10 @@ use errors::ParsingErrorContext;
 use index::BuilderIndex;
 use structure::BookBuilder;
 
-// TODO: Remove.
-#[derive(Default)]
-pub struct BlockCounter {
-    systems: usize,
-    types: usize,
-    symbols: usize,
-    definitions: usize,
-    axioms: usize,
-    theorems: usize,
-    proofs: usize,
-
-    lists: usize,
-    tables: usize,
-    quotes: usize,
-    todos: usize,
-    headings: usize,
-    texts: usize,
-}
-
-impl BlockCounter {
-    fn system(&mut self) -> usize {
-        let ret = self.systems;
-        self.systems += 1;
-        ret
-    }
-
-    fn ty(&mut self) -> usize {
-        let ret = self.types;
-        self.types += 1;
-        ret
-    }
-
-    fn symbol(&mut self) -> usize {
-        let ret = self.symbols;
-        self.symbols += 1;
-        ret
-    }
-
-    fn definition(&mut self) -> usize {
-        let ret = self.definitions;
-        self.definitions += 1;
-        ret
-    }
-
-    fn axiom(&mut self) -> usize {
-        let ret = self.axioms;
-        self.axioms += 1;
-        ret
-    }
-
-    fn theorem(&mut self) -> usize {
-        let ret = self.theorems;
-        self.theorems += 1;
-        ret
-    }
-
-    fn proof(&mut self) -> usize {
-        let ret = self.proofs;
-        self.proofs += 1;
-        ret
-    }
-
-    fn list(&mut self) -> usize {
-        let ret = self.lists;
-        self.lists += 1;
-        ret
-    }
-
-    fn table(&mut self) -> usize {
-        let ret = self.tables;
-        self.tables += 1;
-        ret
-    }
-
-    fn quote(&mut self) -> usize {
-        let ret = self.quotes;
-        self.quotes += 1;
-        ret
-    }
-
-    fn todo(&mut self) -> usize {
-        let ret = self.todos;
-        self.todos += 1;
-        ret
-    }
-
-    fn heading(&mut self) -> usize {
-        let ret = self.headings;
-        self.headings += 1;
-        ret
-    }
-
-    fn text(&mut self) -> usize {
-        let ret = self.texts;
-        self.texts += 1;
-        ret
-    }
-}
-
 pub struct ManifestBuilder<'a> {
     library_path: PathBuf,
 
+    // TODO: This should not be optional. If there is no bibliography, just make it empty.
     bibliography: OnceCell<Option<BibliographyBuilder>>,
     books: OnceCell<Vec<BookBuilder<'a>>>,
 
@@ -199,75 +101,24 @@ impl<'a> ManifestBuilder<'a> {
         }
     }
 
-    fn finish(&'a self) -> Document {
-        assert!(!self.errors.get().unwrap().error_found());
-        let mut counter = BlockCounter::default();
-
+    fn finish<'b>(&self) -> Document<'b> {
         let books = self.books.get().unwrap();
+
+        // TODO: Remove.
         for book in books {
-            book.count(&mut counter);
+            book.set_href();
         }
 
-        // FIXME: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-        let mut systems = Vec::new();
-        let mut types = Vec::new();
-        let mut symbols = Vec::new();
-        let mut definitions = Vec::new();
-        let mut axioms = Vec::new();
-        let mut theorems = Vec::new();
-        let mut proofs = Vec::new();
-        let mut lists = Vec::new();
-        let mut tables = Vec::new();
-        let mut quotes = Vec::new();
-        let mut todos = Vec::new();
-        let mut headings = Vec::new();
-        let mut texts = Vec::new();
-
-        for book in books {
-            book.build_directory(
-                &mut systems,
-                &mut types,
-                &mut symbols,
-                &mut definitions,
-                &mut axioms,
-                &mut theorems,
-                &mut proofs,
-                &mut lists,
-                &mut tables,
-                &mut quotes,
-                &mut todos,
-                &mut headings,
-                &mut texts,
-            );
-        }
-
+        let books = books.iter().map(BookBuilder::finish).collect();
         let bibliography = self
             .bibliography
             .get()
             .unwrap()
             .as_ref()
-            .map(BibliographyBuilder::finish);
+            .map(BibliographyBuilder::finish)
+            .unwrap_or(Bibliography::empty());
 
-        let directory = BlockDirectory::new(
-            systems,
-            types,
-            symbols,
-            definitions,
-            axioms,
-            theorems,
-            proofs,
-            lists,
-            tables,
-            quotes,
-            headings,
-            todos,
-            texts,
-            bibliography,
-        );
-
-        let books = books.iter().map(BookBuilder::finish).collect();
-
-        Document::new(books, directory)
+        Document::new(books, bibliography)
     }
 
     pub fn build(&'a self) -> Result<Document, &ParsingErrorContext<'a>> {

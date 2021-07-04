@@ -20,13 +20,7 @@ use std::path::{Path, PathBuf};
 use pest::iterators::Pair;
 use pest::Parser;
 
-use crate::document::deduction::{AxiomBlock, ProofBlock, TheoremBlock};
-use crate::document::directory::Block;
-use crate::document::language::{DefinitionBlock, SymbolBlock, SystemBlock, TypeBlock};
-use crate::document::structure::{BlockLocation, Book, Chapter, Page};
-use crate::document::text::{
-    HeadingBlock, ListBlock, QuoteBlock, TableBlock, TextBlock, TodoBlock,
-};
+use crate::document::structure::{Block, BlockLocation, Book, Chapter, Page};
 
 use super::bibliography::{BibliographyBuilderEntry, LocalBibliographyBuilder};
 use super::errors::{BookParsingError, ChapterParsingError, ParsingError, ParsingErrorContext};
@@ -39,7 +33,7 @@ use super::text::{
     HeadingBuilder, ListBuilder, ParagraphBuilder, QuoteBuilder, TableBuilder, TextBlockBuilder,
     TodoBuilder,
 };
-use super::{BlockCounter, DocumentParser, Rule};
+use super::{DocumentParser, Rule};
 
 pub enum BlockBuilder<'a> {
     System(SystemBuilder<'a>),
@@ -78,8 +72,8 @@ impl<'a> BlockBuilder<'a> {
 
             Rule::table_block => Self::Table(TableBuilder::from_pest(pair, location)),
             Rule::quote_block => Self::Quote(QuoteBuilder::from_pest(pair, location)),
-            Rule::todo_block => Self::Todo(TodoBuilder::from_pest(pair, location)),
-            Rule::heading_block => Self::Heading(HeadingBuilder::from_pest(pair, location)),
+            Rule::todo_block => Self::Todo(TodoBuilder::from_pest(pair)),
+            Rule::heading_block => Self::Heading(HeadingBuilder::from_pest(pair)),
             Rule::text_block => Self::Text(TextBlockBuilder::from_pest(pair, location)),
 
             _ => unreachable!(),
@@ -208,98 +202,37 @@ impl<'a> BlockBuilder<'a> {
     }
 
     // TODO: Remove.
-    fn count(&'a self, counter: &mut BlockCounter, book_id: &str, chapter_id: &str, page_id: &str) {
+    fn set_href(&self, book_id: &str, chapter_id: &str, page_id: &str) {
         match self {
-            Self::System(system_ref) => {
-                system_ref.count(counter.system());
-                system_ref.set_href(book_id, chapter_id, page_id);
-            }
-            Self::Type(type_ref) => {
-                type_ref.count(counter.ty());
-                type_ref.set_href(book_id, chapter_id, page_id);
-            }
-            Self::Symbol(symbol_ref) => {
-                symbol_ref.count(counter.symbol());
-                symbol_ref.set_href(book_id, chapter_id, page_id);
-            }
+            Self::System(system_ref) => system_ref.set_href(book_id, chapter_id, page_id),
+            Self::Symbol(symbol_ref) => symbol_ref.set_href(book_id, chapter_id, page_id),
             Self::Definition(definition_ref) => {
-                definition_ref.count(counter.definition());
-                definition_ref.set_href(book_id, chapter_id, page_id);
+                definition_ref.set_href(book_id, chapter_id, page_id)
             }
-            Self::Axiom(axiom_ref) => {
-                axiom_ref.count(counter.axiom());
-                axiom_ref.set_href(book_id, chapter_id, page_id);
-            }
-            Self::Theorem(theorem_ref) => {
-                theorem_ref.count(counter.theorem());
-                theorem_ref.set_href(book_id, chapter_id, page_id);
-            }
-            Self::Proof(proof_ref) => {
-                proof_ref.count(counter.proof());
-                proof_ref.set_href(book_id, chapter_id, page_id);
-            }
+            Self::Axiom(axiom_ref) => axiom_ref.set_href(book_id, chapter_id, page_id),
+            Self::Theorem(theorem_ref) => theorem_ref.set_href(book_id, chapter_id, page_id),
+            Self::Proof(proof_ref) => proof_ref.set_href(book_id, chapter_id, page_id),
 
-            Self::List(list_ref) => list_ref.count(counter.list()),
-            Self::Table(table_ref) => table_ref.count(counter.table()),
-            Self::Quote(quote_ref) => quote_ref.count(counter.quote()),
-            Self::Todo(todo_ref) => todo_ref.count(counter.todo()),
-            Self::Heading(heading_ref) => heading_ref.count(counter.heading()),
-            Self::Text(text_ref) => text_ref.count(counter.text()),
+            _ => {}
         }
     }
 
-    // TODO: Remove.
-    fn get_ref(&self) -> Block {
+    fn finish<'b>(&self) -> Block<'b> {
         match self {
-            Self::System(system_ref) => Block::System(system_ref.get_ref()),
-            Self::Type(type_ref) => Block::Type(type_ref.get_ref()),
-            Self::Symbol(symbol_ref) => Block::Symbol(symbol_ref.get_ref()),
-            Self::Definition(definition_ref) => Block::Definition(definition_ref.get_ref()),
-            Self::Axiom(axiom_ref) => Block::Axiom(axiom_ref.get_ref()),
-            Self::Theorem(theorem_ref) => Block::Theorem(theorem_ref.get_ref()),
-            Self::Proof(proof_ref) => Block::Proof(proof_ref.get_ref()),
+            Self::System(system_ref) => Block::System(system_ref.finish()),
+            Self::Type(type_ref) => Block::Type(type_ref.finish()),
+            Self::Symbol(symbol_ref) => Block::Symbol(symbol_ref.finish()),
+            Self::Definition(definition_ref) => Block::Definition(definition_ref.finish()),
+            Self::Axiom(axiom_ref) => Block::Axiom(axiom_ref.finish()),
+            Self::Theorem(theorem_ref) => Block::Theorem(theorem_ref.finish()),
+            Self::Proof(proof_ref) => Block::Proof(proof_ref.finish()),
 
-            Self::List(list_ref) => Block::List(list_ref.get_ref()),
-            Self::Table(table_ref) => Block::Table(table_ref.get_ref()),
-            Self::Quote(quote_ref) => Block::Quote(quote_ref.get_ref()),
-            Self::Todo(todo_ref) => Block::Todo(todo_ref.get_ref()),
-            Self::Heading(heading_ref) => Block::Heading(heading_ref.get_ref()),
-            Self::Text(text_ref) => Block::Text(text_ref.get_ref()),
-        }
-    }
-
-    // TODO: Remove.
-    pub fn build_directory(
-        &'a self,
-        systems: &mut Vec<SystemBlock>,
-        types: &mut Vec<TypeBlock>,
-        symbols: &mut Vec<SymbolBlock>,
-        definitions: &mut Vec<DefinitionBlock>,
-        axioms: &mut Vec<AxiomBlock>,
-        theorems: &mut Vec<TheoremBlock>,
-        proofs: &mut Vec<ProofBlock>,
-        lists: &mut Vec<ListBlock>,
-        tables: &mut Vec<TableBlock>,
-        quotes: &mut Vec<QuoteBlock>,
-        todos: &mut Vec<TodoBlock>,
-        headings: &mut Vec<HeadingBlock>,
-        texts: &mut Vec<TextBlock>,
-    ) {
-        match self {
-            Self::System(system_ref) => systems.push(system_ref.finish()),
-            Self::Type(type_ref) => types.push(type_ref.finish()),
-            Self::Symbol(symbol_ref) => symbols.push(symbol_ref.finish()),
-            Self::Definition(definition_ref) => definitions.push(definition_ref.finish()),
-            Self::Axiom(axiom_ref) => axioms.push(axiom_ref.finish()),
-            Self::Theorem(theorem_ref) => theorems.push(theorem_ref.finish()),
-            Self::Proof(proof_ref) => proofs.push(proof_ref.finish()),
-
-            Self::List(list_ref) => lists.push(list_ref.finish()),
-            Self::Table(table_ref) => tables.push(table_ref.finish()),
-            Self::Quote(quote_ref) => quotes.push(quote_ref.finish()),
-            Self::Todo(todo_ref) => todos.push(todo_ref.finish()),
-            Self::Heading(heading_ref) => headings.push(heading_ref.finish()),
-            Self::Text(text_ref) => texts.push(text_ref.finish()),
+            Self::List(list_ref) => Block::List(list_ref.finish()),
+            Self::Table(table_ref) => Block::Table(table_ref.finish()),
+            Self::Quote(quote_ref) => Block::Quote(quote_ref.finish()),
+            Self::Todo(todo_ref) => Block::Todo(todo_ref.finish()),
+            Self::Heading(heading_ref) => Block::Heading(heading_ref.finish()),
+            Self::Text(text_ref) => Block::Text(text_ref.finish()),
         }
     }
 }
@@ -310,6 +243,9 @@ pub struct PageBuilder<'a> {
 
     blocks: Vec<BlockBuilder<'a>>,
     local_bibliography: OnceCell<LocalBibliographyBuilder<'a>>,
+
+    // TODO: Remove.
+    href: OnceCell<String>,
 }
 
 impl<'a> PageBuilder<'a> {
@@ -349,6 +285,8 @@ impl<'a> PageBuilder<'a> {
 
                     blocks: Vec::new(),
                     local_bibliography: OnceCell::new(),
+
+                    href: OnceCell::new(),
                 };
             }
         };
@@ -362,6 +300,8 @@ impl<'a> PageBuilder<'a> {
 
                     blocks: Vec::new(),
                     local_bibliography: OnceCell::new(),
+
+                    href: OnceCell::new(),
                 };
             }
         };
@@ -383,6 +323,8 @@ impl<'a> PageBuilder<'a> {
 
             blocks,
             local_bibliography: OnceCell::new(),
+
+            href: OnceCell::new(),
         }
     }
 
@@ -421,60 +363,27 @@ impl<'a> PageBuilder<'a> {
     }
 
     // TODO: Remove.
-    fn count(&'a self, counter: &mut BlockCounter, book_id: &str, chapter_id: &str) {
+    fn set_href(&self, book_id: &str, chapter_id: &str) {
+        let id = &self.id;
+        let href = format!("/{}/{}/{}", book_id, chapter_id, id);
+        self.href.set(href).unwrap();
+
         for block in &self.blocks {
-            block.count(counter, book_id, chapter_id, &self.id);
+            block.set_href(book_id, chapter_id, id);
         }
     }
 
-    // TODO: Remove.
-    pub fn build_directory(
-        &'a self,
-        systems: &mut Vec<SystemBlock>,
-        types: &mut Vec<TypeBlock>,
-        symbols: &mut Vec<SymbolBlock>,
-        definitions: &mut Vec<DefinitionBlock>,
-        axioms: &mut Vec<AxiomBlock>,
-        theorems: &mut Vec<TheoremBlock>,
-        proofs: &mut Vec<ProofBlock>,
-        lists: &mut Vec<ListBlock>,
-        tables: &mut Vec<TableBlock>,
-        quotes: &mut Vec<QuoteBlock>,
-        todos: &mut Vec<TodoBlock>,
-        headings: &mut Vec<HeadingBlock>,
-        texts: &mut Vec<TextBlock>,
-    ) {
-        for block in &self.blocks {
-            block.build_directory(
-                systems,
-                types,
-                symbols,
-                definitions,
-                axioms,
-                theorems,
-                proofs,
-                lists,
-                tables,
-                quotes,
-                todos,
-                headings,
-                texts,
-            );
-        }
-    }
-
-    // TODO: Remove.
-    pub fn finish(&self, book_id: &str, chapter_id: &str) -> Page {
+    fn finish<'b>(&self) -> Page<'b> {
         let id = self.id.clone();
         let name = self.name.clone();
-        let href = format!("/{}/{}/{}", book_id, chapter_id, &id);
-        let blocks = self.blocks.iter().map(BlockBuilder::get_ref).collect();
-        let local_bibliography = self
-            .local_bibliography
-            .get()
-            .map(LocalBibliographyBuilder::finish);
 
-        Page::new(id, name, href, blocks, local_bibliography)
+        let blocks = self.blocks.iter().map(BlockBuilder::finish).collect();
+
+        let local_bibliography = self.local_bibliography.get().unwrap().finish();
+
+        let href = self.href.get().unwrap().clone();
+
+        Page::new(id, name, blocks, local_bibliography, href)
     }
 }
 
@@ -484,6 +393,9 @@ pub struct ChapterBuilder<'a> {
     tagline: ParagraphBuilder<'a>,
 
     pages: Vec<PageBuilder<'a>>,
+
+    // TODO: Remove.
+    href: OnceCell<String>,
 }
 
 impl<'a> ChapterBuilder<'a> {
@@ -516,6 +428,8 @@ impl<'a> ChapterBuilder<'a> {
             tagline,
 
             pages,
+
+            href: OnceCell::new(),
         }
     }
 
@@ -558,61 +472,26 @@ impl<'a> ChapterBuilder<'a> {
     }
 
     // TODO: Remove.
-    fn count(&'a self, counter: &mut BlockCounter, book_id: &str) {
+    fn set_href(&self, book_id: &str) {
+        let id = &self.id;
+        let href = format!("/{}/{}", book_id, id);
+        self.href.set(href).unwrap();
+
         for page in &self.pages {
-            page.count(counter, book_id, &self.id);
+            page.set_href(book_id, id);
         }
     }
 
-    // TODO: Remove.
-    pub fn build_directory(
-        &'a self,
-        systems: &mut Vec<SystemBlock>,
-        types: &mut Vec<TypeBlock>,
-        symbols: &mut Vec<SymbolBlock>,
-        definitions: &mut Vec<DefinitionBlock>,
-        axioms: &mut Vec<AxiomBlock>,
-        theorems: &mut Vec<TheoremBlock>,
-        proofs: &mut Vec<ProofBlock>,
-        lists: &mut Vec<ListBlock>,
-        tables: &mut Vec<TableBlock>,
-        quotes: &mut Vec<QuoteBlock>,
-        todos: &mut Vec<TodoBlock>,
-        headings: &mut Vec<HeadingBlock>,
-        texts: &mut Vec<TextBlock>,
-    ) {
-        for page in &self.pages {
-            page.build_directory(
-                systems,
-                types,
-                symbols,
-                definitions,
-                axioms,
-                theorems,
-                proofs,
-                lists,
-                tables,
-                quotes,
-                todos,
-                headings,
-                texts,
-            );
-        }
-    }
-
-    // TODO: Remove.
-    pub fn finish(&self, book_id: &str) -> Chapter {
+    fn finish<'b>(&self) -> Chapter<'b> {
         let id = self.id.clone();
         let name = self.name.clone();
-        let href = format!("/{}/{}", book_id, &id);
         let tagline = self.tagline.finish();
-        let pages = self
-            .pages
-            .iter()
-            .map(|page| page.finish(book_id, &id))
-            .collect();
 
-        Chapter::new(id, name, href, tagline, pages)
+        let pages = self.pages.iter().map(PageBuilder::finish).collect();
+
+        let href = self.href.get().unwrap().clone();
+
+        Chapter::new(id, name, tagline, pages, href)
     }
 }
 
@@ -628,6 +507,9 @@ pub struct BookBuilder<'a> {
     tagline: ParagraphBuilder<'a>,
 
     chapters: Vec<ChapterBuilder<'a>>,
+
+    // TODO: Remove.
+    href: OnceCell<String>,
 }
 
 impl<'a> BookBuilder<'a> {
@@ -659,6 +541,8 @@ impl<'a> BookBuilder<'a> {
             tagline,
 
             chapters,
+
+            href: OnceCell::new(),
         }
     }
 
@@ -715,61 +599,26 @@ impl<'a> BookBuilder<'a> {
     }
 
     // TODO: Remove.
-    pub fn count(&'a self, counters: &mut BlockCounter) {
+    pub fn set_href(&self) {
+        let id = &self.id;
+        let href = format!("/{}", id);
+        self.href.set(href).unwrap();
+
         for chapter in &self.chapters {
-            chapter.count(counters, &self.id);
+            chapter.set_href(id)
         }
     }
 
-    // TODO: Remove.
-    pub fn build_directory(
-        &'a self,
-        systems: &mut Vec<SystemBlock>,
-        types: &mut Vec<TypeBlock>,
-        symbols: &mut Vec<SymbolBlock>,
-        definitions: &mut Vec<DefinitionBlock>,
-        axioms: &mut Vec<AxiomBlock>,
-        theorems: &mut Vec<TheoremBlock>,
-        proofs: &mut Vec<ProofBlock>,
-        lists: &mut Vec<ListBlock>,
-        tables: &mut Vec<TableBlock>,
-        quotes: &mut Vec<QuoteBlock>,
-        todos: &mut Vec<TodoBlock>,
-        headings: &mut Vec<HeadingBlock>,
-        texts: &mut Vec<TextBlock>,
-    ) {
-        for chapter in &self.chapters {
-            chapter.build_directory(
-                systems,
-                types,
-                symbols,
-                definitions,
-                axioms,
-                theorems,
-                proofs,
-                lists,
-                tables,
-                quotes,
-                todos,
-                headings,
-                texts,
-            );
-        }
-    }
-
-    // TODO: Remove.
-    pub fn finish(&self) -> Book {
+    pub fn finish<'b>(&self) -> Book<'b> {
         let id = self.id.clone();
         let name = self.name.clone();
-        let href = format!("/{}", &id);
         let tagline = self.tagline.finish();
-        let chapters = self
-            .chapters
-            .iter()
-            .map(|chapter| chapter.finish(&id))
-            .collect();
 
-        Book::new(id, name, href, tagline, chapters)
+        let chapters = self.chapters.iter().map(ChapterBuilder::finish).collect();
+
+        let href = self.href.get().unwrap().clone();
+
+        Book::new(id, name, tagline, chapters, href)
     }
 }
 
