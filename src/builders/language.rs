@@ -1152,8 +1152,10 @@ impl<'a> SymbolBuilder<'a> {
 
     // TODO: Remove.
     pub fn set_href(&self, book_id: &str, chapter_id: &str, page_id: &str) {
-        // FIXME: This should include the system id.
-        let href = format!("/{}/{}/{}#{}", book_id, chapter_id, page_id, &self.id);
+        let href = format!(
+            "/{}/{}/{}#{}_{}",
+            book_id, chapter_id, page_id, &self.system_id, &self.id
+        );
         self.href.set(href).unwrap();
     }
 
