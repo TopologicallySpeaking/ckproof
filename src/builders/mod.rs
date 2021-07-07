@@ -121,7 +121,7 @@ impl<'a> ManifestBuilder<'a> {
         Document::new(books, bibliography)
     }
 
-    pub fn build(&'a self) -> Result<Document, &ParsingErrorContext<'a>> {
+    pub fn build<'b>(&'a self) -> Result<Document<'b>, &ParsingErrorContext<'a>> {
         let errors = self.errors.get_or_init(|| {
             let mut errors = ParsingErrorContext::new();
             let bibliography = self
