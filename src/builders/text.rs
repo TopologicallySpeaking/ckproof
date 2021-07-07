@@ -831,7 +831,7 @@ impl MathBuilderElement {
 
             Rule::operator_negation => "\u{00AC}",
             Rule::operator_equiv => "\u{21D4}",
-            Rule::operator_implies => "\u{21D2}",
+            Rule::operator_implies => "\u{2192}",
             Rule::operator_and => "\u{2227}",
             Rule::operator_or => "\u{2228}",
 

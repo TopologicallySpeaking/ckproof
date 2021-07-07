@@ -559,12 +559,13 @@ impl ReadOperator {
         match self {
             Self::Negation => todo!(),
 
-            Self::Equivalent | Self::Implies => 0,
-            Self::And => 1,
-            Self::Or => 2,
+            Self::Equivalent => 0,
+            Self::Implies => 1,
+            Self::And => 2,
+            Self::Or => 3,
 
-            Self::Asterisk | Self::Slash => 3,
-            Self::Plus | Self::Minus => 4,
+            Self::Asterisk | Self::Slash => 4,
+            Self::Plus | Self::Minus => 5,
         }
     }
 
@@ -572,21 +573,16 @@ impl ReadOperator {
         match self {
             Self::Negation => todo!(),
 
-            Self::Equivalent
-            | Self::Implies
-            | Self::And
-            | Self::Or
-            | Self::Asterisk
-            | Self::Slash
-            | Self::Plus
-            | Self::Minus => true,
+            Self::Asterisk | Self::Slash | Self::Plus | Self::Minus => true,
+
+            Self::Equivalent | Self::Implies | Self::And | Self::Or => false,
         }
     }
 
     fn to_display(&self) -> &str {
         match self {
             Self::Negation => "\u{00AC}",
-            Self::Implies => "\u{21D2}",
+            Self::Implies => "\u{2192}",
             Self::Equivalent => "\u{21D4}",
             Self::And => "\u{2227}",
             Self::Or => "\u{2228}",

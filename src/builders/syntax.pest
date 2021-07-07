@@ -96,8 +96,8 @@ operator_minus = { "-" }
 operator_asterisk = { "*" }
 operator_slash = { "/" }
 operator_negation = { "!" }
-operator_equiv = { "<=>" }
-operator_implies = { "=>" }
+operator_equiv = { "<->" }
+operator_implies = { "->" }
 operator_and = { "&" }
 operator_or = { "|" }
 operator_lt = { "<" }
