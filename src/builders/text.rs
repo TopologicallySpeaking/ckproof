@@ -16,9 +16,12 @@
 use std::cell::Cell;
 use std::collections::HashMap;
 use std::lazy::OnceCell;
+use std::path::Path;
 
 use pest::iterators::{Pair, Pairs};
 use url::Url;
+
+use crate::FileLocation;
 
 use crate::document::structure::{BlockLocation, BlockRef};
 use crate::document::system::ProofBlockStepRef;
@@ -76,7 +79,7 @@ impl BareText {
 }
 
 #[derive(Debug)]
-struct CitationBuilder<'a> {
+pub struct CitationBuilder<'a> {
     bib_key: String,
 
     bib_ref: OnceCell<&'a BibliographyBuilderEntry>,
@@ -136,7 +139,7 @@ impl<'a> CitationBuilder<'a> {
 }
 
 #[derive(Debug)]
-struct HyperlinkBuilder {
+pub struct HyperlinkBuilder {
     url: String,
     contents: BareText,
 
@@ -182,7 +185,7 @@ impl HyperlinkBuilder {
 }
 
 #[derive(Debug)]
-enum UnformattedBuilderElement {
+pub enum UnformattedBuilderElement {
     Hyperlink(HyperlinkBuilder),
     BareElement(BareElement),
 }
@@ -1047,7 +1050,9 @@ impl DisplayMathBuilder {
     }
 }
 
-struct SystemReferenceBuilder<'a> {
+pub struct SystemReferenceBuilder<'a> {
+    file_location: FileLocation,
+
     id: String,
     text: Option<BareText>,
 
@@ -1055,12 +1060,16 @@ struct SystemReferenceBuilder<'a> {
 }
 
 impl<'a> SystemReferenceBuilder<'a> {
-    fn from_pest(pair: Pair<Rule>, text: Option<BareText>) -> Self {
+    fn from_pest(path: &Path, pair: Pair<Rule>, text: Option<BareText>) -> Self {
         assert_eq!(pair.as_rule(), Rule::ident);
+
+        let file_location = FileLocation::new(path, pair.as_span());
 
         let id = pair.as_str().to_owned();
 
         SystemReferenceBuilder {
+            file_location,
+
             id,
             text,
 
@@ -1099,6 +1108,14 @@ impl<'a> SystemReferenceBuilder<'a> {
 
         ParagraphElement::Reference(text, r)
     }
+
+    pub fn file_location(&self) -> &FileLocation {
+        &self.file_location
+    }
+
+    pub fn id(&self) -> &str {
+        &self.id
+    }
 }
 
 impl<'a> std::fmt::Debug for SystemReferenceBuilder<'a> {
@@ -1107,7 +1124,9 @@ impl<'a> std::fmt::Debug for SystemReferenceBuilder<'a> {
     }
 }
 
-struct SystemChildReferenceBuilder<'a> {
+pub struct SystemChildReferenceBuilder<'a> {
+    file_location: FileLocation,
+
     system_id: String,
     child_id: String,
     text: Option<BareText>,
@@ -1116,14 +1135,18 @@ struct SystemChildReferenceBuilder<'a> {
 }
 
 impl<'a> SystemChildReferenceBuilder<'a> {
-    fn from_pest(pair: Pair<Rule>, text: Option<BareText>) -> Self {
+    fn from_pest(path: &Path, pair: Pair<Rule>, text: Option<BareText>) -> Self {
         assert_eq!(pair.as_rule(), Rule::fqid);
+
+        let file_location = FileLocation::new(path, pair.as_span());
 
         let mut inner = pair.into_inner();
         let system_id = inner.next().unwrap().as_str().to_owned();
         let child_id = inner.next().unwrap().as_str().to_owned();
 
         SystemChildReferenceBuilder {
+            file_location,
+
             system_id,
             child_id,
             text,
@@ -1162,6 +1185,18 @@ impl<'a> SystemChildReferenceBuilder<'a> {
 
         ParagraphElement::Reference(text, r)
     }
+
+    pub fn system_id(&self) -> &str {
+        &self.system_id
+    }
+
+    pub fn child_id(&self) -> &str {
+        &self.child_id
+    }
+
+    pub fn file_location(&self) -> &FileLocation {
+        &self.file_location
+    }
 }
 
 impl<'a> std::fmt::Debug for SystemChildReferenceBuilder<'a> {
@@ -1173,7 +1208,7 @@ impl<'a> std::fmt::Debug for SystemChildReferenceBuilder<'a> {
     }
 }
 
-struct TagReferenceBuilder<'a> {
+pub struct TagReferenceBuilder<'a> {
     tag: String,
     text: Option<BareText>,
 
@@ -1235,14 +1270,14 @@ impl<'a> std::fmt::Debug for TagReferenceBuilder<'a> {
 }
 
 #[derive(Debug)]
-enum ReferenceBuilder<'a> {
+pub enum ReferenceBuilder<'a> {
     System(SystemReferenceBuilder<'a>),
     SystemChild(SystemChildReferenceBuilder<'a>),
     Tag(TagReferenceBuilder<'a>),
 }
 
 impl<'a> ReferenceBuilder<'a> {
-    fn from_pest_full(pair: Pair<Rule>) -> Self {
+    fn from_pest_full(path: &Path, pair: Pair<Rule>) -> Self {
         assert_eq!(pair.as_rule(), Rule::text_reference_full);
 
         let mut inner = pair.into_inner();
@@ -1251,36 +1286,44 @@ impl<'a> ReferenceBuilder<'a> {
 
         let text = BareText::from_pest(inner_pair);
         match ref_pair.as_rule() {
-            Rule::ident => Self::System(SystemReferenceBuilder::from_pest(ref_pair, Some(text))),
-            Rule::fqid => {
-                Self::SystemChild(SystemChildReferenceBuilder::from_pest(ref_pair, Some(text)))
-            }
+            Rule::ident => Self::System(SystemReferenceBuilder::from_pest(
+                path,
+                ref_pair,
+                Some(text),
+            )),
+            Rule::fqid => Self::SystemChild(SystemChildReferenceBuilder::from_pest(
+                path,
+                ref_pair,
+                Some(text),
+            )),
             Rule::tag => Self::Tag(TagReferenceBuilder::from_pest(ref_pair, Some(text))),
 
             _ => unreachable!(),
         }
     }
 
-    fn from_pest_void(pair: Pair<Rule>) -> Self {
+    fn from_pest_void(path: &Path, pair: Pair<Rule>) -> Self {
         assert_eq!(pair.as_rule(), Rule::text_reference_void);
         let pair = pair.into_inner().next().unwrap();
 
         match pair.as_rule() {
-            Rule::ident => Self::System(SystemReferenceBuilder::from_pest(pair, None)),
-            Rule::fqid => Self::SystemChild(SystemChildReferenceBuilder::from_pest(pair, None)),
+            Rule::ident => Self::System(SystemReferenceBuilder::from_pest(path, pair, None)),
+            Rule::fqid => {
+                Self::SystemChild(SystemChildReferenceBuilder::from_pest(path, pair, None))
+            }
             Rule::tag => Self::Tag(TagReferenceBuilder::from_pest(pair, None)),
 
             _ => unreachable!(),
         }
     }
 
-    fn from_pest(pair: Pair<Rule>) -> Self {
+    fn from_pest(path: &Path, pair: Pair<Rule>) -> Self {
         assert_eq!(pair.as_rule(), Rule::text_reference);
         let pair = pair.into_inner().next().unwrap();
 
         match pair.as_rule() {
-            Rule::text_reference_full => Self::from_pest_full(pair),
-            Rule::text_reference_void => Self::from_pest_void(pair),
+            Rule::text_reference_full => Self::from_pest_full(path, pair),
+            Rule::text_reference_void => Self::from_pest_void(path, pair),
 
             _ => unreachable!(),
         }
@@ -1324,6 +1367,22 @@ impl<'a> ReferenceBuilder<'a> {
             Self::System(r) => r.finish(),
             Self::SystemChild(r) => r.finish(),
             Self::Tag(tag) => tag.finish(),
+        }
+    }
+
+    fn system_reference(&'a self) -> Option<&SystemReferenceBuilder> {
+        match self {
+            Self::System(r) => Some(r),
+
+            _ => None,
+        }
+    }
+
+    fn system_child_reference(&'a self) -> Option<&SystemChildReferenceBuilder> {
+        match self {
+            Self::SystemChild(r) => Some(r),
+
+            _ => None,
         }
     }
 }
@@ -1440,7 +1499,7 @@ impl ParagraphFormattingState {
 }
 
 #[derive(Debug)]
-enum ParagraphBuilderElement<'a> {
+pub enum ParagraphBuilderElement<'a> {
     Reference(ReferenceBuilder<'a>),
     InlineMath(MathBuilder),
     Citation(CitationBuilder<'a>),
@@ -1454,9 +1513,9 @@ enum ParagraphBuilderElement<'a> {
 }
 
 impl<'a> ParagraphBuilderElement<'a> {
-    fn from_pest(pair: Pair<Rule>, whitespace_rule: Rule) -> Self {
+    fn from_pest(path: &Path, pair: Pair<Rule>, whitespace_rule: Rule) -> Self {
         match pair.as_rule() {
-            Rule::text_reference => Self::Reference(ReferenceBuilder::from_pest(pair)),
+            Rule::text_reference => Self::Reference(ReferenceBuilder::from_pest(path, pair)),
             Rule::math_row => Self::InlineMath(MathBuilder::from_pest(pair)),
             Rule::citation => Self::Citation(CitationBuilder::from_pest(pair)),
 
@@ -1550,6 +1609,22 @@ impl<'a> ParagraphBuilderElement<'a> {
             Self::Unformatted(element) => ParagraphElement::Unformatted(element.finish()),
         }
     }
+
+    pub fn system_reference(&'a self) -> Option<&SystemReferenceBuilder> {
+        match self {
+            Self::Reference(r) => r.system_reference(),
+
+            _ => None,
+        }
+    }
+
+    pub fn system_child_reference(&'a self) -> Option<&SystemChildReferenceBuilder> {
+        match self {
+            Self::Reference(r) => r.system_child_reference(),
+
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -1560,7 +1635,7 @@ pub struct ParagraphBuilder<'a> {
 }
 
 impl<'a> ParagraphBuilder<'a> {
-    pub fn from_pest(pair: Pair<Rule>) -> Self {
+    pub fn from_pest(path: &Path, pair: Pair<Rule>) -> Self {
         let whitespace_rule = match pair.as_rule() {
             Rule::paragraph => Rule::text_whitespace,
             Rule::oneline => Rule::oneline_whitespace,
@@ -1570,7 +1645,7 @@ impl<'a> ParagraphBuilder<'a> {
 
         let elements = pair
             .into_inner()
-            .map(|pair| ParagraphBuilderElement::from_pest(pair, whitespace_rule))
+            .map(|pair| ParagraphBuilderElement::from_pest(path, pair, whitespace_rule))
             .collect();
 
         ParagraphBuilder {
@@ -1652,6 +1727,11 @@ impl<'a> ParagraphBuilder<'a> {
 
         Paragraph::new(elements)
     }
+
+    // TODO: Remove.
+    pub fn get_element(&'a self, index: usize) -> &ParagraphBuilderElement {
+        &self.elements[index]
+    }
 }
 
 #[derive(Debug)]
@@ -1662,8 +1742,16 @@ pub struct ListBuilder<'a> {
 }
 
 impl<'a> ListBuilder<'a> {
-    pub fn from_pest(pair: Pair<Rule>, ordered: bool, location: BlockLocation) -> Self {
-        let items = pair.into_inner().map(ParagraphBuilder::from_pest).collect();
+    pub fn from_pest(
+        path: &Path,
+        pair: Pair<Rule>,
+        ordered: bool,
+        location: BlockLocation,
+    ) -> Self {
+        let items = pair
+            .into_inner()
+            .map(|pair| ParagraphBuilder::from_pest(path, pair))
+            .collect();
 
         ListBuilder {
             ordered,
@@ -1708,10 +1796,13 @@ struct TableBuilderRow<'a> {
 }
 
 impl<'a> TableBuilderRow<'a> {
-    fn from_pest(pair: Pair<Rule>) -> Self {
+    fn from_pest(path: &Path, pair: Pair<Rule>) -> Self {
         assert_eq!(pair.as_rule(), Rule::table_row);
 
-        let cells = pair.into_inner().map(ParagraphBuilder::from_pest).collect();
+        let cells = pair
+            .into_inner()
+            .map(|pair| ParagraphBuilder::from_pest(path, pair))
+            .collect();
 
         TableBuilderRow { cells }
     }
@@ -1758,7 +1849,7 @@ pub struct TableBuilder<'a> {
 }
 
 impl<'a> TableBuilder<'a> {
-    pub fn from_pest(pair: Pair<Rule>, location: BlockLocation) -> Self {
+    pub fn from_pest(path: &Path, pair: Pair<Rule>, location: BlockLocation) -> Self {
         assert_eq!(pair.as_rule(), Rule::table_block);
 
         let mut head = None;
@@ -1770,25 +1861,35 @@ impl<'a> TableBuilder<'a> {
         for pair in pair.into_inner() {
             match pair.as_rule() {
                 Rule::table_head => {
-                    let rows = pair.into_inner().map(TableBuilderRow::from_pest).collect();
+                    let rows = pair
+                        .into_inner()
+                        .map(|pair| TableBuilderRow::from_pest(path, pair))
+                        .collect();
 
                     head = Some(rows);
                 }
 
                 Rule::table_body => {
-                    let rows = pair.into_inner().map(TableBuilderRow::from_pest).collect();
+                    let rows = pair
+                        .into_inner()
+                        .map(|pair| TableBuilderRow::from_pest(path, pair))
+                        .collect();
 
                     body = Some(rows);
                 }
 
                 Rule::table_foot => {
-                    let rows = pair.into_inner().map(TableBuilderRow::from_pest).collect();
+                    let rows = pair
+                        .into_inner()
+                        .map(|pair| TableBuilderRow::from_pest(path, pair))
+                        .collect();
 
                     foot = Some(rows);
                 }
 
                 Rule::table_caption => {
                     caption = Some(ParagraphBuilder::from_pest(
+                        path,
                         pair.into_inner().next().unwrap(),
                     ));
                 }
@@ -2014,8 +2115,11 @@ pub struct TodoBuilder<'a> {
 }
 
 impl<'a> TodoBuilder<'a> {
-    pub fn from_pest(pair: Pair<Rule>) -> Self {
-        let elements = pair.into_inner().map(TextBuilder::from_pest).collect();
+    pub fn from_pest(path: &Path, pair: Pair<Rule>) -> Self {
+        let elements = pair
+            .into_inner()
+            .map(|pair| TextBuilder::from_pest(path, pair))
+            .collect();
 
         TodoBuilder { elements }
     }
@@ -2141,7 +2245,7 @@ pub enum TextBuilder<'a> {
 }
 
 impl<'a> TextBuilder<'a> {
-    pub fn from_pest(pair: Pair<Rule>) -> Self {
+    pub fn from_pest(path: &Path, pair: Pair<Rule>) -> Self {
         assert_eq!(pair.as_rule(), Rule::text_block);
         let pair = pair.into_inner().next().unwrap();
 
@@ -2149,7 +2253,7 @@ impl<'a> TextBuilder<'a> {
             Rule::raw_citation => Self::RawCitation(RawCitationBuilder::from_pest(pair)),
             Rule::sublist => Self::Sublist(SublistBuilder::from_pest(pair)),
             Rule::display_math => Self::DisplayMath(DisplayMathBuilder::from_pest(pair)),
-            Rule::paragraph => Self::Paragraph(ParagraphBuilder::from_pest(pair)),
+            Rule::paragraph => Self::Paragraph(ParagraphBuilder::from_pest(path, pair)),
 
             _ => unreachable!(),
         }
@@ -2231,6 +2335,14 @@ impl<'a> TextBuilder<'a> {
             Self::Paragraph(paragraph) => Text::Paragraph(paragraph.finish()),
         }
     }
+
+    pub fn paragraph(&'a self) -> Option<&ParagraphBuilder> {
+        match self {
+            Self::Paragraph(paragraph) => Some(paragraph),
+
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -2241,11 +2353,11 @@ pub struct TextBlockBuilder<'a> {
 }
 
 impl<'a> TextBlockBuilder<'a> {
-    pub fn from_pest(pair: Pair<Rule>, location: BlockLocation) -> Self {
+    pub fn from_pest(path: &Path, pair: Pair<Rule>, location: BlockLocation) -> Self {
         TextBlockBuilder {
             location,
 
-            text: TextBuilder::from_pest(pair),
+            text: TextBuilder::from_pest(path, pair),
         }
     }
 

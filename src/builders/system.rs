@@ -17,6 +17,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::lazy::OnceCell;
+use std::path::Path;
 
 use pest::iterators::{Pair, Pairs};
 
@@ -51,7 +52,7 @@ struct SystemBuilderEntries<'a> {
 }
 
 impl<'a> SystemBuilderEntries<'a> {
-    fn from_pest(pairs: Pairs<Rule>) -> Self {
+    fn from_pest(path: &Path, pairs: Pairs<Rule>) -> Self {
         let mut names = Vec::with_capacity(1);
         let mut taglines = Vec::with_capacity(1);
         let mut descriptions = Vec::with_capacity(1);
@@ -66,12 +67,16 @@ impl<'a> SystemBuilderEntries<'a> {
                     names.push(name);
                 }
                 Rule::block_tagline => {
-                    let tagline = ParagraphBuilder::from_pest(pair.into_inner().next().unwrap());
+                    let tagline =
+                        ParagraphBuilder::from_pest(path, pair.into_inner().next().unwrap());
 
                     taglines.push(tagline);
                 }
                 Rule::block_description => {
-                    let description = pair.into_inner().map(TextBuilder::from_pest).collect();
+                    let description = pair
+                        .into_inner()
+                        .map(|pair| TextBuilder::from_pest(path, pair))
+                        .collect();
 
                     descriptions.push(description);
                 }
@@ -222,12 +227,12 @@ pub struct SystemBuilder<'a> {
 }
 
 impl<'a> SystemBuilder<'a> {
-    pub fn from_pest(pair: Pair<Rule>, location: BlockLocation) -> Self {
+    pub fn from_pest(path: &Path, pair: Pair<Rule>, location: BlockLocation) -> Self {
         assert_eq!(pair.as_rule(), Rule::system_block);
 
         let mut inner = pair.into_inner();
         let id = inner.next().unwrap().as_str().to_owned();
-        let entries = SystemBuilderEntries::from_pest(inner);
+        let entries = SystemBuilderEntries::from_pest(path, inner);
 
         SystemBuilder {
             id,
@@ -834,7 +839,7 @@ struct AxiomBuilderEntries<'a> {
 }
 
 impl<'a> AxiomBuilderEntries<'a> {
-    fn from_pest(pairs: Pairs<Rule>) -> Self {
+    fn from_pest(path: &Path, pairs: Pairs<Rule>) -> Self {
         let mut names = Vec::with_capacity(1);
         let mut taglines = Vec::with_capacity(1);
         let mut descriptions = Vec::with_capacity(1);
@@ -853,12 +858,16 @@ impl<'a> AxiomBuilderEntries<'a> {
                     names.push(name);
                 }
                 Rule::block_tagline => {
-                    let tagline = ParagraphBuilder::from_pest(pair.into_inner().next().unwrap());
+                    let tagline =
+                        ParagraphBuilder::from_pest(path, pair.into_inner().next().unwrap());
 
                     taglines.push(tagline);
                 }
                 Rule::block_description => {
-                    let description = pair.into_inner().map(TextBuilder::from_pest).collect();
+                    let description = pair
+                        .into_inner()
+                        .map(|pair| TextBuilder::from_pest(path, pair))
+                        .collect();
 
                     descriptions.push(description);
                 }
@@ -1157,14 +1166,14 @@ pub struct AxiomBuilder<'a> {
 }
 
 impl<'a> AxiomBuilder<'a> {
-    pub fn from_pest(pair: Pair<Rule>, location: BlockLocation) -> Self {
+    pub fn from_pest(path: &Path, pair: Pair<Rule>, location: BlockLocation) -> Self {
         assert_eq!(pair.as_rule(), Rule::axiom_block);
 
         let mut inner = pair.into_inner();
         let id = inner.next().unwrap().as_str().to_owned();
         let system_id = inner.next().unwrap().as_str().to_owned();
 
-        let entries = AxiomBuilderEntries::from_pest(inner);
+        let entries = AxiomBuilderEntries::from_pest(path, inner);
 
         AxiomBuilder {
             id,
@@ -1315,7 +1324,7 @@ struct TheoremBuilderEntries<'a> {
 }
 
 impl<'a> TheoremBuilderEntries<'a> {
-    fn from_pest(pairs: Pairs<Rule>) -> Self {
+    fn from_pest(path: &Path, pairs: Pairs<Rule>) -> Self {
         let mut names = Vec::with_capacity(1);
         let mut taglines = Vec::with_capacity(1);
         let mut descriptions = Vec::with_capacity(1);
@@ -1334,12 +1343,16 @@ impl<'a> TheoremBuilderEntries<'a> {
                     names.push(name);
                 }
                 Rule::block_tagline => {
-                    let tagline = ParagraphBuilder::from_pest(pair.into_inner().next().unwrap());
+                    let tagline =
+                        ParagraphBuilder::from_pest(path, pair.into_inner().next().unwrap());
 
                     taglines.push(tagline);
                 }
                 Rule::block_description => {
-                    let description = pair.into_inner().map(TextBuilder::from_pest).collect();
+                    let description = pair
+                        .into_inner()
+                        .map(|pair| TextBuilder::from_pest(path, pair))
+                        .collect();
 
                     descriptions.push(description);
                 }
@@ -1648,7 +1661,7 @@ pub struct TheoremBuilder<'a> {
 }
 
 impl<'a> TheoremBuilder<'a> {
-    pub fn from_pest(pair: Pair<Rule>, location: BlockLocation) -> Self {
+    pub fn from_pest(path: &Path, pair: Pair<Rule>, location: BlockLocation) -> Self {
         assert_eq!(pair.as_rule(), Rule::theorem_block);
 
         let mut inner = pair.into_inner();
@@ -1657,7 +1670,7 @@ impl<'a> TheoremBuilder<'a> {
         let system_id = inner.next().unwrap().as_str().to_owned();
 
         let kind = TheoremKind::from_pest(head.into_inner().next().unwrap());
-        let entries = TheoremBuilderEntries::from_pest(inner);
+        let entries = TheoremBuilderEntries::from_pest(path, inner);
 
         TheoremBuilder {
             kind,
@@ -2558,9 +2571,9 @@ enum ProofBuilderElement<'a> {
 }
 
 impl<'a> ProofBuilderElement<'a> {
-    fn from_pest(pair: Pair<Rule>, index: usize) -> Self {
+    fn from_pest(path: &Path, pair: Pair<Rule>, index: usize) -> Self {
         match pair.as_rule() {
-            Rule::text_block => Self::Text(TextBuilder::from_pest(pair)),
+            Rule::text_block => Self::Text(TextBuilder::from_pest(path, pair)),
             Rule::proof_step => Self::Step(ProofBuilderStep::from_pest(pair, index)),
 
             _ => unreachable!(),
@@ -2672,7 +2685,7 @@ pub struct ProofBuilder<'a> {
 }
 
 impl<'a> ProofBuilder<'a> {
-    pub fn from_pest(pair: Pair<Rule>, location: BlockLocation) -> Self {
+    pub fn from_pest(path: &Path, pair: Pair<Rule>, location: BlockLocation) -> Self {
         assert_eq!(pair.as_rule(), Rule::proof_block);
 
         let mut inner = pair.into_inner();
@@ -2681,7 +2694,7 @@ impl<'a> ProofBuilder<'a> {
 
         let elements = inner
             .enumerate()
-            .map(|(i, pair)| ProofBuilderElement::from_pest(pair, i))
+            .map(|(i, pair)| ProofBuilderElement::from_pest(path, pair, i))
             .collect();
 
         ProofBuilder {

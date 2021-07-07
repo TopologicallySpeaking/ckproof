@@ -17,6 +17,8 @@ use pest::error::Error as PestError;
 use std::io::Error as IoError;
 use url::ParseError as UrlError;
 
+use crate::eprint;
+
 use super::bibliography::BibliographyBuilderEntry;
 use super::language::{
     DefinitionBuilder, DisplayFormulaBuilder, FormulaBuilder, ReadableBuilder, SymbolBuilder,
@@ -28,8 +30,9 @@ use super::system::{
     SystemBuilderChild, TheoremBuilder,
 };
 use super::text::{
-    ListBuilder, MathBuilderElement, ParagraphBuilder, QuoteBuilder, RawCitationContainerBuilder,
-    TableBuilder, TextBuilder,
+    ListBuilder, MathBuilderElement, ParagraphBuilder, ParagraphBuilderElement, QuoteBuilder,
+    RawCitationContainerBuilder, SystemChildReferenceBuilder, SystemReferenceBuilder, TableBuilder,
+    TextBuilder,
 };
 use super::Rule;
 
@@ -54,6 +57,43 @@ pub enum ParagraphElementParsingError<'a> {
     UnexpectedEmEnd,
 }
 
+impl<'a> ParagraphElementParsingError<'a> {
+    fn eprint_system_reference_id_not_found(builder: &SystemReferenceBuilder) {
+        let message = format!(
+            "A System Reference contains the id `{}`, but this doesn't correspond to any known system.",
+            builder.id(),
+        );
+
+        eprint(&message, builder.file_location());
+    }
+
+    fn eprint_system_child_reference_id_not_found(builder: &SystemChildReferenceBuilder) {
+        // TODO: Indicate whether it's the system or the child which was not found.
+        let message = format!(
+            "A System Child Reference contains the id `{}.{}`, but this doesn't correspond to any known system child.",
+            builder.system_id(),
+            builder.child_id()
+        );
+
+        eprint(&message, builder.file_location());
+    }
+
+    fn eprint(&self, builder: &'a ParagraphBuilderElement<'a>) {
+        match self {
+            Self::SystemReferenceIdNotFound => {
+                Self::eprint_system_reference_id_not_found(builder.system_reference().unwrap());
+            }
+            Self::SystemChildReferenceIdNotFound => {
+                Self::eprint_system_child_reference_id_not_found(
+                    builder.system_child_reference().unwrap(),
+                );
+            }
+
+            _ => todo!("{:#?}", self),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum ParagraphParsingError<'a> {
     // TODO: Reference directory to the element instead of using its index.
@@ -61,6 +101,16 @@ pub enum ParagraphParsingError<'a> {
 
     UnclosedUnicornVomit,
     UnclosedEm,
+}
+
+impl<'a> ParagraphParsingError<'a> {
+    fn eprint(&self, builder: &'a ParagraphBuilder<'a>) {
+        match self {
+            Self::ElementError(i, error) => error.eprint(builder.get_element(*i)),
+
+            _ => todo!("{:#?}", self),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -92,6 +142,16 @@ pub enum TextParsingError<'a> {
     SublistError(MathParsingError<'a>),
     ParagraphError(ParagraphParsingError<'a>),
     DisplayMathError(MathParsingError<'a>),
+}
+
+impl<'a> TextParsingError<'a> {
+    fn eprint(&self, builder: &'a TextBuilder<'a>) {
+        match self {
+            Self::ParagraphError(error) => error.eprint(builder.paragraph().unwrap()),
+
+            _ => todo!("{:#?}", self),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -364,6 +424,16 @@ pub enum ParsingError<'a> {
     TextError(&'a TextBuilder<'a>, TextParsingError<'a>),
 }
 
+impl<'a> ParsingError<'a> {
+    fn eprint(&self) {
+        match self {
+            Self::TextError(builder, error) => error.eprint(builder),
+
+            _ => todo!("{:#?}", self),
+        }
+    }
+}
+
 impl<'a> From<IoError> for ParsingError<'a> {
     fn from(e: IoError) -> Self {
         ParsingError::IoError(e)
@@ -398,5 +468,13 @@ impl<'a> ParsingErrorContext<'a> {
 
     pub fn error_found(&self) -> bool {
         !self.errors.is_empty()
+    }
+
+    pub fn eprint(&self) {
+        for error in &self.errors {
+            error.eprint()
+        }
+
+        eprintln!("Checker exited with errors.");
     }
 }

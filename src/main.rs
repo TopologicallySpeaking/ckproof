@@ -16,13 +16,26 @@
 use std::env;
 
 use ckproof::builders::ManifestBuilder;
+use ckproof::document::Document;
 
-fn main() {
+const RET_BUILDER_ERR: i32 = 1;
+
+fn get_document(path: &str) -> Result<Document, i32> {
+    let builder = ManifestBuilder::from_lib(path);
+
+    builder.build().map_err(|errors| {
+        errors.eprint();
+
+        RET_BUILDER_ERR
+    })
+}
+
+// Using std::process::exit doesn't call destructors. Wrapping the main function like this makes
+// sure they're called before the process exits.
+fn main_real() -> Result<(), i32> {
     let args: Vec<String> = env::args().collect();
 
-    let builder = ManifestBuilder::from_lib(&args[1]);
-
-    let document = builder.build().unwrap();
+    let document = get_document(&args[1])?;
     document.crosslink();
 
     let checkable = document.checkable();
@@ -34,4 +47,12 @@ fn main() {
     let rendered = document.render();
     let out_file = std::fs::File::create(&args[2]).unwrap();
     serde_json::to_writer_pretty(out_file, &rendered).unwrap();
+
+    Ok(())
+}
+
+fn main() {
+    if let Err(code) = main_real() {
+        std::process::exit(code);
+    }
 }

@@ -17,6 +17,9 @@
 #![feature(nll)]
 #![feature(once_cell)]
 
+use pest::Span;
+use std::path::{Path, PathBuf};
+
 pub mod builders;
 pub mod deduction;
 pub mod document;
@@ -52,4 +55,77 @@ fn map_ident(ident: &str) -> &str {
 
         _ => ident,
     }
+}
+
+pub struct FileLocation {
+    path: PathBuf,
+    start_line: usize,
+    start_column: usize,
+    end_line: usize,
+    end_column: usize,
+    preview: Vec<String>,
+}
+
+impl FileLocation {
+    fn new(path: &Path, span: Span) -> Self {
+        let (start_line, start_column) = span.start_pos().line_col();
+        let (end_line, end_column) = span.end_pos().line_col();
+
+        let preview = span
+            .lines()
+            .enumerate()
+            .map(|(i, line)| {
+                let (before, inside, after) = if start_line == end_line {
+                    (
+                        &line[..start_column - 1],
+                        &line[start_column - 1..end_column - 1],
+                        &line[end_column - 1..],
+                    )
+                } else {
+                    if i == 0 {
+                        (&line[..start_column - 1], &line[start_column - 1..], "")
+                    } else if i == end_line - start_line {
+                        (
+                            "",
+                            &line[start_column - 1..end_column - 1],
+                            &line[end_column - 1..],
+                        )
+                    } else {
+                        ("", line, "")
+                    }
+                };
+
+                format!("{}\u{1B}[91;4m{}\u{1B}[0m{}", before, inside, after)
+            })
+            .collect();
+
+        FileLocation {
+            path: path.to_owned(),
+            start_line,
+            start_column,
+            end_line,
+            end_column,
+            preview,
+        }
+    }
+}
+
+fn eprint(message: &str, file_location: &FileLocation) {
+    eprintln!("\u{1B}[91;1mError\u{1B}[97;1m: {}\u{1B}[0m", message);
+    eprintln!(
+        "    \u{1B}[94m-->\u{1B}[0m {}:{}:{}",
+        file_location.path.to_str().unwrap(),
+        file_location.start_line,
+        file_location.start_column
+    );
+    eprintln!("\u{1B}[94m     |\u{1B}[0m");
+    for (i, line) in file_location.preview.iter().enumerate() {
+        eprint!(
+            "\u{1B}[94m{:>4} |\u{1B}[0m {}",
+            i + file_location.start_line,
+            line
+        );
+    }
+    eprintln!("\u{1B}[94m     |\u{1B}[0m");
+    eprintln!();
 }

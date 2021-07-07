@@ -53,28 +53,28 @@ pub enum BlockBuilder<'a> {
 }
 
 impl<'a> BlockBuilder<'a> {
-    fn from_pest(pair: Pair<Rule>, location: &mut BlockLocation) -> Self {
+    fn from_pest(path: &Path, pair: Pair<Rule>, location: &mut BlockLocation) -> Self {
         let location = location.next_block();
 
         match pair.as_rule() {
-            Rule::system_block => Self::System(SystemBuilder::from_pest(pair, location)),
-            Rule::type_block => Self::Type(TypeBuilder::from_pest(pair, location)),
-            Rule::symbol_block => Self::Symbol(SymbolBuilder::from_pest(pair, location)),
+            Rule::system_block => Self::System(SystemBuilder::from_pest(path, pair, location)),
+            Rule::type_block => Self::Type(TypeBuilder::from_pest(path, pair, location)),
+            Rule::symbol_block => Self::Symbol(SymbolBuilder::from_pest(path, pair, location)),
             Rule::definition_block => {
-                Self::Definition(DefinitionBuilder::from_pest(pair, location))
+                Self::Definition(DefinitionBuilder::from_pest(path, pair, location))
             }
-            Rule::axiom_block => Self::Axiom(AxiomBuilder::from_pest(pair, location)),
-            Rule::theorem_block => Self::Theorem(TheoremBuilder::from_pest(pair, location)),
-            Rule::proof_block => Self::Proof(ProofBuilder::from_pest(pair, location)),
+            Rule::axiom_block => Self::Axiom(AxiomBuilder::from_pest(path, pair, location)),
+            Rule::theorem_block => Self::Theorem(TheoremBuilder::from_pest(path, pair, location)),
+            Rule::proof_block => Self::Proof(ProofBuilder::from_pest(path, pair, location)),
 
-            Rule::ul_block => Self::List(ListBuilder::from_pest(pair, false, location)),
-            Rule::ol_block => Self::List(ListBuilder::from_pest(pair, true, location)),
+            Rule::ul_block => Self::List(ListBuilder::from_pest(path, pair, false, location)),
+            Rule::ol_block => Self::List(ListBuilder::from_pest(path, pair, true, location)),
 
-            Rule::table_block => Self::Table(TableBuilder::from_pest(pair, location)),
+            Rule::table_block => Self::Table(TableBuilder::from_pest(path, pair, location)),
             Rule::quote_block => Self::Quote(QuoteBuilder::from_pest(pair, location)),
-            Rule::todo_block => Self::Todo(TodoBuilder::from_pest(pair)),
+            Rule::todo_block => Self::Todo(TodoBuilder::from_pest(path, pair)),
             Rule::heading_block => Self::Heading(HeadingBuilder::from_pest(pair)),
-            Rule::text_block => Self::Text(TextBlockBuilder::from_pest(pair, location)),
+            Rule::text_block => Self::Text(TextBlockBuilder::from_pest(path, pair, location)),
 
             _ => unreachable!(),
         }
@@ -311,7 +311,7 @@ impl<'a> PageBuilder<'a> {
             .filter_map(|pair| match pair.as_rule() {
                 Rule::EOI => None,
 
-                _ => Some(BlockBuilder::from_pest(pair, location)),
+                _ => Some(BlockBuilder::from_pest(&page_path, pair, location)),
             })
             .collect();
 
@@ -414,7 +414,8 @@ impl<'a> ChapterBuilder<'a> {
         let string_contents = string.into_inner().next().unwrap();
         let name = string_contents.as_str().to_owned();
 
-        let tagline = ParagraphBuilder::from_pest(inner.next().unwrap());
+        let path: PathBuf = [library_path, Path::new("manifest.math")].iter().collect();
+        let tagline = ParagraphBuilder::from_pest(&path, inner.next().unwrap());
 
         let pages = inner
             .map(|pair| PageBuilder::from_pest(pair, library_path, book_id, &id, location, errors))
@@ -527,7 +528,8 @@ impl<'a> BookBuilder<'a> {
         let string_contents = string.into_inner().next().unwrap();
         let name = string_contents.as_str().to_owned();
 
-        let tagline = ParagraphBuilder::from_pest(inner.next().unwrap());
+        let path: PathBuf = [library_path, Path::new("manifest.math")].iter().collect();
+        let tagline = ParagraphBuilder::from_pest(&path, inner.next().unwrap());
 
         let chapters = inner
             .map(|pair| ChapterBuilder::from_pest(pair, library_path, &id, location, errors))
