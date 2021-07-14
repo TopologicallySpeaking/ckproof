@@ -46,7 +46,7 @@ pub struct Document<'a> {
 }
 
 impl<'a> Document<'a> {
-    pub fn new(books: Vec<Book<'a>>, bibliography: Bibliography) -> Self {
+    pub(crate) fn new(books: Vec<Book<'a>>, bibliography: Bibliography) -> Self {
         Document {
             books,
             bibliography,
