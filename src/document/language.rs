@@ -18,10 +18,10 @@ use std::lazy::OnceCell;
 use crate::map_ident;
 use crate::rendered::{DefinitionRendered, Denoted, DenotedStyle, SymbolRendered, TypeRendered};
 
-use crate::deduction::directory::{
+use crate::core::directory::{
     DefinitionRef, LocalCheckableDirectory, SymbolRef, SystemRef, TypeRef, VariableRef,
 };
-use crate::deduction::language::{Definition, Formula, Symbol, Type, TypeSignature, Variable};
+use crate::core::language::{Definition, Formula, Symbol, Type, TypeSignature, Variable};
 
 use super::structure::{DefinitionBlockRef, SymbolBlockRef, SystemBlockRef, TypeBlockRef};
 use super::text::{MathBlock, MathElement, Paragraph, Text};

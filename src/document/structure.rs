@@ -16,8 +16,8 @@
 use std::lazy::OnceCell;
 use std::ops::Index;
 
-use crate::deduction::language::{Definition, Symbol, Type};
-use crate::deduction::system::{Axiom, Proof, System, Theorem};
+use crate::core::language::{Definition, Symbol, Type};
+use crate::core::system::{Axiom, Proof, System, Theorem};
 use crate::rendered::{BlockRendered, BookRendered, ChapterRendered, PageRendered};
 
 use super::bibliography::LocalBibliography;

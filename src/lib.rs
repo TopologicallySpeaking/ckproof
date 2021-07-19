@@ -21,7 +21,7 @@ use pest::Span;
 use std::path::{Path, PathBuf};
 
 pub mod builders;
-pub mod deduction;
+pub mod core;
 pub mod document;
 pub mod rendered;
 

@@ -15,7 +15,7 @@
 
 use std::ops::Index;
 
-use crate::deduction::directory::CheckableDirectory;
+use crate::core::directory::CheckableDirectory;
 use crate::rendered::DocumentRendered;
 
 pub(crate) mod bibliography;

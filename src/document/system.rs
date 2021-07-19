@@ -20,10 +20,10 @@ use crate::rendered::{
     ProofRenderedStep, SystemRendered,
 };
 
-use crate::deduction::directory::{
+use crate::core::directory::{
     AxiomRef, HypothesisRef, LocalCheckableDirectory, SystemRef, TheoremRef,
 };
-use crate::deduction::system::{Axiom, Proof, ProofJustification, ProofStep, System, Theorem};
+use crate::core::system::{Axiom, Proof, ProofJustification, ProofStep, System, Theorem};
 use crate::rendered::TheoremRendered;
 
 use super::language::{DisplayFormulaBlock, FormulaBlock, VariableBlock};
