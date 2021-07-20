@@ -179,7 +179,7 @@ heading_level = _{ heading_l3 | heading_l2 | heading_l1 }
 heading_l1 = { "#" }
 heading_l2 = { "##" }
 heading_l3 = { "###" }
-heading_whitespace = { heading_whitespace_silent* }
+heading_whitespace = { heading_whitespace_silent+ }
 heading_whitespace_silent = _{ !"\n" ~ WHITE_SPACE }
 
 type_signature = { type_signature_item ~ ("->" ~ type_signature_item)* }
