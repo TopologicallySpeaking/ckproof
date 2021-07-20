@@ -20,12 +20,10 @@ use crate::rendered::{
     ProofRenderedStep, SystemRendered,
 };
 
-use crate::core::directory::{
-    AxiomRef, HypothesisRef, LocalCheckableDirectory, SystemRef, TheoremRef,
-};
 use crate::core::system::{Axiom, Proof, ProofJustification, ProofStep, System, Theorem};
 use crate::rendered::TheoremRendered;
 
+use super::errors::DocumentCheckingErrorContext;
 use super::language::{DisplayFormulaBlock, FormulaBlock, VariableBlock};
 use super::structure::{DeductableBlockRef, SystemBlockRef, TheoremBlockRef};
 use super::text::{BareText, MathBlock, Paragraph, Text};
@@ -37,11 +35,10 @@ pub struct SystemBlock<'a> {
     tagline: Paragraph<'a>,
     description: Vec<Text<'a>>,
 
-    // TODO: Remove.
-    href: String,
+    checkable: System,
 
     // TODO: Remove.
-    count: OnceCell<usize>,
+    href: String,
 }
 
 impl<'a> SystemBlock<'a> {
@@ -52,15 +49,17 @@ impl<'a> SystemBlock<'a> {
         description: Vec<Text<'a>>,
         href: String,
     ) -> Self {
+        let checkable = System::new(id.clone());
+
         SystemBlock {
             id,
             name,
             tagline,
             description,
 
-            href,
+            checkable,
 
-            count: OnceCell::new(),
+            href,
         }
     }
 
@@ -72,29 +71,16 @@ impl<'a> SystemBlock<'a> {
         }
     }
 
+    pub fn checkable(&self) -> &System {
+        &self.checkable
+    }
+
     pub fn id(&self) -> &str {
         &self.id
     }
 
     pub fn name(&self) -> &str {
         &self.name
-    }
-
-    // TODO: Remove.
-    pub fn count(&self, count: usize) {
-        self.count.set(count).unwrap()
-    }
-
-    // TODO: Remove.
-    pub fn index(&self) -> usize {
-        *self.count.get().unwrap()
-    }
-
-    // TODO: Remove.
-    pub fn checkable(&self) -> System {
-        let id = self.id.clone();
-
-        System::new(id)
     }
 
     // TODO: Remove.
@@ -132,8 +118,7 @@ pub struct AxiomBlock<'a> {
     premise: Vec<DisplayFormulaBlock<'a>>,
     assertion: DisplayFormulaBlock<'a>,
 
-    // TODO: Remove.
-    count: OnceCell<usize>,
+    checkable: Axiom<'a>,
 
     // TODO: Remove.
     href: String,
@@ -151,6 +136,8 @@ impl<'a> AxiomBlock<'a> {
         assertion: DisplayFormulaBlock<'a>,
         href: String,
     ) -> Self {
+        let checkable = Axiom::new(id.clone());
+
         AxiomBlock {
             id,
             name,
@@ -164,7 +151,7 @@ impl<'a> AxiomBlock<'a> {
             premise,
             assertion,
 
-            count: OnceCell::new(),
+            checkable,
 
             href,
         }
@@ -172,6 +159,7 @@ impl<'a> AxiomBlock<'a> {
 
     pub fn crosslink(&'a self, document: &'a Document<'a>) {
         self.system_ref.crosslink(document);
+        self.checkable.set_system(self.system_ref.checkable());
 
         self.tagline.crosslink(document);
         for text in &self.description {
@@ -181,36 +169,27 @@ impl<'a> AxiomBlock<'a> {
         for var in &self.vars {
             var.crosslink(document);
         }
+
         for hypothesis in &self.premise {
             hypothesis.crosslink(document, &self.vars);
         }
+        self.checkable.set_premise(
+            self.premise
+                .iter()
+                .map(DisplayFormulaBlock::checkable)
+                .collect(),
+        );
+
         self.assertion.crosslink(document, &self.vars);
+        self.checkable.set_assertion(self.assertion.checkable());
     }
 
-    // TODO: Remove.
-    pub fn count(&self, count: usize) {
-        self.count.set(count).unwrap()
+    pub fn verify(&self) {
+        assert!(self.checkable.verify());
     }
 
-    // TODO: Remove.
-    pub fn index(&self) -> usize {
-        *self.count.get().unwrap()
-    }
-
-    // TODO: Remove.
-    pub fn checkable(&self) -> Axiom {
-        let id = self.id.clone();
-        let system_ref = SystemRef::new(self.system_ref.index());
-        let local_directory =
-            LocalCheckableDirectory::new(self.vars.iter().map(VariableBlock::checkable).collect());
-        let premise = self
-            .premise
-            .iter()
-            .map(DisplayFormulaBlock::checkable)
-            .collect();
-        let assertion = self.assertion.checkable();
-
-        Axiom::new(id, system_ref, local_directory, premise, assertion)
+    pub fn checkable(&'a self) -> &Axiom {
+        &self.checkable
     }
 
     // TODO: Remove.
@@ -289,8 +268,7 @@ pub struct TheoremBlock<'a> {
     premise: Vec<DisplayFormulaBlock<'a>>,
     assertion: DisplayFormulaBlock<'a>,
 
-    // TODO: Remove.
-    count: OnceCell<usize>,
+    checkable: Theorem<'a>,
 
     // TODO: Remove.
     href: String,
@@ -309,6 +287,8 @@ impl<'a> TheoremBlock<'a> {
         assertion: DisplayFormulaBlock<'a>,
         href: String,
     ) -> Self {
+        let checkable = Theorem::new(id.clone());
+
         TheoremBlock {
             kind,
             id,
@@ -323,7 +303,7 @@ impl<'a> TheoremBlock<'a> {
             premise,
             assertion,
 
-            count: OnceCell::new(),
+            checkable,
 
             href,
         }
@@ -331,6 +311,7 @@ impl<'a> TheoremBlock<'a> {
 
     pub fn crosslink(&'a self, document: &'a Document<'a>) {
         self.system_ref.crosslink(document);
+        self.checkable.set_system(self.system_ref.checkable());
 
         self.tagline.crosslink(document);
         for text in &self.description {
@@ -340,40 +321,31 @@ impl<'a> TheoremBlock<'a> {
         for var in &self.vars {
             var.crosslink(document);
         }
+
         for hypothesis in &self.premise {
             hypothesis.crosslink(document, &self.vars);
         }
+        self.checkable.set_premise(
+            self.premise
+                .iter()
+                .map(DisplayFormulaBlock::checkable)
+                .collect(),
+        );
+
         self.assertion.crosslink(document, &self.vars);
+        self.checkable.set_assertion(self.assertion.checkable());
     }
 
     pub fn vars(&self) -> &[VariableBlock<'a>] {
         &self.vars
     }
 
-    // TODO: Remove.
-    pub fn count(&self, count: usize) {
-        self.count.set(count).unwrap()
+    pub fn verify(&self) {
+        assert!(self.checkable.verify());
     }
 
-    // TODO: Remove.
-    pub fn index(&self) -> usize {
-        *self.count.get().unwrap()
-    }
-
-    // TODO: Remove.
-    pub fn checkable(&self) -> Theorem {
-        let id = self.id.clone();
-        let system_ref = SystemRef::new(self.system_ref.index());
-        let local_directory =
-            LocalCheckableDirectory::new(self.vars.iter().map(VariableBlock::checkable).collect());
-        let premise = self
-            .premise
-            .iter()
-            .map(DisplayFormulaBlock::checkable)
-            .collect();
-        let assertion = self.assertion.checkable();
-
-        Theorem::new(id, system_ref, local_directory, premise, assertion)
+    pub fn checkable(&'a self) -> &Theorem {
+        &self.checkable
     }
 
     // TODO: Remove.
@@ -463,27 +435,20 @@ pub enum ProofBlockSmallJustification<'a> {
 }
 
 impl<'a> ProofBlockSmallJustification<'a> {
-    // TODO: Remove.
-    fn checkable(&self) -> ProofJustification {
-        match self {
-            Self::Deductable(deductable_ref) => match deductable_ref {
-                DeductableBlockRef::Axiom(axiom_ref) => {
-                    ProofJustification::Axiom(AxiomRef::new(axiom_ref.index()))
-                }
-                DeductableBlockRef::Theorem(theorem_ref) => {
-                    ProofJustification::Theorem(TheoremRef::new(theorem_ref.index()))
-                }
-            },
-            Self::Hypothesis(i) => ProofJustification::Hypothesis(HypothesisRef::new(*i - 1)),
-            Self::Definition => ProofJustification::Definition,
-        }
-    }
-}
-
-impl<'a> ProofBlockSmallJustification<'a> {
     fn crosslink(&'a self, document: &'a Document<'a>) {
         if let Self::Deductable(deductable_ref) = self {
             deductable_ref.crosslink(document);
+        }
+    }
+
+    fn checkable(&'a self) -> ProofJustification {
+        match self {
+            Self::Deductable(deductable_ref) => {
+                ProofJustification::Deductable(deductable_ref.checkable())
+            }
+            Self::Hypothesis(i) => ProofJustification::Hypothesis(*i - 1),
+
+            Self::Definition => ProofJustification::Definition,
         }
     }
 }
@@ -506,8 +471,7 @@ impl<'a> ProofBlockSmallStep<'a> {
         self.formula.crosslink(document, vars);
     }
 
-    // TODO: Remove.
-    fn checkable(&self) -> ProofStep {
+    fn checkable(&'a self) -> ProofStep {
         let justification = self.justification.checkable();
         let formula = self.formula.checkable();
 
@@ -563,8 +527,7 @@ impl<'a> ProofBlockStep<'a> {
         }
     }
 
-    // TODO: Remove.
-    fn checkable(&'a self) -> impl Iterator<Item = ProofStep> + '_ {
+    fn checkable(&'a self) -> impl Iterator<Item = ProofStep> {
         self.small_steps.iter().map(ProofBlockSmallStep::checkable)
     }
 
@@ -645,8 +608,7 @@ impl<'a> ProofBlockElement<'a> {
         }
     }
 
-    // TODO: Remove.
-    fn checkable(&'a self) -> Option<impl Iterator<Item = ProofStep> + '_> {
+    fn checkable(&'a self) -> Option<impl Iterator<Item = ProofStep>> {
         self.step().map(ProofBlockStep::checkable)
     }
 
@@ -664,8 +626,7 @@ pub struct ProofBlock<'a> {
 
     elements: Vec<ProofBlockElement<'a>>,
 
-    // TODO: Remove.
-    count: OnceCell<usize>,
+    checkable: OnceCell<Proof<'a>>,
 }
 
 impl<'a> ProofBlock<'a> {
@@ -675,7 +636,7 @@ impl<'a> ProofBlock<'a> {
 
             elements,
 
-            count: OnceCell::new(),
+            checkable: OnceCell::new(),
         }
     }
 
@@ -686,24 +647,25 @@ impl<'a> ProofBlock<'a> {
         for element in &self.elements {
             element.crosslink(document, vars, self);
         }
-    }
 
-    // TODO: Remove.
-    pub fn count(&self, count: usize) {
-        self.count.set(count).unwrap()
-    }
-
-    // TODO: Remove.
-    pub fn checkable(&'a self) -> Proof {
-        let theorem_ref = TheoremRef::new(self.theorem_ref.index());
+        let theorem = self.theorem_ref.checkable();
         let steps = self
             .elements
             .iter()
             .filter_map(ProofBlockElement::checkable)
             .flatten()
             .collect();
+        self.checkable.set(Proof::new(theorem, steps)).unwrap();
+    }
 
-        Proof::new(theorem_ref, steps)
+    pub fn verify(&self) {
+        assert!(self.checkable.get().unwrap().verify());
+    }
+
+    pub fn check(&'a self, errors: &mut DocumentCheckingErrorContext) {
+        for error in self.checkable.get().unwrap().check() {
+            todo!("{:#?}", error)
+        }
     }
 
     // TODO: Remove.

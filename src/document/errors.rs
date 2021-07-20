@@ -13,15 +13,27 @@
 // You should have received a copy of the GNU Affero General Public License along with ckproof. If
 // not, see <https://www.gnu.org/licenses/>.
 
-#[derive(Debug)]
-pub enum CheckingError {
-    EmptyProof,
-    AssertionMismatch,
+pub enum DocumentCheckingError {}
 
-    DeductableAssertionNotSubstitutable(usize),
-    DeductableNotSubstitutable(usize),
+#[derive(Default)]
+pub struct DocumentCheckingErrorContext {
+    errors: Vec<DocumentCheckingError>,
+}
 
-    HypothesisMismatch(usize),
+impl DocumentCheckingErrorContext {
+    pub fn new() -> Self {
+        Self::default()
+    }
 
-    DefinitionMismatch(usize),
+    pub fn err<E: Into<DocumentCheckingError>>(&mut self, e: E) {
+        self.errors.push(e.into());
+    }
+
+    pub fn error_found(&self) -> bool {
+        !self.errors.is_empty()
+    }
+
+    pub fn eprint(&self) {
+        todo!()
+    }
 }

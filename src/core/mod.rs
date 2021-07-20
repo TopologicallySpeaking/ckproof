@@ -15,7 +15,6 @@
 
 mod substitution;
 
-pub mod directory;
 pub mod errors;
 pub mod language;
 pub mod system;

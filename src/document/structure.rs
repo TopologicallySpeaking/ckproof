@@ -17,10 +17,11 @@ use std::lazy::OnceCell;
 use std::ops::Index;
 
 use crate::core::language::{Definition, Symbol, Type};
-use crate::core::system::{Axiom, Proof, System, Theorem};
+use crate::core::system::{Axiom, DeductableRef, System, Theorem};
 use crate::rendered::{BlockRendered, BookRendered, ChapterRendered, PageRendered};
 
 use super::bibliography::LocalBibliography;
+use super::errors::DocumentCheckingErrorContext;
 use super::language::{DefinitionBlock, SymbolBlock, TypeBlock, VariableBlock};
 use super::system::{AxiomBlock, ProofBlock, SystemBlock, TheoremBlock};
 use super::text::{
@@ -134,6 +135,23 @@ impl<'a> Block<'a> {
         }
     }
 
+    fn verify(&self) {
+        match self {
+            Self::Definition(definition_ref) => definition_ref.verify(),
+            Self::Axiom(axiom_ref) => axiom_ref.verify(),
+            Self::Theorem(theorem_ref) => theorem_ref.verify(),
+            Self::Proof(proof_ref) => proof_ref.verify(),
+
+            _ => {}
+        }
+    }
+
+    fn check(&'a self, errors: &mut DocumentCheckingErrorContext) {
+        if let Self::Proof(proof_ref) = self {
+            proof_ref.check(errors);
+        }
+    }
+
     fn system(&self) -> Option<&SystemBlock<'a>> {
         match self {
             Self::System(system_ref) => Some(system_ref),
@@ -179,66 +197,6 @@ impl<'a> Block<'a> {
             Self::Theorem(theorem_ref) => Some(theorem_ref),
 
             _ => None,
-        }
-    }
-
-    // TODO: Remove.
-    fn count(&self, counter: &mut super::Counter) {
-        match self {
-            Self::System(system_ref) => {
-                system_ref.count(counter.systems);
-                counter.systems += 1;
-            }
-            Self::Type(type_ref) => {
-                type_ref.count(counter.types);
-                counter.types += 1;
-            }
-            Self::Symbol(symbol_ref) => {
-                symbol_ref.count(counter.symbols);
-                counter.symbols += 1;
-            }
-            Self::Definition(definition_ref) => {
-                definition_ref.count(counter.definitions);
-                counter.definitions += 1;
-            }
-            Self::Axiom(axiom_ref) => {
-                axiom_ref.count(counter.axioms);
-                counter.axioms += 1;
-            }
-            Self::Theorem(theorem_ref) => {
-                theorem_ref.count(counter.theorems);
-                counter.theorems += 1;
-            }
-            Self::Proof(proof_ref) => {
-                proof_ref.count(counter.proofs);
-                counter.proofs += 1;
-            }
-
-            _ => {}
-        }
-    }
-
-    // TODO: Remove.
-    fn populate_checkable(
-        &'a self,
-        systems: &mut Vec<System>,
-        types: &mut Vec<Type>,
-        symbols: &mut Vec<Symbol>,
-        definitions: &mut Vec<Definition>,
-        axioms: &mut Vec<Axiom>,
-        theorems: &mut Vec<Theorem>,
-        proofs: &mut Vec<Proof>,
-    ) {
-        match self {
-            Self::System(system_ref) => systems.push(system_ref.checkable()),
-            Self::Type(type_ref) => types.push(type_ref.checkable()),
-            Self::Symbol(symbol_ref) => symbols.push(symbol_ref.checkable()),
-            Self::Definition(definition_ref) => definitions.push(definition_ref.checkable()),
-            Self::Axiom(axiom_ref) => axioms.push(axiom_ref.checkable()),
-            Self::Theorem(theorem_ref) => theorems.push(theorem_ref.checkable()),
-            Self::Proof(proof_ref) => proofs.push(proof_ref.checkable()),
-
-            _ => {}
         }
     }
 
@@ -374,17 +332,16 @@ impl<'a> SystemBlockRef<'a> {
         self.block.set(block).unwrap();
     }
 
+    pub fn checkable(&self) -> &System {
+        self.block.get().unwrap().checkable()
+    }
+
     pub fn id(&self) -> &str {
         self.block.get().unwrap().id()
     }
 
     pub fn name(&self) -> &str {
         self.block.get().unwrap().name()
-    }
-
-    // TODO: Remove.
-    pub fn index(&self) -> usize {
-        self.block.get().unwrap().index()
     }
 
     // TODO: Remove.
@@ -411,13 +368,12 @@ impl<'a> TypeBlockRef<'a> {
         self.block.set(block).unwrap();
     }
 
-    pub fn id(&self) -> &str {
-        self.block.get().unwrap().id()
+    pub fn checkable(&'a self) -> &Type {
+        self.block.get().unwrap().checkable()
     }
 
-    // TODO: Remove.
-    pub fn index(&self) -> usize {
-        self.block.get().unwrap().index()
+    pub fn id(&self) -> &str {
+        self.block.get().unwrap().id()
     }
 }
 
@@ -439,9 +395,8 @@ impl<'a> SymbolBlockRef<'a> {
         self.block.set(block).unwrap();
     }
 
-    // TODO: Remove.
-    pub fn index(&self) -> usize {
-        self.block.get().unwrap().index()
+    pub fn checkable(&'a self) -> &Symbol {
+        self.block.get().unwrap().checkable()
     }
 
     pub fn name(&self) -> &str {
@@ -467,9 +422,8 @@ impl<'a> DefinitionBlockRef<'a> {
         self.block.set(block).unwrap();
     }
 
-    // TODO: Remove.
-    pub fn index(&self) -> usize {
-        self.block.get().unwrap().index()
+    pub fn checkable(&'a self) -> &Definition {
+        self.block.get().unwrap().checkable()
     }
 
     pub fn name(&self) -> &str {
@@ -495,9 +449,8 @@ impl<'a> AxiomBlockRef<'a> {
         self.block.set(block).unwrap();
     }
 
-    // TODO: Remove.
-    pub fn index(&self) -> usize {
-        self.block.get().unwrap().index()
+    pub fn checkable(&'a self) -> &Axiom {
+        self.block.get().unwrap().checkable()
     }
 
     pub fn name(&self) -> &str {
@@ -531,9 +484,8 @@ impl<'a> TheoremBlockRef<'a> {
         self.block.get().unwrap().vars()
     }
 
-    // TODO: Remove.
-    pub fn index(&self) -> usize {
-        self.block.get().unwrap().index()
+    pub fn checkable(&'a self) -> &Theorem {
+        self.block.get().unwrap().checkable()
     }
 
     pub fn name(&self) -> &str {
@@ -555,6 +507,13 @@ impl<'a> DeductableBlockRef<'a> {
         match self {
             Self::Axiom(axiom_ref) => axiom_ref.crosslink(document),
             Self::Theorem(theorem_ref) => theorem_ref.crosslink(document),
+        }
+    }
+
+    pub fn checkable(&'a self) -> DeductableRef {
+        match self {
+            Self::Axiom(axiom_ref) => DeductableRef::Axiom(axiom_ref.checkable()),
+            Self::Theorem(theorem_ref) => DeductableRef::Theorem(theorem_ref.checkable()),
         }
     }
 
@@ -612,34 +571,15 @@ impl<'a> Page<'a> {
         }
     }
 
-    // TODO: Remove.
-    pub fn count(&self, counter: &mut super::Counter) {
+    fn verify(&self) {
         for block in &self.blocks {
-            block.count(counter);
+            block.verify();
         }
     }
 
-    // TODO: Remove.
-    fn populate_checkable(
-        &'a self,
-        systems: &mut Vec<System>,
-        types: &mut Vec<Type>,
-        symbols: &mut Vec<Symbol>,
-        definitions: &mut Vec<Definition>,
-        axioms: &mut Vec<Axiom>,
-        theorems: &mut Vec<Theorem>,
-        proofs: &mut Vec<Proof>,
-    ) {
+    fn check(&'a self, errors: &mut DocumentCheckingErrorContext) {
         for block in &self.blocks {
-            block.populate_checkable(
-                systems,
-                types,
-                symbols,
-                definitions,
-                axioms,
-                theorems,
-                proofs,
-            );
+            block.check(errors);
         }
     }
 
@@ -723,34 +663,15 @@ impl<'a> Chapter<'a> {
         }
     }
 
-    // TODO: Remove.
-    pub fn count(&self, counter: &mut super::Counter) {
+    fn verify(&self) {
         for page in &self.pages {
-            page.count(counter);
+            page.verify();
         }
     }
 
-    // TODO: Remove.
-    fn populate_checkable(
-        &'a self,
-        systems: &mut Vec<System>,
-        types: &mut Vec<Type>,
-        symbols: &mut Vec<Symbol>,
-        definitions: &mut Vec<Definition>,
-        axioms: &mut Vec<Axiom>,
-        theorems: &mut Vec<Theorem>,
-        proofs: &mut Vec<Proof>,
-    ) {
+    fn check(&'a self, errors: &mut DocumentCheckingErrorContext) {
         for page in &self.pages {
-            page.populate_checkable(
-                systems,
-                types,
-                symbols,
-                definitions,
-                axioms,
-                theorems,
-                proofs,
-            );
+            page.check(errors);
         }
     }
 
@@ -839,34 +760,15 @@ impl<'a> Book<'a> {
         }
     }
 
-    // TODO: Remove.
-    pub fn count(&self, counter: &mut super::Counter) {
+    pub fn verify(&self) {
         for chapter in &self.chapters {
-            chapter.count(counter);
+            chapter.verify();
         }
     }
 
-    // TODO: Remove.
-    pub fn populate_checkable(
-        &'a self,
-        systems: &mut Vec<System>,
-        types: &mut Vec<Type>,
-        symbols: &mut Vec<Symbol>,
-        definitions: &mut Vec<Definition>,
-        axioms: &mut Vec<Axiom>,
-        theorems: &mut Vec<Theorem>,
-        proofs: &mut Vec<Proof>,
-    ) {
+    pub fn check(&'a self, errors: &mut DocumentCheckingErrorContext) {
         for chapter in &self.chapters {
-            chapter.populate_checkable(
-                systems,
-                types,
-                symbols,
-                definitions,
-                axioms,
-                theorems,
-                proofs,
-            );
+            chapter.check(errors);
         }
     }
 

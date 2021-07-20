@@ -1770,9 +1770,9 @@ impl<'a> DefinitionBuilder<'a> {
             system_ref,
             tagline,
             description,
-            type_signature,
             display,
             inputs,
+            type_signature,
             expanded,
             href,
         )

@@ -18,9 +18,6 @@ use std::lazy::OnceCell;
 use crate::map_ident;
 use crate::rendered::{DefinitionRendered, Denoted, DenotedStyle, SymbolRendered, TypeRendered};
 
-use crate::core::directory::{
-    DefinitionRef, LocalCheckableDirectory, SymbolRef, SystemRef, TypeRef, VariableRef,
-};
 use crate::core::language::{Definition, Formula, Symbol, Type, TypeSignature, Variable};
 
 use super::structure::{DefinitionBlockRef, SymbolBlockRef, SystemBlockRef, TypeBlockRef};
@@ -36,8 +33,7 @@ pub struct TypeBlock<'a> {
     tagline: Paragraph<'a>,
     description: Vec<Text<'a>>,
 
-    // TODO: Remove.
-    count: OnceCell<usize>,
+    checkable: Type<'a>,
 }
 
 impl<'a> TypeBlock<'a> {
@@ -48,6 +44,8 @@ impl<'a> TypeBlock<'a> {
         tagline: Paragraph<'a>,
         description: Vec<Text<'a>>,
     ) -> Self {
+        let checkable = Type::new(id.clone());
+
         TypeBlock {
             id,
             name,
@@ -57,12 +55,13 @@ impl<'a> TypeBlock<'a> {
             tagline,
             description,
 
-            count: OnceCell::new(),
+            checkable,
         }
     }
 
     pub fn crosslink(&'a self, document: &'a Document<'a>) {
         self.system_ref.crosslink(document);
+        self.checkable.set_system(self.system_ref.checkable());
 
         self.tagline.crosslink(document);
         for text in &self.description {
@@ -70,22 +69,8 @@ impl<'a> TypeBlock<'a> {
         }
     }
 
-    // TODO: Remove.
-    pub fn count(&self, count: usize) {
-        self.count.set(count).unwrap()
-    }
-
-    // TODO: Remove.
-    pub fn index(&self) -> usize {
-        *self.count.get().unwrap()
-    }
-
-    // TODO: Remove.
-    pub fn checkable(&self) -> Type {
-        let id = self.id.clone();
-        let system_ref = SystemRef::new(self.system_ref.index());
-
-        Type::new(id, system_ref)
+    pub fn checkable(&'a self) -> &Type {
+        &self.checkable
     }
 
     // TODO: Remove.
@@ -128,19 +113,19 @@ impl<'a> TypeSignatureBlock<'a> {
         }
     }
 
-    fn checkable(&self) -> TypeSignature {
-        match self {
-            Self::Ground(type_ref) => TypeSignature::Ground(TypeRef::new(type_ref.index())),
-            Self::Compound(input, output) => {
-                TypeSignature::Compound(Box::new(input.checkable()), Box::new(output.checkable()))
-            }
-        }
-    }
-
     fn is_compound(&self) -> bool {
         match self {
             Self::Ground(_) => false,
             Self::Compound(_, _) => true,
+        }
+    }
+
+    fn checkable(&'a self) -> TypeSignature {
+        match self {
+            Self::Ground(type_ref) => TypeSignature::Ground(type_ref.checkable()),
+            Self::Compound(input, output) => {
+                TypeSignature::Compound(Box::new(input.checkable()), Box::new(output.checkable()))
+            }
         }
     }
 
@@ -230,8 +215,7 @@ pub struct SymbolBlock<'a> {
     type_signature: TypeSignatureBlock<'a>,
     display: Display,
 
-    // TODO: Remove.
-    count: OnceCell<usize>,
+    checkable: Symbol<'a>,
 
     // TODO: Remove.
     href: String,
@@ -248,6 +232,8 @@ impl<'a> SymbolBlock<'a> {
         display: Display,
         href: String,
     ) -> Self {
+        let checkable = Symbol::new(id.clone());
+
         SymbolBlock {
             id,
             name,
@@ -260,7 +246,7 @@ impl<'a> SymbolBlock<'a> {
             type_signature,
             display,
 
-            count: OnceCell::new(),
+            checkable,
 
             href,
         }
@@ -268,6 +254,7 @@ impl<'a> SymbolBlock<'a> {
 
     pub fn crosslink(&'a self, document: &'a Document<'a>) {
         self.system_ref.crosslink(document);
+        self.checkable.set_system(self.system_ref.checkable());
 
         self.tagline.crosslink(document);
         for text in &self.description {
@@ -275,25 +262,12 @@ impl<'a> SymbolBlock<'a> {
         }
 
         self.type_signature.crosslink(document);
+        self.checkable
+            .set_type_signature(self.type_signature.checkable());
     }
 
-    // TODO: Remove.
-    pub fn count(&self, count: usize) {
-        self.count.set(count).unwrap()
-    }
-
-    // TODO: Remove.
-    pub fn index(&self) -> usize {
-        *self.count.get().unwrap()
-    }
-
-    // TODO: Remove.
-    pub fn checkable(&self) -> Symbol {
-        let id = self.id.clone();
-        let system_ref = SystemRef::new(self.system_ref.index());
-        let type_signature = self.type_signature.checkable();
-
-        Symbol::new(id, system_ref, type_signature)
+    pub fn checkable(&'a self) -> &Symbol {
+        &self.checkable
     }
 
     // TODO: Remove.
@@ -344,13 +318,12 @@ pub struct DefinitionBlock<'a> {
     tagline: Paragraph<'a>,
     description: Vec<Text<'a>>,
 
-    type_signature: TypeSignatureBlock<'a>,
     display: Display,
     inputs: Vec<VariableBlock<'a>>,
+    type_signature: TypeSignatureBlock<'a>,
     expanded: DisplayFormulaBlock<'a>,
 
-    // TODO: Remove.
-    count: OnceCell<usize>,
+    checkable: Definition<'a>,
 
     // TODO: Remove.
     href: String,
@@ -363,12 +336,14 @@ impl<'a> DefinitionBlock<'a> {
         system_ref: SystemBlockRef<'a>,
         tagline: Paragraph<'a>,
         description: Vec<Text<'a>>,
-        type_signature: TypeSignatureBlock<'a>,
         display: Display,
         inputs: Vec<VariableBlock<'a>>,
+        type_signature: TypeSignatureBlock<'a>,
         expanded: DisplayFormulaBlock<'a>,
         href: String,
     ) -> Self {
+        let checkable = Definition::new(id.clone());
+
         DefinitionBlock {
             id,
             name,
@@ -383,7 +358,7 @@ impl<'a> DefinitionBlock<'a> {
             inputs,
             expanded,
 
-            count: OnceCell::new(),
+            checkable,
 
             href,
         }
@@ -391,48 +366,31 @@ impl<'a> DefinitionBlock<'a> {
 
     pub fn crosslink(&'a self, document: &'a Document<'a>) {
         self.system_ref.crosslink(document);
+        self.checkable.set_system(self.system_ref.checkable());
 
         self.tagline.crosslink(document);
         for text in &self.description {
             text.crosslink(document);
         }
 
-        self.type_signature.crosslink(document);
         for input in &self.inputs {
             input.crosslink(document);
         }
+        self.checkable
+            .set_inputs(self.inputs.iter().map(VariableBlock::checkable).collect());
+
+        self.type_signature.crosslink(document);
+
         self.expanded.crosslink(document, &self.inputs);
+        self.checkable.set_expanded(self.expanded.checkable());
     }
 
-    // TODO: Remove.
-    pub fn count(&self, count: usize) {
-        self.count.set(count).unwrap()
+    pub fn verify(&self) {
+        assert!(self.checkable.verify());
     }
 
-    // TODO: Remove.
-    pub fn index(&self) -> usize {
-        *self.count.get().unwrap()
-    }
-
-    // TODO: Remove.
-    pub fn checkable(&self) -> Definition {
-        let id = self.id.clone();
-        let system_ref = SystemRef::new(self.system_ref.index());
-        let local_directory = LocalCheckableDirectory::new(
-            self.inputs.iter().map(VariableBlock::checkable).collect(),
-        );
-        let inputs = (0..self.inputs.len()).map(VariableRef::new).collect();
-        let type_signature = self.type_signature.checkable();
-        let expanded = self.expanded.checkable();
-
-        Definition::new(
-            id,
-            system_ref,
-            local_directory,
-            inputs,
-            type_signature,
-            expanded,
-        )
+    pub fn checkable(&'a self) -> &Definition {
+        &self.checkable
     }
 
     // TODO: Remove.
@@ -484,23 +442,30 @@ impl<'a> std::fmt::Debug for DefinitionBlock<'a> {
 pub struct VariableBlock<'a> {
     id: String,
     type_signature: TypeSignatureBlock<'a>,
+
+    checkable: Variable<'a>,
 }
 
 impl<'a> VariableBlock<'a> {
     pub fn new(id: String, type_signature: TypeSignatureBlock<'a>) -> Self {
-        VariableBlock { id, type_signature }
+        let checkable = Variable::new(id.clone());
+
+        VariableBlock {
+            id,
+            type_signature,
+
+            checkable,
+        }
     }
 
     pub fn crosslink(&'a self, document: &'a Document<'a>) {
         self.type_signature.crosslink(document);
+        self.checkable
+            .set_type_signature(self.type_signature.checkable());
     }
 
-    // TODO: Remove.
-    pub fn checkable(&self) -> Variable {
-        let id = self.id.clone();
-        let type_signature = self.type_signature.checkable();
-
-        Variable::new(id, type_signature)
+    fn checkable(&'a self) -> &Variable {
+        &self.checkable
     }
 }
 
@@ -525,6 +490,10 @@ impl<'a> VariableBlockRef<'a> {
 
     fn crosslink(&'a self, vars: &'a [VariableBlock<'a>]) {
         self.var.set(&vars[self.index]).unwrap();
+    }
+
+    fn checkable(&'a self) -> &Variable {
+        self.var.get().unwrap().checkable()
     }
 }
 
@@ -557,19 +526,18 @@ impl<'a> FormulaBlock<'a> {
         }
     }
 
-    // TODO: Remove.
-    pub fn checkable(&self) -> Formula {
+    pub fn checkable(&'a self) -> Formula<'a> {
         match self {
-            Self::Symbol(symbol_ref) => Formula::Symbol(SymbolRef::new(symbol_ref.index())),
-            Self::Variable(variable_ref) => Formula::Variable(VariableRef::new(variable_ref.index)),
+            Self::Symbol(symbol_ref) => Formula::Symbol(symbol_ref.checkable()),
+            Self::Variable(variable_ref) => Formula::Variable(variable_ref.checkable()),
 
             Self::Application(left, right) => {
                 Formula::Application(Box::new(left.checkable()), Box::new(right.checkable()))
             }
 
             Self::Definition(definition_ref, inputs) => Formula::Definition(
-                DefinitionRef::new(definition_ref.index()),
-                inputs.iter().map(Self::checkable).collect(),
+                definition_ref.checkable(),
+                inputs.iter().map(FormulaBlock::checkable).collect(),
             ),
         }
     }
@@ -589,8 +557,7 @@ impl<'a> DisplayFormulaBlock<'a> {
         self.contents.crosslink(document, vars);
     }
 
-    // TODO: Remove.
-    pub fn checkable(&self) -> Formula {
+    pub fn checkable(&'a self) -> Formula<'a> {
         self.contents.checkable()
     }
 

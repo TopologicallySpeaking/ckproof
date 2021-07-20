@@ -13,9 +13,9 @@
 // You should have received a copy of the GNU Affero General Public License along with ckproof. If
 // not, see <https://www.gnu.org/licenses/>.
 
+use std::lazy::OnceCell;
 use std::ops::Index;
 
-use crate::core::directory::CheckableDirectory;
 use crate::rendered::DocumentRendered;
 
 pub(crate) mod bibliography;
@@ -24,25 +24,17 @@ pub(crate) mod structure;
 pub(crate) mod system;
 pub(crate) mod text;
 
-use bibliography::Bibliography;
-use structure::{Block, BlockLocation, Book};
+pub mod errors;
 
-// TODO: Remove.
-#[derive(Default)]
-pub struct Counter {
-    systems: usize,
-    types: usize,
-    symbols: usize,
-    definitions: usize,
-    axioms: usize,
-    theorems: usize,
-    proofs: usize,
-}
+use bibliography::Bibliography;
+use errors::DocumentCheckingErrorContext;
+use structure::{Block, BlockLocation, Book};
 
 pub struct Document<'a> {
     books: Vec<Book<'a>>,
-
     bibliography: Bibliography,
+
+    errors: OnceCell<DocumentCheckingErrorContext>,
 }
 
 impl<'a> Document<'a> {
@@ -50,6 +42,8 @@ impl<'a> Document<'a> {
         Document {
             books,
             bibliography,
+
+            errors: OnceCell::new(),
         }
     }
 
@@ -59,42 +53,26 @@ impl<'a> Document<'a> {
         }
     }
 
-    // TODO: Remove.
-    pub fn checkable(&'a self) -> CheckableDirectory {
-        let mut counter = Counter::default();
-        for book in &self.books {
-            book.count(&mut counter);
-        }
+    pub fn check(&'a self) -> Result<(), &DocumentCheckingErrorContext> {
+        let errors = self.errors.get_or_init(|| {
+            let mut errors = DocumentCheckingErrorContext::new();
 
-        // FIXME: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-        let mut systems = Vec::new();
-        let mut types = Vec::new();
-        let mut symbols = Vec::new();
-        let mut definitions = Vec::new();
-        let mut axioms = Vec::new();
-        let mut theorems = Vec::new();
-        let mut proofs = Vec::new();
-        for book in &self.books {
-            book.populate_checkable(
-                &mut systems,
-                &mut types,
-                &mut symbols,
-                &mut definitions,
-                &mut axioms,
-                &mut theorems,
-                &mut proofs,
-            );
-        }
+            for book in &self.books {
+                book.verify();
+            }
 
-        CheckableDirectory::new(
-            systems,
-            types,
-            symbols,
-            definitions,
-            axioms,
-            theorems,
-            proofs,
-        )
+            for book in &self.books {
+                book.check(&mut errors);
+            }
+
+            errors
+        });
+
+        if errors.error_found() {
+            Err(errors)
+        } else {
+            Ok(())
+        }
     }
 
     // TODO: Remove.

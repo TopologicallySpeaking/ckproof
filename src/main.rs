@@ -19,6 +19,7 @@ use ckproof::builders::ManifestBuilder;
 use ckproof::document::Document;
 
 const RET_BUILDER_ERR: i32 = 1;
+const RET_CHECKER_ERR: i32 = 2;
 
 fn get_document(path: &str) -> Result<Document, i32> {
     let builder = ManifestBuilder::from_lib(path);
@@ -37,12 +38,11 @@ fn main_real() -> Result<(), i32> {
 
     let document = get_document(&args[1])?;
     document.crosslink();
+    document.check().map_err(|errors| {
+        errors.eprint();
 
-    let checkable = document.checkable();
-    let checking_errors = checkable.check();
-    if checking_errors.error_found() {
-        todo!("{:#?}", checking_errors)
-    }
+        RET_CHECKER_ERR
+    })?;
 
     let rendered = document.render();
     let out_file = std::fs::File::create(&args[2]).unwrap();

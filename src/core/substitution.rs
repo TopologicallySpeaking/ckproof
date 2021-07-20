@@ -13,26 +13,21 @@
 // You should have received a copy of the GNU Affero General Public License along with ckproof. If
 // not, see <https://www.gnu.org/licenses/>.
 
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
-use std::iter::FromIterator;
 use std::ops::Index;
 
-use super::directory::{CheckableDirectory, VariableRef};
-use super::language::Formula;
+use super::language::{Formula, Variable};
 
 #[derive(Debug)]
 pub struct Substitution<'a> {
-    map: HashMap<VariableRef, &'a Formula>,
+    map: HashMap<&'a Variable<'a>, &'a Formula<'a>>,
 }
 
 impl<'a> Substitution<'a> {
-    pub fn new(
-        template: &'a Formula,
-        target: &'a Formula,
-        directory: &CheckableDirectory,
-    ) -> Option<Self> {
+    pub fn new(template: &Formula<'a>, target: &'a Formula<'a>) -> Option<Self> {
         let mut stack = vec![(template, target)];
-        let mut map = HashMap::new();
+        let mut map = HashMap::<&Variable, &Formula>::new();
 
         while let Some((template, target)) = stack.pop() {
             match template {
@@ -42,14 +37,23 @@ impl<'a> Substitution<'a> {
                     }
                 }
 
-                Formula::Variable(variable_ref) => {
-                    if let Some(old_target) = map.get(variable_ref) {
-                        if !Formula::compatible(*old_target, target, directory) {
+                Formula::Variable(variable_ref) => match map.entry(*variable_ref) {
+                    Entry::Occupied(old_target) => {
+                        if !old_target.get().compatible(target) {
                             return None;
                         }
-                    } else {
-                        map.insert(*variable_ref, target);
                     }
+
+                    Entry::Vacant(slot) => {
+                        slot.insert(target);
+                    }
+                },
+
+                Formula::Application(template_function, template_input) => {
+                    let (target_function, target_input) = target.application()?;
+
+                    stack.push((template_function, target_function));
+                    stack.push((template_input, target_input));
                 }
 
                 Formula::Definition(definition_ref, inputs) => {
@@ -59,52 +63,41 @@ impl<'a> Substitution<'a> {
                         return None;
                     }
 
-                    for stack_item in inputs.iter().zip(target_inputs) {
-                        stack.push(stack_item)
+                    for next_item in inputs.iter().zip(target_inputs) {
+                        stack.push(next_item);
                     }
                 }
-
-                Formula::Application(template_function, template_input) => {
-                    let (target_function, target_input) = target.application()?;
-
-                    stack.push((template_function, target_function));
-                    stack.push((template_input, target_input));
-                }
             }
         }
 
         Some(Substitution { map })
     }
 
-    fn merge(&self, other: &Self, directory: &CheckableDirectory) -> Option<Self> {
-        for (other_var, other_formula) in other.map.iter() {
+    fn merge(&self, other: &Self) -> Option<Self> {
+        let merge_possible = other.map.iter().all(|(other_var, other_formula)| {
             if let Some(self_formula) = self.map.get(other_var) {
-                if !Formula::compatible(self_formula, other_formula, directory) {
-                    return None;
-                }
+                self_formula.compatible(other_formula)
+            } else {
+                true
             }
+        });
+
+        if merge_possible {
+            let mut map = self.map.clone();
+            map.extend(&other.map);
+
+            Some(Substitution { map })
+        } else {
+            None
         }
-
-        let mut map = self.map.clone();
-        map.extend(other.map.iter());
-
-        Some(Substitution { map })
     }
 }
 
-impl<'a> Index<VariableRef> for Substitution<'a> {
-    type Output = Formula;
+impl<'a> Index<&Variable<'a>> for Substitution<'a> {
+    type Output = Formula<'a>;
 
-    fn index(&self, variable_ref: VariableRef) -> &Self::Output {
-        self.map[&variable_ref]
-    }
-}
-
-impl<'a> FromIterator<(VariableRef, &'a Formula)> for Substitution<'a> {
-    fn from_iter<I: IntoIterator<Item = (VariableRef, &'a Formula)>>(iter: I) -> Self {
-        let map = iter.into_iter().collect();
-
-        Substitution { map }
+    fn index(&self, variable_ref: &Variable<'a>) -> &Self::Output {
+        self.map[variable_ref]
     }
 }
 
@@ -120,19 +113,20 @@ impl<'a> SubstitutionList<'a> {
         }
     }
 
-    pub fn find<I>(template: &'a Formula, possibilities: I, directory: &CheckableDirectory) -> Self
+    pub fn find<I>(template: &Formula<'a>, possibilities: I) -> Self
     where
-        I: IntoIterator<Item = &'a Formula>,
+        I: IntoIterator<Item = &'a Formula<'a>>,
     {
         let subs = possibilities
             .into_iter()
-            .filter_map(|target| Substitution::new(template, target, directory))
+            .filter_map(|target| Substitution::new(template, target))
             .collect();
 
         SubstitutionList { subs }
     }
 
-    pub fn merge(self, other: Self, directory: &CheckableDirectory) -> Self {
+    pub fn merge(self, other: Self) -> Self {
+        // All possible pairs of subs between self and other.
         let comparisons = self.subs.iter().flat_map(|self_sub| {
             other
                 .subs
@@ -140,11 +134,11 @@ impl<'a> SubstitutionList<'a> {
                 .map(move |other_sub| (self_sub, other_sub))
         });
 
-        let subs = comparisons
-            .filter_map(|(self_sub, other_sub)| self_sub.merge(other_sub, directory))
-            .collect();
-
-        SubstitutionList { subs }
+        SubstitutionList {
+            subs: comparisons
+                .filter_map(|(self_sub, other_sub)| self_sub.merge(other_sub))
+                .collect(),
+        }
     }
 
     pub fn impossible(&self) -> bool {
