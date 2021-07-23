@@ -1776,6 +1776,10 @@ impl<'a> TheoremBuilder<'a> {
         &self.id
     }
 
+    pub fn name(&self) -> &str {
+        self.entries.name()
+    }
+
     pub fn system_id(&self) -> &str {
         &self.system_id
     }
@@ -1858,7 +1862,7 @@ impl<'a> DeductableBuilder<'a> {
 }
 
 #[derive(Debug)]
-struct SystemChildJustificationBuilder<'a> {
+pub struct SystemChildJustificationBuilder<'a> {
     id: String,
 
     // TODO: Make this a DeductableBuilder instead of a SystemBuilderChild.
@@ -2000,10 +2004,14 @@ impl<'a> SystemChildJustificationBuilder<'a> {
             _ => unreachable!(),
         }
     }
+
+    pub fn id(&self) -> &str {
+        &self.id
+    }
 }
 
 #[derive(Debug)]
-enum MacroJustificationBuilder {
+pub enum MacroJustificationBuilder {
     Definition,
     Substitution,
 }
@@ -2138,7 +2146,7 @@ impl MacroJustificationBuilder {
 }
 
 #[derive(Debug)]
-enum ProofJustificationBuilder<'a> {
+pub enum ProofJustificationBuilder<'a> {
     SystemChild(SystemChildJustificationBuilder<'a>),
     Macro(MacroJustificationBuilder),
     // TODO: Create a HypothesisJustificationBuilder which references the hypothesis itself instead
@@ -2228,6 +2236,14 @@ impl<'a> ProofJustificationBuilder<'a> {
             Self::SystemChild(builder) => builder.finish(),
             Self::Macro(builder) => builder.finish(),
             Self::Hypothesis(id) => ProofBlockJustification::Hypothesis(*id),
+        }
+    }
+
+    pub fn system_child(&self) -> Option<&SystemChildJustificationBuilder<'a>> {
+        match self {
+            Self::SystemChild(builder) => Some(builder),
+
+            _ => None,
         }
     }
 }
@@ -2384,6 +2400,10 @@ impl<'a> ProofBuilderMeta<'a> {
     fn justification(&self) -> &ProofJustificationBuilder<'a> {
         assert!(self.justification_verified.get());
         &self.justifications[0]
+    }
+
+    fn justification_unchecked(&self) -> Option<&ProofJustificationBuilder<'a>> {
+        self.justifications.get(0)
     }
 }
 
@@ -2578,6 +2598,14 @@ impl<'a> ProofBuilderStep<'a> {
             href,
             tag,
         )
+    }
+
+    pub fn file_location(&self) -> &FileLocation {
+        &self.file_location
+    }
+
+    pub fn justification(&self) -> Option<&ProofJustificationBuilder<'a>> {
+        self.meta.justification_unchecked()
     }
 
     pub fn index(&self) -> usize {
@@ -2817,5 +2845,13 @@ impl<'a> ProofBuilder<'a> {
             .collect();
 
         ProofBlock::new(theorem_ref, elements)
+    }
+
+    pub fn system_id(&self) -> &str {
+        &self.system_id
+    }
+
+    pub fn theorem_name(&self) -> &str {
+        self.theorem_ref.get().unwrap().name()
     }
 }

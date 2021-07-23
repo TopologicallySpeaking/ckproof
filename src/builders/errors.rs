@@ -367,6 +367,31 @@ pub enum ProofStepParsingError<'a> {
     FormulaError(&'a FormulaBuilder<'a>, FormulaParsingError),
 }
 
+impl<'a> ProofStepParsingError<'a> {
+    fn eprint_system_child_justification_not_found(proof: &ProofBuilder, step: &ProofBuilderStep) {
+        let justification = step.justification().unwrap().system_child().unwrap();
+
+        let message = format!(
+            "A step of a proof for `{}` references `{}`, but this id doesn't correspond to any known child of the system `{}`.",
+            proof.theorem_name(),
+            justification.id(),
+            proof.system_id(),
+        );
+
+        eprint(&message, step.file_location());
+    }
+
+    fn eprint(&self, proof: &ProofBuilder, step: &ProofBuilderStep) {
+        match self {
+            Self::SystemChildJustificationNotFound => {
+                Self::eprint_system_child_justification_not_found(proof, step)
+            }
+
+            _ => todo!("{:#?}", self),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum ProofParsingError<'a> {
     ParentNotFound,
@@ -374,6 +399,16 @@ pub enum ProofParsingError<'a> {
 
     TextError(&'a TextBuilder<'a>, TextParsingError<'a>),
     StepError(&'a ProofBuilderStep<'a>, ProofStepParsingError<'a>),
+}
+
+impl<'a> ProofParsingError<'a> {
+    fn eprint(&self, proof: &ProofBuilder) {
+        match self {
+            Self::StepError(step, error) => error.eprint(proof, step),
+
+            _ => todo!("{:#?}", self),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -427,7 +462,9 @@ pub enum ParsingError<'a> {
 impl<'a> ParsingError<'a> {
     fn eprint(&self) {
         match self {
-            Self::TextError(builder, error) => error.eprint(builder),
+            Self::TextError(text, error) => error.eprint(text),
+
+            Self::ProofError(proof, error) => error.eprint(proof),
 
             _ => todo!("{:#?}", self),
         }
