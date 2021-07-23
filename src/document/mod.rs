@@ -34,7 +34,7 @@ pub struct Document<'a> {
     books: Vec<Book<'a>>,
     bibliography: Bibliography,
 
-    errors: OnceCell<DocumentCheckingErrorContext>,
+    errors: OnceCell<DocumentCheckingErrorContext<'a>>,
 }
 
 impl<'a> Document<'a> {

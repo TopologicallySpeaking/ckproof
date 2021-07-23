@@ -15,15 +15,18 @@
 
 use std::lazy::OnceCell;
 
+use crate::FileLocation;
+
 use crate::rendered::{
     AxiomRendered, ProofRendered, ProofRenderedElement, ProofRenderedJustification,
     ProofRenderedStep, SystemRendered,
 };
 
+use crate::core::errors::CheckingError;
 use crate::core::system::{Axiom, Proof, ProofJustification, ProofStep, System, Theorem};
 use crate::rendered::TheoremRendered;
 
-use super::errors::DocumentCheckingErrorContext;
+use super::errors::{DocumentCheckingError, DocumentCheckingErrorContext};
 use super::language::{DisplayFormulaBlock, FormulaBlock, VariableBlock};
 use super::structure::{DeductableBlockRef, SystemBlockRef, TheoremBlockRef};
 use super::text::{BareText, MathBlock, Paragraph, Text};
@@ -425,6 +428,14 @@ impl<'a> ProofBlockJustification<'a> {
             Self::Substitution => ProofRenderedJustification::Substitution,
         }
     }
+
+    pub fn deductable(&self) -> Option<&DeductableBlockRef<'a>> {
+        match self {
+            Self::Deductable(deductable_ref) => Some(deductable_ref),
+
+            _ => None,
+        }
+    }
 }
 
 pub enum ProofBlockSmallJustification<'a> {
@@ -480,6 +491,8 @@ impl<'a> ProofBlockSmallStep<'a> {
 }
 
 pub struct ProofBlockStep<'a> {
+    file_location: FileLocation,
+
     justification: ProofBlockJustification<'a>,
     small_steps: Vec<ProofBlockSmallStep<'a>>,
     formula: MathBlock,
@@ -497,6 +510,7 @@ pub struct ProofBlockStep<'a> {
 
 impl<'a> ProofBlockStep<'a> {
     pub fn new(
+        file_location: FileLocation,
         justification: ProofBlockJustification<'a>,
         small_steps: Vec<ProofBlockSmallStep<'a>>,
         formula: MathBlock,
@@ -506,6 +520,8 @@ impl<'a> ProofBlockStep<'a> {
         tag: usize,
     ) -> Self {
         ProofBlockStep {
+            file_location,
+
             justification,
             small_steps,
             formula,
@@ -545,6 +561,18 @@ impl<'a> ProofBlockStep<'a> {
         let tag = self.tag;
 
         ProofRenderedStep::new(id, justification, formula, end, tag)
+    }
+
+    pub fn file_location(&self) -> &FileLocation {
+        &self.file_location
+    }
+
+    pub fn justification(&self) -> &ProofBlockJustification<'a> {
+        &self.justification
+    }
+
+    fn num_small_steps(&self) -> usize {
+        self.small_steps.len()
     }
 }
 
@@ -662,9 +690,35 @@ impl<'a> ProofBlock<'a> {
         assert!(self.checkable.get().unwrap().verify());
     }
 
-    pub fn check(&'a self, errors: &mut DocumentCheckingErrorContext) {
+    fn get_step(&self, i: usize) -> Result<&ProofBlockStep<'a>, Option<&ProofBlockStep<'a>>> {
+        let mut counter = 0;
+        for element in self.elements.iter().filter_map(ProofBlockElement::step) {
+            let num_small_steps = element.num_small_steps();
+
+            if counter == i {
+                return Ok(element);
+            } else if counter + num_small_steps > i {
+                return Err(Some(element));
+            } else {
+                counter += num_small_steps
+            }
+        }
+
+        Err(None)
+    }
+
+    pub fn check(&'a self, errors: &mut DocumentCheckingErrorContext<'a>) {
         for error in self.checkable.get().unwrap().check() {
-            todo!("{:#?}", error)
+            match error {
+                CheckingError::DeductableAssertionNotSubstitutable(i) => match self.get_step(i) {
+                    Ok(step) => errors.err(
+                        DocumentCheckingError::DeductableAssertionNotSubstitutable(self, step),
+                    ),
+                    Err(step) => todo!(),
+                },
+
+                _ => todo!("{:#?}", error),
+            }
         }
     }
 
@@ -678,5 +732,9 @@ impl<'a> ProofBlock<'a> {
             .collect();
 
         ProofRendered::new(theorem_name, elements)
+    }
+
+    pub fn theorem_name(&self) -> &str {
+        self.theorem_ref.name()
     }
 }

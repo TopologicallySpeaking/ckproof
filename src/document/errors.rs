@@ -13,19 +13,48 @@
 // You should have received a copy of the GNU Affero General Public License along with ckproof. If
 // not, see <https://www.gnu.org/licenses/>.
 
-pub enum DocumentCheckingError {}
+use crate::eprint;
 
-#[derive(Default)]
-pub struct DocumentCheckingErrorContext {
-    errors: Vec<DocumentCheckingError>,
+use super::system::{ProofBlock, ProofBlockStep};
+
+pub enum DocumentCheckingError<'a> {
+    DeductableAssertionNotSubstitutable(&'a ProofBlock<'a>, &'a ProofBlockStep<'a>),
 }
 
-impl DocumentCheckingErrorContext {
+impl<'a> DocumentCheckingError<'a> {
+    fn eprint_deductable_assertion_not_substitutable(proof: &ProofBlock, step: &ProofBlockStep) {
+        let justification = step.justification().deductable().unwrap();
+
+        let message = format!(
+            "A step of a proof for `{}` does not match the assertion of `{}`, the {} meant to justify it.",
+            proof.theorem_name(),
+            justification.name(),
+            justification.kind_str()
+        );
+
+        eprint(&message, step.file_location());
+    }
+
+    fn eprint(&self) {
+        match self {
+            Self::DeductableAssertionNotSubstitutable(proof, step) => {
+                Self::eprint_deductable_assertion_not_substitutable(proof, step)
+            }
+        }
+    }
+}
+
+#[derive(Default)]
+pub struct DocumentCheckingErrorContext<'a> {
+    errors: Vec<DocumentCheckingError<'a>>,
+}
+
+impl<'a> DocumentCheckingErrorContext<'a> {
     pub fn new() -> Self {
         Self::default()
     }
 
-    pub fn err<E: Into<DocumentCheckingError>>(&mut self, e: E) {
+    pub fn err<E: Into<DocumentCheckingError<'a>>>(&mut self, e: E) {
         self.errors.push(e.into());
     }
 
@@ -34,6 +63,10 @@ impl DocumentCheckingErrorContext {
     }
 
     pub fn eprint(&self) {
-        todo!()
+        for error in &self.errors {
+            error.eprint();
+        }
+
+        eprintln!("Checker exited with errors.");
     }
 }

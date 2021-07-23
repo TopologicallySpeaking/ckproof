@@ -146,7 +146,7 @@ impl<'a> Block<'a> {
         }
     }
 
-    fn check(&'a self, errors: &mut DocumentCheckingErrorContext) {
+    fn check(&'a self, errors: &mut DocumentCheckingErrorContext<'a>) {
         if let Self::Proof(proof_ref) = self {
             proof_ref.check(errors);
         }
@@ -517,6 +517,13 @@ impl<'a> DeductableBlockRef<'a> {
         }
     }
 
+    pub fn kind_str(&self) -> &str {
+        match self {
+            Self::Axiom(_) => "axiom",
+            Self::Theorem(_) => "theorem",
+        }
+    }
+
     pub fn name(&self) -> &str {
         match self {
             Self::Axiom(axiom_ref) => axiom_ref.name(),
@@ -577,7 +584,7 @@ impl<'a> Page<'a> {
         }
     }
 
-    fn check(&'a self, errors: &mut DocumentCheckingErrorContext) {
+    fn check(&'a self, errors: &mut DocumentCheckingErrorContext<'a>) {
         for block in &self.blocks {
             block.check(errors);
         }
@@ -669,7 +676,7 @@ impl<'a> Chapter<'a> {
         }
     }
 
-    fn check(&'a self, errors: &mut DocumentCheckingErrorContext) {
+    fn check(&'a self, errors: &mut DocumentCheckingErrorContext<'a>) {
         for page in &self.pages {
             page.check(errors);
         }
@@ -766,7 +773,7 @@ impl<'a> Book<'a> {
         }
     }
 
-    pub fn check(&'a self, errors: &mut DocumentCheckingErrorContext) {
+    pub fn check(&'a self, errors: &mut DocumentCheckingErrorContext<'a>) {
         for chapter in &self.chapters {
             chapter.check(errors);
         }

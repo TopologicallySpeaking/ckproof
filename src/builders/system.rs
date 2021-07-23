@@ -21,6 +21,8 @@ use std::path::Path;
 
 use pest::iterators::{Pair, Pairs};
 
+use crate::FileLocation;
+
 use crate::document::structure::{
     AxiomBlockRef, BlockLocation, BlockRef, DeductableBlockRef, SystemBlockRef, TheoremBlockRef,
 };
@@ -2423,6 +2425,8 @@ impl<'a> ProofBuilderSmallStep<'a> {
 
 #[derive(Debug)]
 pub struct ProofBuilderStep<'a> {
+    file_location: FileLocation,
+
     index: usize,
     meta: ProofBuilderMeta<'a>,
     formula: DisplayFormulaBuilder<'a>,
@@ -2441,11 +2445,15 @@ pub struct ProofBuilderStep<'a> {
 }
 
 impl<'a> ProofBuilderStep<'a> {
-    fn from_pest(pair: Pair<Rule>, index: usize) -> Self {
+    fn from_pest(path: &Path, pair: Pair<Rule>, index: usize) -> Self {
         assert_eq!(pair.as_rule(), Rule::proof_step);
 
+        let file_location = FileLocation::new(path, pair.as_span());
+
         let mut inner = pair.into_inner();
+
         let meta = ProofBuilderMeta::from_pest(inner.next().unwrap());
+
         let formula = DisplayFormulaBuilder::from_pest(inner.next().unwrap());
 
         let end_pair = inner.next().unwrap();
@@ -2453,6 +2461,8 @@ impl<'a> ProofBuilderStep<'a> {
         let end = end_inner.as_str().to_owned();
 
         ProofBuilderStep {
+            file_location,
+
             index,
             meta,
             formula,
@@ -2539,6 +2549,8 @@ impl<'a> ProofBuilderStep<'a> {
     }
 
     fn finish<'b>(&self) -> ProofBlockStep<'b> {
+        let file_location = self.file_location.clone();
+
         let justification = self.meta.justification().finish();
         let small_steps = self
             .small_steps
@@ -2556,7 +2568,16 @@ impl<'a> ProofBuilderStep<'a> {
 
         let tag = *self.tag.get().unwrap();
 
-        ProofBlockStep::new(justification, small_steps, formula, end, id, href, tag)
+        ProofBlockStep::new(
+            file_location,
+            justification,
+            small_steps,
+            formula,
+            end,
+            id,
+            href,
+            tag,
+        )
     }
 
     pub fn index(&self) -> usize {
@@ -2574,7 +2595,7 @@ impl<'a> ProofBuilderElement<'a> {
     fn from_pest(path: &Path, pair: Pair<Rule>, index: usize) -> Self {
         match pair.as_rule() {
             Rule::text_block => Self::Text(TextBuilder::from_pest(path, pair)),
-            Rule::proof_step => Self::Step(ProofBuilderStep::from_pest(pair, index)),
+            Rule::proof_step => Self::Step(ProofBuilderStep::from_pest(path, pair, index)),
 
             _ => unreachable!(),
         }

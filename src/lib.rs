@@ -57,6 +57,7 @@ fn map_ident(ident: &str) -> &str {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct FileLocation {
     path: PathBuf,
     start_line: usize,
