@@ -402,7 +402,7 @@ pub enum ProofBlockJustification<'a> {
     Hypothesis(usize),
 
     Definition,
-    Substitution,
+    FunctionApplication,
 }
 
 impl<'a> ProofBlockJustification<'a> {
@@ -425,7 +425,7 @@ impl<'a> ProofBlockJustification<'a> {
             Self::Hypothesis(id) => ProofRenderedJustification::Hypothesis(*id),
 
             Self::Definition => ProofRenderedJustification::Definition,
-            Self::Substitution => ProofRenderedJustification::Substitution,
+            Self::FunctionApplication => ProofRenderedJustification::FunctionApplication,
         }
     }
 

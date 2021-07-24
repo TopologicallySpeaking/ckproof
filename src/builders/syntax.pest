@@ -312,10 +312,10 @@ proof_step_end = ${ ";" ~ math_punct }
 proof_justification = { macro_justification | ident }
 macro_justification = ${ "!" ~ macro_justification_kind }
 macro_justification_kind = _{
-  macro_justification_by_definition | macro_justification_by_substitution
+  macro_justification_by_definition | macro_justification_by_function_application
 }
 macro_justification_by_definition = { "def" }
-macro_justification_by_substitution = { "sub" }
+macro_justification_by_function_application = { "fun" }
 
 list_item = _{
   "<" ~ "li" ~ ">"

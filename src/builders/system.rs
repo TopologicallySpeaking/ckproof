@@ -2013,7 +2013,7 @@ impl<'a> SystemChildJustificationBuilder<'a> {
 #[derive(Debug)]
 pub enum MacroJustificationBuilder {
     Definition,
-    Substitution,
+    FunctionApplication,
 }
 
 impl MacroJustificationBuilder {
@@ -2022,13 +2022,13 @@ impl MacroJustificationBuilder {
 
         match pair.into_inner().next().unwrap().as_rule() {
             Rule::macro_justification_by_definition => Self::Definition,
-            Rule::macro_justification_by_substitution => Self::Substitution,
+            Rule::macro_justification_by_function_application => Self::FunctionApplication,
 
             _ => unreachable!(),
         }
     }
 
-    fn build_substitution_iter<'a>(
+    fn build_function_application_iter<'a>(
         left: &'a FormulaBuilder<'a>,
         right: &'a FormulaBuilder<'a>,
         relation: ReadableBuilder<'a>,
@@ -2071,7 +2071,7 @@ impl MacroJustificationBuilder {
 
             Box::new(std::iter::once(ret))
         }
-        // Test if we can use function substitution over the relation.
+        // Test if we can use function application over the relation.
         else if let (Some((left_function, left_inputs)), Some((right_function, right_inputs))) =
             (left.application(), right.application())
         {
@@ -2083,7 +2083,12 @@ impl MacroJustificationBuilder {
                 left_inputs
                     .zip(right_inputs)
                     .flat_map(move |(left_input, right_input)| {
-                        Self::build_substitution_iter(left_input, right_input, relation, prev_steps)
+                        Self::build_function_application_iter(
+                            left_input,
+                            right_input,
+                            relation,
+                            prev_steps,
+                        )
                     });
 
             if left_function != right_function {
@@ -2101,13 +2106,13 @@ impl MacroJustificationBuilder {
                 todo!()
             }
         }
-        // This statement cannot be derived by simple substitution.
+        // This statement cannot be derived by simple function application.
         else {
             todo!()
         }
     }
 
-    fn build_substitution<'a>(
+    fn build_function_application<'a>(
         formula: &'a FormulaBuilder<'a>,
         prev_steps: &'a [ProofBuilderElement<'a>],
     ) -> Option<Vec<ProofBuilderSmallStep<'a>>> {
@@ -2116,7 +2121,7 @@ impl MacroJustificationBuilder {
                 todo!()
             }
 
-            Self::build_substitution_iter(left, right, relation, prev_steps).collect()
+            Self::build_function_application_iter(left, right, relation, prev_steps).collect()
         } else {
             todo!()
         }
@@ -2133,13 +2138,13 @@ impl MacroJustificationBuilder {
                 formula: formula.clone(),
             }]),
 
-            Self::Substitution => Self::build_substitution(formula, prev_steps),
+            Self::FunctionApplication => Self::build_function_application(formula, prev_steps),
         }
     }
 
     fn finish<'b>(&self) -> ProofBlockJustification<'b> {
         match self {
-            Self::Substitution => ProofBlockJustification::Substitution,
+            Self::FunctionApplication => ProofBlockJustification::FunctionApplication,
             Self::Definition => ProofBlockJustification::Definition,
         }
     }

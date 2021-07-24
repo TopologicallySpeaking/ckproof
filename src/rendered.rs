@@ -248,7 +248,7 @@ pub enum ProofRenderedJustification {
     SystemChild(String, String),
     Hypothesis(usize),
     Definition,
-    Substitution,
+    FunctionApplication,
 }
 
 #[derive(Deserialize, Serialize, Debug)]
