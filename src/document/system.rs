@@ -246,6 +246,7 @@ impl<'a> std::fmt::Debug for AxiomBlock<'a> {
 pub enum TheoremKind {
     Lemma,
     Theorem,
+    Example,
 }
 
 impl TheoremKind {
@@ -253,6 +254,7 @@ impl TheoremKind {
         match self {
             Self::Lemma => "Lemma",
             Self::Theorem => "Theorem",
+            Self::Example => "Example",
         }
     }
 }

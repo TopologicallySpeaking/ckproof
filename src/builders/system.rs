@@ -1306,6 +1306,7 @@ impl TheoremKind {
         match pair.as_rule() {
             Rule::theorem_lemma => Self::Lemma,
             Rule::theorem_theorem => Self::Theorem,
+            Rule::theorem_example => Self::Example,
 
             _ => unreachable!(),
         }
