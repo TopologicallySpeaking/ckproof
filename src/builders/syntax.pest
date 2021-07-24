@@ -52,7 +52,9 @@ word_forbidden = {
   | "`" | "'" | "&" | "\"" | "..."
 }
 
-inline_math = _{ "\\(" ~ math_row ~ "\\)" }
+inline_math = _{
+  "\\(" ~ WHITE_SPACE* ~ math_row ~ WHITE_SPACE* ~ "\\)"
+}
 display_math = { "\\[" ~ math_row ~ display_math_end }
 display_math_end = ${ "\\]" ~ math_punct }
 math_punct = @{ PUNCTUATION* }
