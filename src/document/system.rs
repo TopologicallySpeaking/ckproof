@@ -712,6 +712,10 @@ impl<'a> ProofBlock<'a> {
     pub fn check(&'a self, errors: &mut DocumentCheckingErrorContext<'a>) {
         for error in self.checkable.get().unwrap().check() {
             match error {
+                CheckingError::AssertionMismatch => {
+                    errors.err(DocumentCheckingError::AssertionMismatch(self))
+                }
+
                 CheckingError::DeductableAssertionNotSubstitutable(i) => match self.get_step(i) {
                     Ok(step) => errors.err(
                         DocumentCheckingError::DeductableAssertionNotSubstitutable(self, step),
@@ -734,6 +738,10 @@ impl<'a> ProofBlock<'a> {
             .collect();
 
         ProofRendered::new(theorem_name, elements)
+    }
+
+    pub fn last_step(&self) -> Option<&ProofBlockStep<'a>> {
+        self.elements.iter().rev().find_map(ProofBlockElement::step)
     }
 
     pub fn theorem_name(&self) -> &str {

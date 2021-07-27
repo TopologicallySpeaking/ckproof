@@ -18,10 +18,23 @@ use crate::eprint;
 use super::system::{ProofBlock, ProofBlockStep};
 
 pub enum DocumentCheckingError<'a> {
+    AssertionMismatch(&'a ProofBlock<'a>),
+
     DeductableAssertionNotSubstitutable(&'a ProofBlock<'a>, &'a ProofBlockStep<'a>),
 }
 
 impl<'a> DocumentCheckingError<'a> {
+    fn eprint_assertion_mismatch(proof: &ProofBlock) {
+        let last_step = proof.last_step().unwrap();
+
+        let message = format!(
+            "The last step of a proof for `{}` does not match the assertion it's meant to prove.",
+            proof.theorem_name()
+        );
+
+        eprint(&message, last_step.file_location());
+    }
+
     fn eprint_deductable_assertion_not_substitutable(proof: &ProofBlock, step: &ProofBlockStep) {
         let justification = step.justification().deductable().unwrap();
 
@@ -37,6 +50,8 @@ impl<'a> DocumentCheckingError<'a> {
 
     fn eprint(&self) {
         match self {
+            Self::AssertionMismatch(proof) => Self::eprint_assertion_mismatch(proof),
+
             Self::DeductableAssertionNotSubstitutable(proof, step) => {
                 Self::eprint_deductable_assertion_not_substitutable(proof, step)
             }
