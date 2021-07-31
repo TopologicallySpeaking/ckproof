@@ -2112,6 +2112,13 @@ impl<'a> PartialEq for FormulaVariableBuilder<'a> {
 }
 impl<'a> Eq for FormulaVariableBuilder<'a> {}
 
+// TODO: Figure out how to remove this.
+pub trait ExactSizeDoubleEndedIterator: ExactSizeIterator + DoubleEndedIterator {}
+
+impl<T> ExactSizeDoubleEndedIterator for std::iter::Once<T> {}
+impl<T, const N: usize> ExactSizeDoubleEndedIterator for std::array::IntoIter<T, N> {}
+impl<T> ExactSizeDoubleEndedIterator for Box<T> where T: ExactSizeDoubleEndedIterator + ?Sized {}
+
 #[derive(Clone, Debug)]
 pub struct FormulaPrefixBuilder<'a> {
     operator: ReadOperator,
@@ -2200,7 +2207,7 @@ impl<'a> FormulaPrefixBuilder<'a> {
         &self,
     ) -> Option<(
         ReadableBuilder<'a>,
-        Box<dyn ExactSizeIterator<Item = &FormulaBuilder<'a>> + '_>,
+        Box<dyn ExactSizeDoubleEndedIterator<Item = &FormulaBuilder<'a>> + '_>,
     )> {
         let readable = *self.operator_ref.get().unwrap();
         let inputs = Box::new(std::iter::once(self.inner.as_ref()));
@@ -2328,7 +2335,7 @@ impl<'a> FormulaInfixBuilder<'a> {
         &self,
     ) -> Option<(
         ReadableBuilder<'a>,
-        Box<dyn ExactSizeIterator<Item = &FormulaBuilder<'a>> + '_>,
+        Box<dyn ExactSizeDoubleEndedIterator<Item = &FormulaBuilder<'a>> + '_>,
     )> {
         let readable = *self.operator_ref.get().unwrap();
         let inputs = Box::new(std::array::IntoIter::new([
@@ -2525,7 +2532,7 @@ impl<'a> FormulaBuilder<'a> {
         &self,
     ) -> Option<(
         ReadableBuilder<'a>,
-        impl ExactSizeIterator<Item = &FormulaBuilder<'a>>,
+        impl ExactSizeDoubleEndedIterator<Item = &FormulaBuilder<'a>>,
     )> {
         match self {
             Self::Prefix(formula) => formula.application(),
@@ -2631,7 +2638,7 @@ impl<'a> DisplayFormulaBuilder<'a> {
         &self,
     ) -> Option<(
         ReadableBuilder<'a>,
-        impl ExactSizeIterator<Item = &FormulaBuilder<'a>>,
+        impl ExactSizeDoubleEndedIterator<Item = &FormulaBuilder<'a>>,
     )> {
         self.formula.application()
     }

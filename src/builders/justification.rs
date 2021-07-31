@@ -178,6 +178,138 @@ impl<'a> SystemChildJustificationBuilder<'a> {
     }
 }
 
+enum FunctionApplicationStackItem<'a> {
+    Pair(&'a FormulaBuilder<'a>, &'a FormulaBuilder<'a>),
+    Prepared(ProofBuilderSmallStep<'a>),
+}
+
+struct FunctionApplicationIter<'a> {
+    stack: Vec<FunctionApplicationStackItem<'a>>,
+    relation: ReadableBuilder<'a>,
+    prev_steps: &'a [ProofBuilderElement<'a>],
+}
+
+impl<'a> FunctionApplicationIter<'a> {
+    fn new(
+        left: &'a FormulaBuilder<'a>,
+        right: &'a FormulaBuilder<'a>,
+        relation: ReadableBuilder<'a>,
+        prev_steps: &'a [ProofBuilderElement<'a>],
+    ) -> Self {
+        FunctionApplicationIter {
+            stack: vec![FunctionApplicationStackItem::Pair(left, right)],
+            relation,
+            prev_steps,
+        }
+    }
+
+    fn formula_already_derived(&self, formula: &FormulaBuilder<'a>) -> bool {
+        self.prev_steps.iter().any(|step| step.eq_formula(formula))
+    }
+
+    fn by_reflexivity(&self, formula: FormulaBuilder<'a>) -> ProofBuilderSmallStep<'a> {
+        let reflexive_deductable = self.relation.get_reflexive().unwrap();
+
+        ProofBuilderSmallStep::new(
+            ProofBuilderSmallJustification::Deductable(reflexive_deductable),
+            formula,
+        )
+    }
+
+    fn by_symmetry(&self, formula: FormulaBuilder<'a>) -> ProofBuilderSmallStep<'a> {
+        let symmetry_deductable = self.relation.get_symmetric().unwrap();
+
+        ProofBuilderSmallStep::new(
+            ProofBuilderSmallJustification::Deductable(symmetry_deductable),
+            formula,
+        )
+    }
+}
+
+impl<'a> Iterator for FunctionApplicationIter<'a> {
+    // TODO: This should be a Result, not an Option.
+    type Item = Option<ProofBuilderSmallStep<'a>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some(item) = self.stack.pop() {
+            let (left, right) = match item {
+                FunctionApplicationStackItem::Pair(left, right) => (left, right),
+                FunctionApplicationStackItem::Prepared(ret) => return Some(Some(ret)),
+            };
+
+            // We need to create a small step to justify this formula.
+            let target_formula =
+                FormulaBuilder::ReadableApplication(FormulaReadableApplicationBuilder::new(
+                    self.relation,
+                    vec![left.clone(), right.clone()],
+                ));
+
+            // If this was derived in a previous step, then there is no work to do. Move on to the
+            // next item in the stack.
+            if self.formula_already_derived(&target_formula) {
+                continue;
+            }
+
+            // If this formula can be derived by reflexivity.
+            if left == right {
+                return Some(Some(self.by_reflexivity(target_formula)));
+            }
+
+            // If this was derived in a previous step, but backwards, and the relation is
+            // symmetric, then we can get what we need by applying that symmetry.
+            if self.relation.is_symmetric() {
+                let reversed_formula =
+                    FormulaBuilder::ReadableApplication(FormulaReadableApplicationBuilder::new(
+                        self.relation,
+                        vec![right.clone(), left.clone()],
+                    ));
+
+                if self.formula_already_derived(&reversed_formula) {
+                    return Some(Some(self.by_symmetry(target_formula)));
+                }
+            }
+
+            // If all else fails, attempt to derive it by function application.
+            if let (Some((left_function, left_inputs)), Some((right_function, right_inputs))) =
+                (left.application(), right.application())
+            {
+                if left_function != right_function {
+                    todo!()
+                }
+
+                if left_inputs.len() != right_inputs.len() {
+                    todo!()
+                }
+
+                let function_deductable = match left_function.get_function(self.relation) {
+                    Some(deductable) => deductable,
+                    None => todo!(),
+                };
+
+                // We're good to go. Push the work to do on the stack, and move on to the next.
+                let target_step = ProofBuilderSmallStep::new(
+                    ProofBuilderSmallJustification::Deductable(function_deductable),
+                    target_formula,
+                );
+                self.stack
+                    .push(FunctionApplicationStackItem::Prepared(target_step));
+
+                let input_steps = left_inputs
+                    .zip(right_inputs)
+                    .map(|(left, right)| FunctionApplicationStackItem::Pair(left, right));
+                self.stack.extend(input_steps.rev());
+
+                continue;
+            }
+
+            // If we've reached here, then every possible method has failed.
+            todo!()
+        }
+
+        None
+    }
+}
+
 #[derive(Debug)]
 pub enum MacroJustificationBuilder {
     Definition,
@@ -196,90 +328,6 @@ impl MacroJustificationBuilder {
         }
     }
 
-    fn build_function_application_iter<'a>(
-        left: &'a FormulaBuilder<'a>,
-        right: &'a FormulaBuilder<'a>,
-        relation: ReadableBuilder<'a>,
-        prev_steps: &'a [ProofBuilderElement<'a>],
-    ) -> Box<dyn Iterator<Item = Option<ProofBuilderSmallStep<'a>>> + 'a> {
-        let formula = FormulaBuilder::ReadableApplication(FormulaReadableApplicationBuilder::new(
-            relation,
-            vec![left.clone(), right.clone()],
-        ));
-        let formula_reversed = FormulaBuilder::ReadableApplication(
-            FormulaReadableApplicationBuilder::new(relation, vec![right.clone(), left.clone()]),
-        );
-
-        // If this formula has already been derived.
-        if prev_steps.iter().any(|step| step.eq_formula(&formula)) {
-            Box::new(std::iter::empty())
-        }
-        // If this formula has been derived, but backwards. For example, we need a = b but we have
-        // b = a, but we can switch the order by symmetry.
-        else if relation.is_symmetric()
-            && prev_steps
-                .iter()
-                .any(|step| step.eq_formula(&formula_reversed))
-        {
-            let deductable_ref = relation.get_symmetric().unwrap();
-            let ret = Some(ProofBuilderSmallStep::new(
-                ProofBuilderSmallJustification::Deductable(deductable_ref),
-                formula,
-            ));
-
-            Box::new(std::iter::once(ret))
-        }
-        // If this formula can be derived by relfexivity.
-        else if left == right {
-            let deductable_ref = relation.get_reflexive().unwrap();
-            let ret = Some(ProofBuilderSmallStep::new(
-                ProofBuilderSmallJustification::Deductable(deductable_ref),
-                formula,
-            ));
-
-            Box::new(std::iter::once(ret))
-        }
-        // Test if we can use function application over the relation.
-        else if let (Some((left_function, left_inputs)), Some((right_function, right_inputs))) =
-            (left.application(), right.application())
-        {
-            if left_inputs.len() != right_inputs.len() {
-                todo!()
-            }
-
-            let input_steps =
-                left_inputs
-                    .zip(right_inputs)
-                    .flat_map(move |(left_input, right_input)| {
-                        Self::build_function_application_iter(
-                            left_input,
-                            right_input,
-                            relation,
-                            prev_steps,
-                        )
-                    });
-
-            if left_function != right_function {
-                todo!()
-            }
-
-            if let Some(deductable_ref) = left_function.get_function(relation) {
-                Box::new(
-                    input_steps.chain(std::iter::once(Some(ProofBuilderSmallStep::new(
-                        ProofBuilderSmallJustification::Deductable(deductable_ref),
-                        formula,
-                    )))),
-                )
-            } else {
-                todo!()
-            }
-        }
-        // This statement cannot be derived by simple function application.
-        else {
-            todo!()
-        }
-    }
-
     fn build_function_application<'a>(
         formula: &'a FormulaBuilder<'a>,
         prev_steps: &'a [ProofBuilderElement<'a>],
@@ -289,7 +337,7 @@ impl MacroJustificationBuilder {
                 todo!()
             }
 
-            Self::build_function_application_iter(left, right, relation, prev_steps).collect()
+            FunctionApplicationIter::new(left, right, relation, prev_steps).collect()
         } else {
             todo!()
         }
