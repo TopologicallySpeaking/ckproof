@@ -2342,7 +2342,13 @@ impl<'a> FormulaInfixBuilder<'a> {
             .applied()
     }
 
-    fn binary(&'a self) -> Option<(ReadableBuilder, &FormulaBuilder, &FormulaBuilder)> {
+    fn binary(
+        &self,
+    ) -> Option<(
+        ReadableBuilder<'a>,
+        &FormulaBuilder<'a>,
+        &FormulaBuilder<'a>,
+    )> {
         let readable = *self.operator_ref.get().unwrap();
         let left = &self.lhs;
         let right = &self.rhs;
@@ -2531,7 +2537,13 @@ impl<'a> FormulaBuilder<'a> {
         }
     }
 
-    pub fn binary(&'a self) -> Option<(ReadableBuilder, &FormulaBuilder, &FormulaBuilder)> {
+    pub fn binary(
+        &self,
+    ) -> Option<(
+        ReadableBuilder<'a>,
+        &FormulaBuilder<'a>,
+        &FormulaBuilder<'a>,
+    )> {
         match self {
             Self::Infix(formula) => formula.binary(),
 
@@ -2631,7 +2643,7 @@ impl<'a> DisplayFormulaBuilder<'a> {
         DisplayFormulaBlock::new(display, formula)
     }
 
-    pub fn formula(&'a self) -> &FormulaBuilder {
+    pub fn formula(&self) -> &FormulaBuilder<'a> {
         &self.formula
     }
 
@@ -2643,7 +2655,13 @@ impl<'a> DisplayFormulaBuilder<'a> {
         self.formula.type_signature()
     }
 
-    pub fn binary(&'a self) -> Option<(ReadableBuilder, &FormulaBuilder, &FormulaBuilder)> {
+    pub fn binary(
+        &self,
+    ) -> Option<(
+        ReadableBuilder<'a>,
+        &FormulaBuilder<'a>,
+        &FormulaBuilder<'a>,
+    )> {
         self.formula.binary()
     }
 

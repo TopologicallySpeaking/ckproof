@@ -2310,7 +2310,7 @@ impl<'a> ProofBuilderElement<'a> {
         }
     }
 
-    pub fn eq_formula(&'a self, formula: &FormulaBuilder<'a>) -> bool {
+    pub fn eq_formula(&self, formula: &FormulaBuilder<'a>) -> bool {
         match self {
             Self::Text(_) => false,
             Self::Step(step) => step.formula.formula() == formula,

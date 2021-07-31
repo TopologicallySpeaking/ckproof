@@ -134,9 +134,9 @@ impl<'a> SystemChildJustificationBuilder<'a> {
     }
 
     fn build_small_steps(
-        &'a self,
+        &self,
         formula: &FormulaBuilder<'a>,
-    ) -> Option<Vec<ProofBuilderSmallStep>> {
+    ) -> Option<Vec<ProofBuilderSmallStep<'a>>> {
         let justification = match *self.child.get().unwrap() {
             SystemBuilderChild::Axiom(axiom_ref) => {
                 ProofBuilderSmallJustification::Deductable(DeductableBuilder::Axiom(axiom_ref))
@@ -178,23 +178,23 @@ impl<'a> SystemChildJustificationBuilder<'a> {
     }
 }
 
-enum FunctionApplicationStackItem<'a> {
-    Pair(&'a FormulaBuilder<'a>, &'a FormulaBuilder<'a>),
+enum FunctionApplicationStackItem<'a, 'iter> {
+    Pair(&'iter FormulaBuilder<'a>, &'iter FormulaBuilder<'a>),
     Prepared(ProofBuilderSmallStep<'a>),
 }
 
-struct FunctionApplicationIter<'a> {
-    stack: Vec<FunctionApplicationStackItem<'a>>,
+struct FunctionApplicationIter<'a, 'iter> {
+    stack: Vec<FunctionApplicationStackItem<'a, 'iter>>,
     relation: ReadableBuilder<'a>,
-    prev_steps: &'a [ProofBuilderElement<'a>],
+    prev_steps: &'iter [ProofBuilderElement<'a>],
 }
 
-impl<'a> FunctionApplicationIter<'a> {
+impl<'a, 'iter> FunctionApplicationIter<'a, 'iter> {
     fn new(
-        left: &'a FormulaBuilder<'a>,
-        right: &'a FormulaBuilder<'a>,
+        left: &'iter FormulaBuilder<'a>,
+        right: &'iter FormulaBuilder<'a>,
         relation: ReadableBuilder<'a>,
-        prev_steps: &'a [ProofBuilderElement<'a>],
+        prev_steps: &'iter [ProofBuilderElement<'a>],
     ) -> Self {
         FunctionApplicationIter {
             stack: vec![FunctionApplicationStackItem::Pair(left, right)],
@@ -226,7 +226,7 @@ impl<'a> FunctionApplicationIter<'a> {
     }
 }
 
-impl<'a> Iterator for FunctionApplicationIter<'a> {
+impl<'a, 'iter> Iterator for FunctionApplicationIter<'a, 'iter> {
     // TODO: The error of this should contain information about the error.
     type Item = Result<ProofBuilderSmallStep<'a>, ()>;
 
@@ -332,8 +332,8 @@ impl MacroJustificationBuilder {
 
     // TODO: This should return a Result.
     fn build_function_application<'a>(
-        formula: &'a FormulaBuilder<'a>,
-        prev_steps: &'a [ProofBuilderElement<'a>],
+        formula: &FormulaBuilder<'a>,
+        prev_steps: &[ProofBuilderElement<'a>],
     ) -> Option<Vec<ProofBuilderSmallStep<'a>>> {
         if let Some((relation, left, right)) = formula.binary() {
             if !relation.is_preorder() {
@@ -349,11 +349,11 @@ impl MacroJustificationBuilder {
     }
 
     fn try_build_substitution<'a>(
-        step: &'a ProofBuilderStep<'a>,
+        step: &ProofBuilderStep<'a>,
         relation: ReadableBuilder<'a>,
-        left: &'a FormulaBuilder<'a>,
-        right: &'a FormulaBuilder<'a>,
-        prev_steps: &'a [ProofBuilderElement<'a>],
+        left: &FormulaBuilder<'a>,
+        right: &FormulaBuilder<'a>,
+        prev_steps: &[ProofBuilderElement<'a>],
     ) -> Option<Vec<ProofBuilderSmallStep<'a>>> {
         let (step_relation, step_left, step_right) = step.formula().binary()?;
 
@@ -398,8 +398,8 @@ impl MacroJustificationBuilder {
     }
 
     fn build_substitution<'a>(
-        formula: &'a FormulaBuilder<'a>,
-        prev_steps: &'a [ProofBuilderElement<'a>],
+        formula: &FormulaBuilder<'a>,
+        prev_steps: &[ProofBuilderElement<'a>],
     ) -> Option<Vec<ProofBuilderSmallStep<'a>>> {
         if let Some((relation, left, right)) = formula.binary() {
             if !relation.is_preorder() {
@@ -418,10 +418,10 @@ impl MacroJustificationBuilder {
     }
 
     fn build_small_steps<'a>(
-        &'a self,
-        formula: &'a FormulaBuilder<'a>,
-        prev_steps: &'a [ProofBuilderElement<'a>],
-    ) -> Option<Vec<ProofBuilderSmallStep>> {
+        &self,
+        formula: &FormulaBuilder<'a>,
+        prev_steps: &[ProofBuilderElement<'a>],
+    ) -> Option<Vec<ProofBuilderSmallStep<'a>>> {
         match self {
             Self::Definition => Some(vec![ProofBuilderSmallStep::new(
                 ProofBuilderSmallJustification::Definition,
@@ -513,11 +513,11 @@ impl<'a> ProofJustificationBuilder<'a> {
     }
 
     pub fn build_small_steps(
-        &'a self,
-        formula: &'a FormulaBuilder<'a>,
-        prev_steps: &'a [ProofBuilderElement<'a>],
+        &self,
+        formula: &FormulaBuilder<'a>,
+        prev_steps: &[ProofBuilderElement<'a>],
         errors: &mut ParsingErrorContext,
-    ) -> Option<Vec<ProofBuilderSmallStep>> {
+    ) -> Option<Vec<ProofBuilderSmallStep<'a>>> {
         match self {
             Self::SystemChild(justification) => justification.build_small_steps(formula),
             Self::Macro(justification) => justification.build_small_steps(formula, prev_steps),
