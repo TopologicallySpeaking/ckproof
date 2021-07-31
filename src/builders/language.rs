@@ -726,7 +726,7 @@ impl<'a> PropertyList<'a> {
         }
     }
 
-    fn get_function(&'a self, relation: ReadableBuilder<'a>) -> Option<DeductableBuilder> {
+    fn get_function(&self, relation: ReadableBuilder<'a>) -> Option<DeductableBuilder<'a>> {
         self.function.borrow().get(&relation).copied()
     }
 
@@ -2197,10 +2197,10 @@ impl<'a> FormulaPrefixBuilder<'a> {
     }
 
     fn application(
-        &'a self,
+        &self,
     ) -> Option<(
-        ReadableBuilder,
-        Box<dyn ExactSizeIterator<Item = &FormulaBuilder> + '_>,
+        ReadableBuilder<'a>,
+        Box<dyn ExactSizeIterator<Item = &FormulaBuilder<'a>> + '_>,
     )> {
         let readable = *self.operator_ref.get().unwrap();
         let inputs = Box::new(std::iter::once(self.inner.as_ref()));
@@ -2325,10 +2325,10 @@ impl<'a> FormulaInfixBuilder<'a> {
     }
 
     fn application(
-        &'a self,
+        &self,
     ) -> Option<(
-        ReadableBuilder,
-        Box<dyn ExactSizeIterator<Item = &FormulaBuilder> + '_>,
+        ReadableBuilder<'a>,
+        Box<dyn ExactSizeIterator<Item = &FormulaBuilder<'a>> + '_>,
     )> {
         let readable = *self.operator_ref.get().unwrap();
         let inputs = Box::new(std::array::IntoIter::new([
@@ -2522,10 +2522,10 @@ impl<'a> FormulaBuilder<'a> {
     }
 
     pub fn application(
-        &'a self,
+        &self,
     ) -> Option<(
-        ReadableBuilder,
-        impl ExactSizeIterator<Item = &FormulaBuilder>,
+        ReadableBuilder<'a>,
+        impl ExactSizeIterator<Item = &FormulaBuilder<'a>>,
     )> {
         match self {
             Self::Prefix(formula) => formula.application(),
@@ -2628,10 +2628,10 @@ impl<'a> DisplayFormulaBuilder<'a> {
     }
 
     pub fn application(
-        &'a self,
+        &self,
     ) -> Option<(
-        ReadableBuilder,
-        impl ExactSizeIterator<Item = &FormulaBuilder>,
+        ReadableBuilder<'a>,
+        impl ExactSizeIterator<Item = &FormulaBuilder<'a>>,
     )> {
         self.formula.application()
     }
