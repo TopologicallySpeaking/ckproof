@@ -2260,10 +2260,8 @@ impl<'a> ProofBuilderElement<'a> {
         tags: &mut HashMap<&'a str, &'a ProofBuilderStep<'a>>,
         errors: &mut ParsingErrorContext<'a>,
     ) {
-        match self {
-            Self::Text(_) => {}
-
-            Self::Step(step) => step.build_tag_index(proof_ref, tags, errors),
+        if let Self::Step(step) = self {
+            step.build_tag_index(proof_ref, tags, errors);
         }
     }
 
@@ -2287,10 +2285,7 @@ impl<'a> ProofBuilderElement<'a> {
     }
 
     fn bib_refs(&self) -> Option<impl Iterator<Item = &BibliographyBuilderEntry>> {
-        match self {
-            Self::Text(text) => Some(text.bib_refs()),
-            Self::Step(_) => None,
-        }
+        self.text().map(TextBuilder::bib_refs)
     }
 
     fn set_local_bib_refs(&self, index: &HashMap<&BibliographyBuilderEntry, usize>) {
@@ -2306,9 +2301,8 @@ impl<'a> ProofBuilderElement<'a> {
         local_index: &LocalBuilderIndex<'a, '_>,
         errors: &mut ParsingErrorContext<'a>,
     ) {
-        match self {
-            Self::Text(_) => {}
-            Self::Step(step) => step.build(proof_ref, prev_steps, local_index, errors),
+        if let Self::Step(step) = self {
+            step.build(proof_ref, prev_steps, local_index, errors);
         }
     }
 
@@ -2343,6 +2337,22 @@ impl<'a> ProofBuilderElement<'a> {
         match self {
             Self::Text(text) => ProofBlockElement::Text(text.finish()),
             Self::Step(step) => ProofBlockElement::Step(step.finish()),
+        }
+    }
+
+    pub fn text(&self) -> Option<&TextBuilder<'a>> {
+        match self {
+            Self::Text(text) => Some(text),
+
+            _ => None,
+        }
+    }
+
+    pub fn step(&self) -> Option<&ProofBuilderStep<'a>> {
+        match self {
+            Self::Step(step) => Some(step),
+
+            _ => None,
         }
     }
 }
