@@ -667,7 +667,7 @@ impl<'a> PropertyList<'a> {
         }
     }
 
-    fn get_reflexive(&'a self) -> Option<DeductableBuilder> {
+    fn get_reflexive(&self) -> Option<DeductableBuilder<'a>> {
         self.reflexive.get().copied()
     }
 
@@ -685,7 +685,7 @@ impl<'a> PropertyList<'a> {
         }
     }
 
-    fn get_symmetric(&'a self) -> Option<DeductableBuilder> {
+    fn get_symmetric(&self) -> Option<DeductableBuilder<'a>> {
         self.symmetric.get().copied()
     }
 
@@ -703,7 +703,7 @@ impl<'a> PropertyList<'a> {
         }
     }
 
-    fn get_transitive(&'a self) -> Option<DeductableBuilder> {
+    fn get_transitive(&self) -> Option<DeductableBuilder<'a>> {
         self.transitive.get().copied()
     }
 
@@ -1099,7 +1099,7 @@ impl<'a> SymbolBuilder<'a> {
             .set_reflexive(ReadableBuilder::Symbol(self), deductable_ref, errors);
     }
 
-    pub fn get_reflexive(&'a self) -> Option<DeductableBuilder> {
+    pub fn get_reflexive(&self) -> Option<DeductableBuilder<'a>> {
         self.properties.get_reflexive()
     }
 
@@ -1112,7 +1112,7 @@ impl<'a> SymbolBuilder<'a> {
             .set_symmetric(ReadableBuilder::Symbol(self), deductable_ref, errors);
     }
 
-    pub fn get_symmetric(&'a self) -> Option<DeductableBuilder> {
+    pub fn get_symmetric(&self) -> Option<DeductableBuilder<'a>> {
         self.properties.get_symmetric()
     }
 
@@ -1125,7 +1125,7 @@ impl<'a> SymbolBuilder<'a> {
             .set_transitive(ReadableBuilder::Symbol(self), deductable_ref, errors);
     }
 
-    pub fn get_transitive(&'a self) -> Option<DeductableBuilder> {
+    pub fn get_transitive(&self) -> Option<DeductableBuilder<'a>> {
         self.properties.get_transitive()
     }
 
@@ -1143,7 +1143,7 @@ impl<'a> SymbolBuilder<'a> {
         );
     }
 
-    pub fn get_function(&'a self, relation: ReadableBuilder<'a>) -> Option<DeductableBuilder> {
+    pub fn get_function(&self, relation: ReadableBuilder<'a>) -> Option<DeductableBuilder<'a>> {
         self.properties.get_function(relation)
     }
 
@@ -1676,7 +1676,7 @@ impl<'a> DefinitionBuilder<'a> {
             .set_reflexive(ReadableBuilder::Definition(self), deductable_ref, errors);
     }
 
-    pub fn get_reflexive(&'a self) -> Option<DeductableBuilder> {
+    pub fn get_reflexive(&self) -> Option<DeductableBuilder<'a>> {
         self.properties.get_reflexive()
     }
 
@@ -1689,7 +1689,7 @@ impl<'a> DefinitionBuilder<'a> {
             .set_symmetric(ReadableBuilder::Definition(self), deductable_ref, errors);
     }
 
-    pub fn get_symmetric(&'a self) -> Option<DeductableBuilder> {
+    pub fn get_symmetric(&self) -> Option<DeductableBuilder<'a>> {
         self.properties.get_symmetric()
     }
 
@@ -1702,7 +1702,7 @@ impl<'a> DefinitionBuilder<'a> {
             .set_transitive(ReadableBuilder::Definition(self), deductable_ref, errors);
     }
 
-    pub fn get_transitive(&'a self) -> Option<DeductableBuilder> {
+    pub fn get_transitive(&self) -> Option<DeductableBuilder<'a>> {
         self.properties.get_transitive()
     }
 
@@ -1720,7 +1720,7 @@ impl<'a> DefinitionBuilder<'a> {
         );
     }
 
-    pub fn get_function(&'a self, relation: ReadableBuilder<'a>) -> Option<DeductableBuilder> {
+    pub fn get_function(&self, relation: ReadableBuilder<'a>) -> Option<DeductableBuilder<'a>> {
         self.properties.get_function(relation)
     }
 
@@ -1884,7 +1884,7 @@ impl<'a> ReadableBuilder<'a> {
         }
     }
 
-    pub fn get_reflexive(self) -> Option<DeductableBuilder<'a>> {
+    pub fn get_reflexive(&self) -> Option<DeductableBuilder<'a>> {
         match self {
             Self::Symbol(symbol_ref) => symbol_ref.get_reflexive(),
             Self::Definition(definition_ref) => definition_ref.get_reflexive(),
@@ -1904,7 +1904,7 @@ impl<'a> ReadableBuilder<'a> {
         }
     }
 
-    pub fn get_symmetric(self) -> Option<DeductableBuilder<'a>> {
+    pub fn get_symmetric(&self) -> Option<DeductableBuilder<'a>> {
         match self {
             Self::Symbol(symbol_ref) => symbol_ref.get_symmetric(),
             Self::Definition(definition_ref) => definition_ref.get_symmetric(),
@@ -1924,7 +1924,7 @@ impl<'a> ReadableBuilder<'a> {
         }
     }
 
-    pub fn get_transitive(self) -> Option<DeductableBuilder<'a>> {
+    pub fn get_transitive(&self) -> Option<DeductableBuilder<'a>> {
         match self {
             Self::Symbol(symbol_ref) => symbol_ref.get_transitive(),
             Self::Definition(definition_ref) => definition_ref.get_transitive(),
@@ -1945,7 +1945,7 @@ impl<'a> ReadableBuilder<'a> {
         }
     }
 
-    pub fn get_function(self, relation: ReadableBuilder<'a>) -> Option<DeductableBuilder> {
+    pub fn get_function(&self, relation: ReadableBuilder<'a>) -> Option<DeductableBuilder<'a>> {
         match self {
             Self::Symbol(symbol_ref) => symbol_ref.get_function(relation),
             Self::Definition(definition_ref) => definition_ref.get_function(relation),
