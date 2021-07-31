@@ -26,6 +26,7 @@ pub mod errors;
 
 mod bibliography;
 mod index;
+mod justification;
 mod language;
 mod structure;
 mod system;
