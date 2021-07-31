@@ -27,9 +27,8 @@ use crate::document::structure::{
     AxiomBlockRef, BlockLocation, BlockRef, DeductableBlockRef, SystemBlockRef, TheoremBlockRef,
 };
 use crate::document::system::{
-    AxiomBlock, ProofBlock, ProofBlockElement, ProofBlockJustification,
-    ProofBlockSmallJustification, ProofBlockSmallStep, ProofBlockStep, SystemBlock, TheoremBlock,
-    TheoremKind,
+    AxiomBlock, ProofBlock, ProofBlockElement, ProofBlockSmallJustification, ProofBlockSmallStep,
+    ProofBlockStep, SystemBlock, TheoremBlock, TheoremKind,
 };
 
 use super::bibliography::BibliographyBuilderEntry;
@@ -40,8 +39,8 @@ use super::errors::{
 use super::index::{BuilderIndex, LocalBuilderIndex};
 use super::justification::ProofJustificationBuilder;
 use super::language::{
-    DefinitionBuilder, DisplayFormulaBuilder, FormulaBuilder, FormulaReadableApplicationBuilder,
-    ReadableBuilder, SymbolBuilder, TypeBuilder, VariableBuilder,
+    DefinitionBuilder, DisplayFormulaBuilder, FormulaBuilder, SymbolBuilder, TypeBuilder,
+    VariableBuilder,
 };
 use super::text::{ParagraphBuilder, TextBuilder};
 use super::Rule;
