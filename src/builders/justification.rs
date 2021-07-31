@@ -227,14 +227,14 @@ impl<'a> FunctionApplicationIter<'a> {
 }
 
 impl<'a> Iterator for FunctionApplicationIter<'a> {
-    // TODO: This should be a Result, not an Option.
-    type Item = Option<ProofBuilderSmallStep<'a>>;
+    // TODO: The error of this should contain information about the error.
+    type Item = Result<ProofBuilderSmallStep<'a>, ()>;
 
     fn next(&mut self) -> Option<Self::Item> {
         while let Some(item) = self.stack.pop() {
             let (left, right) = match item {
                 FunctionApplicationStackItem::Pair(left, right) => (left, right),
-                FunctionApplicationStackItem::Prepared(ret) => return Some(Some(ret)),
+                FunctionApplicationStackItem::Prepared(ret) => return Some(Ok(ret)),
             };
 
             // We need to create a small step to justify this formula.
@@ -252,7 +252,7 @@ impl<'a> Iterator for FunctionApplicationIter<'a> {
 
             // If this formula can be derived by reflexivity.
             if left == right {
-                return Some(Some(self.by_reflexivity(target_formula)));
+                return Some(Ok(self.by_reflexivity(target_formula)));
             }
 
             // If this was derived in a previous step, but backwards, and the relation is
@@ -265,7 +265,7 @@ impl<'a> Iterator for FunctionApplicationIter<'a> {
                     ));
 
                 if self.formula_already_derived(&reversed_formula) {
-                    return Some(Some(self.by_symmetry(target_formula)));
+                    return Some(Ok(self.by_symmetry(target_formula)));
                 }
             }
 
@@ -274,16 +274,16 @@ impl<'a> Iterator for FunctionApplicationIter<'a> {
                 (left.application(), right.application())
             {
                 if left_function != right_function {
-                    todo!()
+                    return Some(Err(()));
                 }
 
                 if left_inputs.len() != right_inputs.len() {
-                    todo!()
+                    return Some(Err(()));
                 }
 
                 let function_deductable = match left_function.get_function(self.relation) {
                     Some(deductable) => deductable,
-                    None => todo!(),
+                    None => return Some(Err(())),
                 };
 
                 // We're good to go. Push the work to do on the stack, and move on to the next.
@@ -303,7 +303,7 @@ impl<'a> Iterator for FunctionApplicationIter<'a> {
             }
 
             // If we've reached here, then every possible method has failed.
-            todo!()
+            return Some(Err(()));
         }
 
         None
@@ -314,6 +314,7 @@ impl<'a> Iterator for FunctionApplicationIter<'a> {
 pub enum MacroJustificationBuilder {
     Definition,
     FunctionApplication,
+    Substitution,
 }
 
 impl MacroJustificationBuilder {
@@ -323,11 +324,13 @@ impl MacroJustificationBuilder {
         match pair.into_inner().next().unwrap().as_rule() {
             Rule::macro_justification_by_definition => Self::Definition,
             Rule::macro_justification_by_function_application => Self::FunctionApplication,
+            Rule::macro_justification_by_substitution => Self::Substitution,
 
             _ => unreachable!(),
         }
     }
 
+    // TODO: This should return a Result.
     fn build_function_application<'a>(
         formula: &'a FormulaBuilder<'a>,
         prev_steps: &'a [ProofBuilderElement<'a>],
@@ -337,7 +340,78 @@ impl MacroJustificationBuilder {
                 todo!()
             }
 
-            FunctionApplicationIter::new(left, right, relation, prev_steps).collect()
+            let result: Result<_, _> =
+                FunctionApplicationIter::new(left, right, relation, prev_steps).collect();
+            result.ok()
+        } else {
+            todo!()
+        }
+    }
+
+    fn try_build_substitution<'a>(
+        step: &'a ProofBuilderStep<'a>,
+        relation: ReadableBuilder<'a>,
+        left: &'a FormulaBuilder<'a>,
+        right: &'a FormulaBuilder<'a>,
+        prev_steps: &'a [ProofBuilderElement<'a>],
+    ) -> Option<Vec<ProofBuilderSmallStep<'a>>> {
+        let (step_relation, step_left, step_right) = step.formula().binary()?;
+
+        if step_relation != relation {
+            return None;
+        }
+
+        let transitive_deductable = relation.get_transitive().unwrap();
+
+        let left_steps = FunctionApplicationIter::new(left, step_left, relation, prev_steps);
+        let right_steps = FunctionApplicationIter::new(step_right, right, relation, prev_steps);
+
+        let join_left = std::iter::once_with(|| {
+            let formula =
+                FormulaBuilder::ReadableApplication(FormulaReadableApplicationBuilder::new(
+                    relation,
+                    vec![left.clone(), step_right.clone()],
+                ));
+
+            Ok(ProofBuilderSmallStep::new(
+                ProofBuilderSmallJustification::Deductable(transitive_deductable),
+                formula,
+            ))
+        });
+        let join_right = std::iter::once_with(|| {
+            let formula = FormulaBuilder::ReadableApplication(
+                FormulaReadableApplicationBuilder::new(relation, vec![left.clone(), right.clone()]),
+            );
+
+            Ok(ProofBuilderSmallStep::new(
+                ProofBuilderSmallJustification::Deductable(transitive_deductable),
+                formula,
+            ))
+        });
+
+        let result: Result<_, _> = left_steps
+            .chain(right_steps)
+            .chain(join_left)
+            .chain(join_right)
+            .collect();
+        result.ok()
+    }
+
+    fn build_substitution<'a>(
+        formula: &'a FormulaBuilder<'a>,
+        prev_steps: &'a [ProofBuilderElement<'a>],
+    ) -> Option<Vec<ProofBuilderSmallStep<'a>>> {
+        if let Some((relation, left, right)) = formula.binary() {
+            if !relation.is_preorder() {
+                todo!()
+            }
+
+            prev_steps
+                .iter()
+                .filter_map(ProofBuilderElement::step)
+                .find_map(|step| {
+                    Self::try_build_substitution(step, relation, left, right, prev_steps)
+                })
         } else {
             todo!()
         }
@@ -355,6 +429,7 @@ impl MacroJustificationBuilder {
             )]),
 
             Self::FunctionApplication => Self::build_function_application(formula, prev_steps),
+            Self::Substitution => Self::build_substitution(formula, prev_steps),
         }
     }
 
@@ -362,6 +437,7 @@ impl MacroJustificationBuilder {
         match self {
             Self::FunctionApplication => ProofBlockJustification::FunctionApplication,
             Self::Definition => ProofBlockJustification::Definition,
+            Self::Substitution => ProofBlockJustification::Substitution,
         }
     }
 }

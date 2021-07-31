@@ -703,6 +703,10 @@ impl<'a> PropertyList<'a> {
         }
     }
 
+    fn get_transitive(&'a self) -> Option<DeductableBuilder> {
+        self.transitive.get().copied()
+    }
+
     // TODO: Allow inputs to use different preorders.
     fn set_function(
         &self,
@@ -1119,6 +1123,10 @@ impl<'a> SymbolBuilder<'a> {
     ) {
         self.properties
             .set_transitive(ReadableBuilder::Symbol(self), deductable_ref, errors);
+    }
+
+    pub fn get_transitive(&'a self) -> Option<DeductableBuilder> {
+        self.properties.get_transitive()
     }
 
     pub fn set_function(
@@ -1694,6 +1702,10 @@ impl<'a> DefinitionBuilder<'a> {
             .set_transitive(ReadableBuilder::Definition(self), deductable_ref, errors);
     }
 
+    pub fn get_transitive(&'a self) -> Option<DeductableBuilder> {
+        self.properties.get_transitive()
+    }
+
     pub fn set_function(
         &'a self,
         deductable_ref: DeductableBuilder<'a>,
@@ -1909,6 +1921,13 @@ impl<'a> ReadableBuilder<'a> {
             Self::Definition(definition_ref) => {
                 definition_ref.set_transitive(deductable_ref, errors)
             }
+        }
+    }
+
+    pub fn get_transitive(self) -> Option<DeductableBuilder<'a>> {
+        match self {
+            Self::Symbol(symbol_ref) => symbol_ref.get_transitive(),
+            Self::Definition(definition_ref) => definition_ref.get_transitive(),
         }
     }
 

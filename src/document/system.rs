@@ -405,6 +405,7 @@ pub enum ProofBlockJustification<'a> {
 
     Definition,
     FunctionApplication,
+    Substitution,
 }
 
 impl<'a> ProofBlockJustification<'a> {
@@ -428,6 +429,7 @@ impl<'a> ProofBlockJustification<'a> {
 
             Self::Definition => ProofRenderedJustification::Definition,
             Self::FunctionApplication => ProofRenderedJustification::FunctionApplication,
+            Self::Substitution => ProofRenderedJustification::Substitution,
         }
     }
 

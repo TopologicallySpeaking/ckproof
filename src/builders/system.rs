@@ -2229,12 +2229,16 @@ impl<'a> ProofBuilderStep<'a> {
         &self.file_location
     }
 
+    pub fn index(&self) -> usize {
+        self.index
+    }
+
     pub fn justification(&self) -> Option<&ProofJustificationBuilder<'a>> {
         self.meta.justification_unchecked()
     }
 
-    pub fn index(&self) -> usize {
-        self.index
+    pub fn formula(&self) -> &DisplayFormulaBuilder<'a> {
+        &self.formula
     }
 }
 

@@ -247,8 +247,10 @@ impl TheoremRendered {
 pub enum ProofRenderedJustification {
     SystemChild(String, String),
     Hypothesis(usize),
+
     Definition,
     FunctionApplication,
+    Substitution,
 }
 
 #[derive(Deserialize, Serialize, Debug)]
